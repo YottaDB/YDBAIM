@@ -1,5 +1,4 @@
 # YottaDB Application Independent Metadata
-
 Application Independent Metadata (AIM) provides an API for YottaDB to manage
 metadata (cross references, statistics) for an application. Metadata is
 available in a standard schema.
@@ -14,14 +13,12 @@ downloading this repository, you can install as follows:
 ```
 cd <project directory>
 mkdir build && cd build
-cmake ..
-make
-sudo make install
+cmake -DM_UTF8_MODE=0 .. && make && sudo make install && echo && make clean && cmake -DM_UTF8_MODE=1 .. && make && sudo make install
 ```
 
 Here is some sample output:
 ```
-root@806474820c41:/aim/build# cmake ..
+root@d4b472e59995:/ydbaim/build# cmake -DM_UTF8_MODE=0 .. && make && sudo make install && echo && make clean && cmake -DM_UTF8_MODE=1 .. && make && sudo make install
 -- The C compiler identification is GNU 9.3.0
 -- Check for working C compiler: /usr/bin/cc
 -- Check for working C compiler: /usr/bin/cc -- works
@@ -30,30 +27,32 @@ root@806474820c41:/aim/build# cmake ..
 -- Detecting C compile features
 -- Detecting C compile features - done
 -- Found YOTTADB: /opt/yottadb/current/libyottadb.so
--- Build type: RelWithDebInfo
--- Setting locale to C.UTF-8
+-- Install Location: /opt/yottadb/current/plugin/o
+-- Build type: Release
 -- Configuring done
 -- Generating done
--- Build files have been written to: /aim/build
-root@806474820c41:/aim/build# make
-Scanning dependencies of target _YDBAIMUTF8
-[ 16%] Building M object CMakeFiles/_YDBAIMUTF8.dir/_YDBAIM.m.o
-[ 33%] Building M object CMakeFiles/_YDBAIMUTF8.dir/_YDBAIMTEST.m.o
-[ 50%] Linking M shared library _YDBAIM.so
-[ 50%] Built target _YDBAIMUTF8
-Scanning dependencies of target _YDBAIM
-[ 66%] Building M object CMakeFiles/_YDBAIM.dir/_YDBAIM.m.o
-[ 83%] Building M object CMakeFiles/_YDBAIM.dir/_YDBAIMTEST.m.o
-[100%] Linking M shared library _YDBAIM.so
-[100%] Built target _YDBAIM
-
-root@806474820c41:/aim/build# sudo make install
-[ 50%] Built target _YDBAIMUTF8
-[100%] Built target _YDBAIM
+-- Build files have been written to: /ydbaim/build
+Scanning dependencies of target _ydbaim
+[ 33%] Building M object CMakeFiles/_ydbaim.dir/_YDBAIM.m.o
+[ 66%] Building M object CMakeFiles/_ydbaim.dir/_YDBAIMTEST.m.o
+[100%] Linking M shared library _ydbaim.so
+[100%] Built target _ydbaim
+[100%] Built target _ydbaim
 Install the project...
--- Install configuration: "RelWithDebInfo"
--- Installing: /opt/yottadb/current/plugin/r/_YDBAIM.m
--- Installing: /opt/yottadb/current/plugin/r/_YDBAIMTEST.m
--- Installing: /opt/yottadb/current/plugin/o/_YDBAIM.so
--- Installing: /opt/yottadb/current/plugin/o/utf8/_YDBAIM.so
+-- Install configuration: "Release"
+-- Installing: /opt/yottadb/current/plugin/o/_ydbaim.so
+
+-- Install Location: /opt/yottadb/current/plugin/o/utf8
+-- Build type: Release
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /ydbaim/build
+[ 33%] Building M object CMakeFiles/_ydbaim.dir/_YDBAIM.m.o
+[ 66%] Building M object CMakeFiles/_ydbaim.dir/_YDBAIMTEST.m.o
+[100%] Linking M shared library _ydbaim.so
+[100%] Built target _ydbaim
+[100%] Built target _ydbaim
+Install the project...
+-- Install configuration: "Release"
+-- Installing: /opt/yottadb/current/plugin/o/utf8/_ydbaim.so
 ```
