@@ -95,7 +95,7 @@
 ;
 ;   The optional parameter stat can be used to instruct AIM that the application
 ;   wishes to compute and maintain statistics. For example, a call to
-;   $$XREFDATA^%YDBAIM("^USPresidents",2,"|","1:3",,,2) would compute not only
+;   $$XREFDATA^%YDBAIM("^USPresidents",2,"|","1:3",,,,2) would compute not only
 ;   the node ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(1,"John",1825,1829)="" for John
 ;   Quincy Adams, but also the node ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(1,"John")=4
 ;   indicating that "John" appears 4 times as the first piece, and also the node
@@ -352,6 +352,17 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ;    any subscripts were actually omitted
 ; Since the cross references themselves must have at least two subscripts, any
 ; node with one subscript is metadata for the cross reference.
+;
+; Note to anyone reading the code: lines to set triset, trigdel, and trigdelx
+; can be hard to read. The following might make them more readable:
+; - Copy the three lines into another edit buffer
+; - Delete leading whitespace dots on each line.
+; - Replace "_lf_" (including the quotes) with a linefeed.
+; - Replace "_lastsub_" (including the quotes) with a string like LASTSUB.
+; - Replace "_name_" (including the quotes) with a string like NAME.
+; - Replace "_sub_" (including the quotes) with a string like SUB
+; - Replace $"_z_" (including the dollar & quotes) with a string like ZZ.
+; After reviewing and/or editing the triggers, reverse the above.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	if ""=$etrap!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
 	new cond1,cond2,cond3,i,io,j,lastsub,lf,locxsub,modflag,name,newpnum,newpstr,nsubs,constlist,omitflag,oldpstr,stderr,sub,tmp,trigdel,trigdelx,trigprefix,trigset,trigsub,z,ztout
@@ -409,28 +420,33 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	lock +(^%ydbAIMD($job),^%ydbAIMD(gbl,$job),@name@($job))
 	; Determine whether to xref pieces or entire node, and act accordingly
 	set stat=+$get(stat)
+	if $data(@name@(10))#10 do
+	. set tmp=^(10)
+	. set:stat>tmp $ecode=",U240,"
+	. set:stat<tmp stat=tmp
 	if $zlength(sep) do				; xref pieces
 	. set:'$zlength($get(pnum)) $ecode=",U250,"
 	. ; Make any trigger updates needed
 	. tstart ()
-	. set:'$data(@name@(10)) ^(10)=0
-	. set oldpstr=$get(^(4),"#"),modflag=stat>^(10)
+	. set oldpstr=$get(@name@(4),"#"),modflag=0
 	. set newpstr=$$unravel(pnum)
 	. for i=2:1:$zlength(newpstr) set:+$zextract(oldpstr,i)'=+$zextract(newpstr,i) ($zextract(newpstr,i),modflag)=1
 	. do:modflag
 	. . set:$zlength(oldpstr)>$zlength(newpstr) $zextract(newpstr,i+1,$zlength(oldpstr))=$zextract(oldpstr,i+1,$zlength(oldpstr))
 	. . set newpnum=$$ravel(newpstr)
-	. . set:stat<@name@(10) stat=^(10)
+	. . for i=6:1:8 if $data(@name@(i))#10 set tmp=^(i) if $ztrigger("item","-"_$zextract(tmp,2,$zlength(tmp)))
 	. . if 'stat do
 	. . . set trigset=trigprefix_"set -"_z_"delim="_$zwrite(sep)_" -pieces="_newpnum_" -xecute=""for i=1:1:$zlength($ztupdate,"""","""") set p=$piece($ztupdate,"""","""",i) zkill:$data("_name_"(p,$"_z_"piece($ztoldval,$ztdelim,p),"_sub_"))#10 ^("_lastsub_") set:'$data("_name_"(p,$"_z_"piece($ztvalue,$ztdelim,p),"_sub_")) ^("_lastsub_")="""""""""""
 	. . . set trigdel=trigprefix_"kill -xecute=""set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1 kill:$data("_name_"(j,$"_z_"piece($ztoldval,p,j),"_sub_")) ^("_lastsub_")"""
 	. . . set trigdelx=trigprefix_"zkill -xecute=""set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1 zkill:$data("_name_"(j,$"_z_"piece($ztoldval,p,j),"_sub_"))#10 ^("_lastsub_")"""
 	. . else  if 1=stat do
-	. . . set trigset=trigprefix_"set -"_z_"delim="_$zwrite(sep)_" -pieces="_newpnum_" -xecute=<<"_lf_" for i=1:1:$zlength($ztupdate,"","") set p=$piece($ztupdate,"","",i) do"_lf_" . set q=$"_z_"piece($ztoldval,$ztdelim,p) if $data("_name_"(p,q,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(-p,q),-1) ^(q)"_lf_" . set q=$"_z_"piece($ztvalue,$ztdelim,p) if '$data("_name_"(p,q,"_sub_")) set ^("_lastsub_")="""" if $increment("_name_"(-p,q))"_lf
+	. . . set trigset=trigprefix_"set -"_z_"delim="_$zwrite(sep)_" -pieces="_newpnum_" -xecute=<<"_lf_" for i=1:1:$zlength($ztupdate,"","") set p=$piece($ztupdate,"","",i),mp=-p do"_lf_" . set q=$"_z_"piece($ztoldval,$ztdelim,p) if $data("_name_"(p,q,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(mp,q),-1) ^(q)"_lf_" . set q=$"_z_"piece($ztvalue,$ztdelim,p) if '$data("_name_"(p,q,"_sub_")) set:$increment("_name_"(mp,q)) ^("_lastsub_")="""""_lf
 	. . . set trigdel=trigprefix_"kill -xecute=<<"_lf_" set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1,q=$"_z_"piece($ztoldval,p,j) if $data("_name_"(j,q,"_sub_")) kill ^("_lastsub_") zkill:1>$increment("_name_"(-j,q),-1) ^(q)"_lf
-	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1,q=$"_z_"piece($ztoldval,p,j) if $data("_name_"(j,q,"_sub_")) zkill ^("_lastsub_") zkill:1>$increment("_name_"(-j,q),-1) ^(q)"_lf
+	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1,q=$"_z_"piece($ztoldval,p,j) if $data("_name_"(j,q,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment(NAME(-j,q),-1) ^(q)"_lf
 	. . else  if 2=stat do
-	. . .
+	. . . set trigset=trigprefix_"set -"_z_"delim="_$zwrite(sep)_" -pieces="_newpnum_" -xecute=<<"_lf_" for i=1:1:$zlength($ztupdate,"","") set p=$piece($ztupdate,"","",i),mp=-p do"_lf_" . set q=$"_z_"piece($ztoldval,$ztdelim,p) if $data("_name_"(p,q,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"(mp,q),-1) zkill ^(q) zkill:1>$increment("_name_"(mp),-1) ^(mp)"_lf_" . set q=$"_z_"piece($ztvalue,$ztdelim,p) if '$data("_name_"(p,q,"_sub_")) set ^("_lastsub_")="""" if $increment("_name_"(11)),(1=$increment("_name_"(mp,q))),$increment("_name_"(mp))"_lf
+	. . . set trigdel=trigprefix_"kill -xecute=<<"_lf_" set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1,mj=-j,q=$"_z_"piece($ztoldval,p,j) if $data("_name_"(j,q,"_sub_")) kill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"(mj,q),-1) zkill ^(q) zkill:1>$increment("_name_"(mj),-1) ^(mj)"_lf
+	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1,mj=-j,q=$"_z_"piece($ztoldval,p,j) if $data("_name_"(j,q,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"(mj,q),-1) zkill ^(q) if 1>$increment("_name_"(mj),-1) zkill ^(mj)"_lf
 	. . else  set $ecode=",U241,"
 	. . for i=6:1:8 if $zlength($get(@name@(i)))&$ztrigger("item","-"_$zextract(^(i),2,$zlength(^(i))))
 	. . set @name=gbl,@name@(4)=newpstr,^(5)=z,^(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix
@@ -445,23 +461,35 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. . do xrefdata(name,gbl,nsubs,.locxsub,sep,newpstr,zpiece,omitfix,.constlist,stat)
 	. . ; Update medatadata
 	. . tstart ()
-	. . set @name=gbl,@name@(0)=$zut_" "_$job_" "_$zyrelease,^(1)=nsubs,^(2)=sep
+	. . set @name=gbl,@name@(0)=$zut_" "_$job_" "_$zyrelease,^(1)=nsubs,^(2)=sep,^(10)=stat
 	. . set oldpstr=$get(^(3),"#")
 	. . for i=2:1:$zlength(newpstr) set $zextract(oldpstr,i)=$select(+$zextract(newpstr,i):1,1:+$zextract(oldpstr,i))
 	. . set ^(3)=oldpstr
 	. . tcommit
-	else  do:'$data(@name@(0))		; No piece sep; xref entire node
-	. set trigset=trigprefix_"set -xecute=""zkill:$data("_name_"(0,$ztoldval,"_sub_"))#10 ^("_lastsub_") set:'$data("_name_"(0,$ztvalue,"_sub_")) ^("_lastsub_")="""""""""""_trigsuffix
-	. set trigdel=trigprefix_"kill -xecute=""kill:$data("_name_"(0,$ztoldval,"_sub_")) ^("_lastsub_")"""_trigsuffix
-	. set trigdelx=trigprefix_"zkill -xecute=""zkill:$data("_name_"(0,$ztoldval,"_sub_"))#10 ^("_lastsub_")"""_trigsuffix
+	else  do			; No piece sep; xref entire node
 	. tstart ()
-	. if $ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)
-	. set @name=gbl,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix
+	. do:'$data(@name@(0))
+	. . for i=6:1:8 if $data(@name@(i))#10 set tmp=^(i) if $ztrigger("item","-"_$zextract(tmp,2,$zlength(tmp)))
+	. . if 'stat do
+	. . . set trigset=trigprefix_"set -xecute=""zkill:$data("_name_"(0,$ztoldval,"_sub_"))#10 ^("_lastsub_") set:'$data("_name_"(0,$ztvalue,"_sub_")) ^("_lastsub_")="""""""""""
+	. . . set trigdel=trigprefix_"kill -xecute=""kill:$data("_name_"(0,$ztoldval,"_sub_")) ^("_lastsub_")"""
+	. . . set trigdelx=trigprefix_"zkill -xecute=""zkill:$data("_name_"(0,$ztoldval,"_sub_"))#10 ^("_lastsub_")"""
+	. . else  if 1=stat do
+	. . . set trigset=trigprefix_"set -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"("""",$ztoldval),-1) ^($ztoldval)"_lf_" if '$data("_name_"(0,$ztvalue,"_sub_")) set ^("_lastsub_")="""" if $increment("_name_"("""",$ztvalue))"_lf
+	. . . set trigdel=trigprefix_"kill -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval"_sub_")) kill ^("_lastsub_") zkill:1>$increment("_name_"("""",$ztoldval),-1) ^($ztoldval)"_lf
+	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"("""",$ztoldval),-1) ^($ztoldval)"_lf
+	. . else  if 2=stat do
+	. . . set trigset=trigprefix_"set -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"("""",$ztoldval),-1) zkill ^($ztoldval) zkill:1>$increment("_name_"(""""),-1) ^("""")"_lf_" if '$data("_name_"(0,$ztvalue,"_sub_")) set ^("_lastsub_")="""" if $increment("_name_"(11)),(1=$increment("_name_"("""",$ztvalue))),$increment("_name_"(""""))"_lf
+	. . . set trigdel=trigprefix_"kill -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_")) kill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"("""",$ztoldval),-1) zkill ^($ztoldval) zkill:1>$increment("_name_"(""""),-1) ^("""")"_lf
+	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"("""",$ztoldval),-1) zkill ^($ztoldval) if 1>$increment("_name_"(""""),-1) zkill ^("""")"_lf
+	. . else  set $ecode=",U241,"
+	. . if $ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)
+	. . set @name=gbl,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix
 	. tcommit
 	. do xrefdata(name,gbl,nsubs,.locxsub,"","","",omitfix,.constlist,stat)
 	. ; Add metadata to indicate completion
 	. tstart ()
-	. set @name@(0)=$zut_" "_$job_" "_$zyrelease,^(1)=nsubs,(^(2),^(3),^(4),^(5))=""
+	. set @name@(0)=$zut_" "_$job_" "_$zyrelease,^(1)=nsubs,(^(2),^(3),^(4),^(5))="",^(10)=stat
 	. tcommit
 	; Release locks that block UNXREFDATA()
 	lock -(^%ydbAIMD($job),^%ydbAIMD(gbl,$job),@name@($job))
@@ -503,9 +531,10 @@ chktrgspec:(locxsub,n)
 
 ; Output metadata for a specific xref variable.
 lsxrefdata:(lvn,xref)
-	new i
+	new s
 	set lvn(xref)=@xref
-	for i=0:1:9 set lvn(xref,i)=@xref@(i)
+	set s=""
+	for  set:$data(@xref@(s))#10 lvn(xref,s)=^(s) set s=$order(^(s)) quit:""=s
 	quit
 
 ; This label is the inverse of the unravel() function. ravel() takes a bit-map
@@ -631,16 +660,15 @@ xrefdata:(name,gblref,nsubs,locxsub,sep,pstr,zpiece,omitfix,constlist,stat)
 	. . . for i=2:1:k do:+$zextract(pstr,i)
 	. . . . set j=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,j),1:$piece(nodeval,sep,j))
 	. . . . set xref=name_"("_j_","_$zwrite(pieceval)_sublist_")"
-	. . . . if '$data(@xref)#10 set ^(lastsub)="" do:stat
-	. . . . . if $increment(@name@(-j,pieceval))
+	. . . . if '$data(@xref)#10 set ^(lastsub)="" if stat,$increment(@name@(-j,pieceval)),(2=stat),$increment(@name@(11)),1=@name@(-j,pieceval),$increment(@name@(-j))
 	. . else  do
 	. . . set xref=name_"(0,"_$zwrite(nodeval)_sublist_")"
-	. . . if '$data(@xref)#10 set ^(lastsub)="" do:stat
-	. . . . if $increment(@name@("",nodeval))
+	. . . if '$data(@xref)#10 set ^(lastsub)="" if stat,$increment(@name@("",nodeval)),(2=stat),$increment(@name@(11)),1=@name@("",nodeval),$increment(@name@(""))
 	. tcommit
 	quit
 
 ;	Error message texts
+U240	;"-F-CANTADDSTAT stat="_stat_" and "_name_"(10)="_+$get(@name@(10))_" - adding statistics not yet supported"
 U241	;"-F-INVSTAT """_stat_""" is invalid stat; must be 0, 1, or 2"
 U242	;"-F-OUTOFDESIGN """_name_""" already used to xref """_@name_""" cannot reuse for """_gbl_""""
 U243	;"-F-ALREADYXREF """_gbl_""" is already a cross reference global variable"
