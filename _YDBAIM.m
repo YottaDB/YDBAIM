@@ -257,7 +257,7 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ; Create triggers to maintain cross references and compute cross references
 ; for a global variable at a specified subscript level. Concurrent execution OK.
 ;
-; Usage: $$XREFDATA^%YDBAIM(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix)
+; Usage: $$XREFDATA^%YDBAIM(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 ; Parameters:
 ; - gbl is the global variable name, e.g., "^ABC"
 ; - xsub is a specification of the subscripts to be cross referenced. There are
@@ -298,6 +298,8 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ;   because the code to traverse the application global using the cross
 ;   reference will include those known fixed subscripts when making the access.
 ;   If not specified, omitfix defaults to 1.
+; - stat if 1 or 2 says the metadata should include statistics, as described
+;   above under "Statistics".
 ;
 ; Return value: name of global variable with cross reference e.g.,
 ; "^%ydbAIMDZzUmfwxt80MHPiWLZNtq4". The subscripts of cross reference variables
@@ -350,6 +352,9 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ; - (8) ZKILL trigger for this cross reference
 ; - (9) 1 means that omitting fixed subscripts was requested, whether or not
 ;    any subscripts were actually omitted
+; - (10) if 1 or 2 means that statistics are maintained, as specified by the
+;    stat parameter
+; - (11) if stat is 2, this contains the total number of nodes being tracked
 ; Since the cross references themselves must have at least two subscripts, any
 ; node with one subscript is metadata for the cross reference.
 ;
@@ -614,8 +619,9 @@ xrefdata:(name,gblref,nsubs,locxsub,sep,pstr,zpiece,omitfix,constlist,stat)
 	; as to whether it should be cross referenced.
 	set sublvl=$order(locxsub(""),-1)-nsubs+1
 	if nsubs>1 do
-	. if "*"=locxsub(sublvl) for  set thissub=$order(@gblref@(thissub)) quit:""=thissub  do:$data(@gblref@(thissub))\10 xrefdata(name,$select($qlength(gblref):$zextract(gblref,1,$zlength(gblref)-1)_",",1:gblref_"(")_$zwrite(thissub)_")",nsubs-1,.locxsub,sep,pstr,zpiece,omitfix,.constlist,stat)
-	. else  for  set thissub=$order(@gblref@(thissub)) quit:""=thissub  do
+	. if "*"=locxsub(sublvl) for  do:$data(@gblref@(thissub))\10 xrefdata(name,$select($qlength(gblref):$zextract(gblref,1,$zlength(gblref)-1)_",",1:gblref_"(")_$zwrite(thissub)_")",nsubs-1,.locxsub,sep,pstr,zpiece,omitfix,.constlist,stat) set thissub=$order(@gblref@(thissub)) quit:""=thissub
+	. ; do with postconditional to cross reference "" subscripts.
+	. else  for  do:$data(@gblref@(thissub))\10  set thissub=$order(@gblref@(thissub)) quit:""=thissub
 	. . set thissubz=$zwrite(thissub)
 	. . if zpiece do
 	. . . for i=1:1:$zlength(locxsub(sublvl),";") do
@@ -630,7 +636,8 @@ xrefdata:(name,gblref,nsubs,locxsub,sep,pstr,zpiece,omitfix,constlist,stat)
 	. . do:thissubz=piece1!(thissubz=piece2!(thissubz]]piece1&(piece2]]thissubz)))&($data(@gblref@(thissub))\10) xrefdata(name,$select($qlength(gblref):$zextract(gblref,1,$zlength(gblref)-1)_",",1:gblref_"(")_thissubz_")",nsubs-1,.locxsub,sep,pstr,zpiece,omitfix,.constlist,stat)
 	; if nsubs=1 (this else clause) then cross reference those
 	; subscripts that the specification says to cross reference.
-	else  for  set thissub=$order(@gblref@(thissub)) quit:""=thissub  do
+	; do with postconditional to cross reference "" subscripts.
+	else  for  do:$data(@gblref@(thissub))#10  set thissub=$order(@gblref@(thissub)) quit:""=thissub
 	. set thissubz=$zwrite(thissub)
 	. tstart ()
 	. set xflag=0
