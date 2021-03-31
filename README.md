@@ -12,13 +12,12 @@ downloading this repository, you can install as follows:
 
 ```
 cd <project directory>
-mkdir build && cd build
-cmake -DM_UTF8_MODE=0 .. && make && sudo make install && echo && make clean && cmake -DM_UTF8_MODE=1 .. && make && sudo make install
+sudo ./install.sh
 ```
 
 Here is some sample output:
 ```
-root@d4b472e59995:/ydbaim/build# cmake -DM_UTF8_MODE=0 .. && make && sudo make install && echo && make clean && cmake -DM_UTF8_MODE=1 .. && make && sudo make install
+# sudo ./install.sh
 -- The C compiler identification is GNU 9.3.0
 -- Check for working C compiler: /usr/bin/cc
 -- Check for working C compiler: /usr/bin/cc -- works
@@ -26,12 +25,12 @@ root@d4b472e59995:/ydbaim/build# cmake -DM_UTF8_MODE=0 .. && make && sudo make i
 -- Detecting C compiler ABI info - done
 -- Detecting C compile features
 -- Detecting C compile features - done
--- Found YOTTADB: /opt/yottadb/current/libyottadb.so
--- Install Location: /opt/yottadb/current/plugin/o
+-- Found YOTTADB: /usr/library/V989_R131/dbg/libyottadb.so
+-- Install Location: /usr/library/V989_R131/dbg/plugin/o
 -- Build type: Release
 -- Configuring done
 -- Generating done
--- Build files have been written to: /ydbaim/build
+-- Build files have been written to: /home/sam/work/gitlab/YDBAIM/build
 Scanning dependencies of target _ydbaim
 [ 33%] Building M object CMakeFiles/_ydbaim.dir/_YDBAIM.m.o
 [ 66%] Building M object CMakeFiles/_ydbaim.dir/_YDBAIMTEST.m.o
@@ -40,13 +39,22 @@ Scanning dependencies of target _ydbaim
 [100%] Built target _ydbaim
 Install the project...
 -- Install configuration: "Release"
--- Installing: /opt/yottadb/current/plugin/o/_ydbaim.so
-
--- Install Location: /opt/yottadb/current/plugin/o/utf8
+-- Installing: /usr/library/V989_R131/dbg/plugin/o/_ydbaim.so
+-- The C compiler identification is GNU 9.3.0
+-- Setting locale to C.UTF-8
+-- Check for working C compiler: /usr/bin/cc
+-- Check for working C compiler: /usr/bin/cc -- works
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Found YOTTADB: /usr/library/V989_R131/dbg/libyottadb.so
+-- Install Location: /usr/library/V989_R131/dbg/plugin/o/utf8
 -- Build type: Release
 -- Configuring done
 -- Generating done
--- Build files have been written to: /ydbaim/build
+-- Build files have been written to: /home/sam/work/gitlab/YDBAIM/build
+Scanning dependencies of target _ydbaim
 [ 33%] Building M object CMakeFiles/_ydbaim.dir/_YDBAIM.m.o
 [ 66%] Building M object CMakeFiles/_ydbaim.dir/_YDBAIMTEST.m.o
 [100%] Linking M shared library _ydbaim.so
@@ -54,5 +62,5 @@ Install the project...
 [100%] Built target _ydbaim
 Install the project...
 -- Install configuration: "Release"
--- Installing: /opt/yottadb/current/plugin/o/utf8/_ydbaim.so
+-- Installing: /usr/library/V989_R131/dbg/plugin/o/utf8/_ydbaim.so
 ```
