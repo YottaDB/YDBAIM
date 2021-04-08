@@ -11,14 +11,20 @@
 #                               #
 #################################################################
 set -e
+# Centos vs ubuntu have different commands
+if [ -x "$(command -v cmake3)" ]; then
+  cmakeCommand="cmake3"
+else
+  cmakeCommand="cmake"
+fi
 cd "$(dirname "$(readlink -f "$0")")"
 rm -rf build
 mkdir build && cd build
-cmake -DM_UTF8_MODE=0 .. 
+$cmakeCommand -DM_UTF8_MODE=0 ..
 make && make install
 cd ..
 rm -rf build
 mkdir build && cd build
-cmake -DM_UTF8_MODE=1 ..
+$cmakeCommand -DM_UTF8_MODE=1 ..
 make && make install
 cd ..
