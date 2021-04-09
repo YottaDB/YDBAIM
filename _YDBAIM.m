@@ -34,9 +34,9 @@
 ;   - A call such as $$XREFDATA^%YDBAIM("^USPresidents",2,"|",3) would cross
 ;     reference the third piece of node values (last names) and with the cross
 ;     reference global having values such as
-;     ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(3,"Adams",1797,1801)="",
-;     ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(3,"Adams",1835,1839)="", and many others
-;     including ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(3,"Obama",2009,2017)="".
+;     ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(3,"Adams",1797,1801)="",
+;     ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(3,"Adams",1835,1839)="", and many others
+;     including ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(3,"Obama",2009,2017)="".
 ;
 ;   - Suppose only Presidents who left office in the 19th century should be
 ;     cross referenced. A local variable node such as cent19(2)="1801:1899" can
@@ -60,12 +60,12 @@
 ;   To cross reference all three names, a call such as
 ;   $$XREFDATA^%YDBAIM("^USPresidents",2,"|","1:3") would generate the following
 ;   cross references for the two President Adams:
-;     ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(1,"John",1797,1801)=""
-;     ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(1,"John",1835,1839)=""
-;     ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(2,"",1797,1801)=""
-;     ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(2,"Quincy",1835,1839)=""
-;     ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(3,"Adams",1797,1801)=""
-;     ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(3,"Adams",1835,1839)=""
+;     ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(1,"John",1797,1801)=""
+;     ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(1,"John",1835,1839)=""
+;     ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(2,"",1797,1801)=""
+;     ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(2,"Quincy",1835,1839)=""
+;     ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(3,"Adams",1797,1801)=""
+;     ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(3,"Adams",1835,1839)=""
 ;
 ;   Since the first President Adams record does not include a middle name, the
 ;   corresponding record has an empty string ("") subscript. Any region to which
@@ -96,11 +96,11 @@
 ;   The optional parameter stat can be used to instruct AIM that the application
 ;   wishes to compute and maintain statistics. For example, a call to
 ;   $$XREFDATA^%YDBAIM("^USPresidents",2,"|","1:3",,,,2) would compute not only
-;   the node ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(1,"John",1825,1829)="" for John
-;   Quincy Adams, but also the node ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(1,"John")=4
+;   the node ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(1,"John",1825,1829)="" for John
+;   Quincy Adams, but also the node ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(1,"John")=4
 ;   indicating that "John" appears 4 times as the first piece, and also the node
-;   ^%ydbAIMDWn59H4eXfRmii1N5YvuC03(11)=45 indicating that the metadata for
-;   ^USPresidents has 45 global variable nodes (as of today, that sample
+;   ^%ydbAIMDf1x7fSMuGT4HtAEXAx0g65(11)=135 indicating that the metadata for
+;   ^USPresidents has 135 (45*3) global variable nodes (as of today, that sample
 ;   datatset cannot include Joe Biden as he is still in office, and the
 ;   subscripts of ^USPresidents in the example are the years the President took
 ;   and relinquished the office).
@@ -370,7 +370,7 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ; After reviewing and/or editing the triggers, reverse the above.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	if ""=$etrap!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
-	new cond1,cond2,cond3,i,io,j,lastsub,lf,locxsub,modflag,name,newpnum,newpstr,nsubs,constlist,omitflag,oldpstr,stderr,sub,tmp,trigdel,trigdelx,trigprefix,trigset,trigsub,z,ztout
+	new asciisep,cond1,cond2,cond3,i,io,j,lastsub,lf,locxsub,modflag,name,newpnum,newpstr,nsubs,constlist,omitflag,oldpstr,stderr,sub,tmp,trigdel,trigdelx,trigprefix,trigset,trigsub,z,zlsep,ztout
 	set io=$io
 	set stderr="/proc/self/fd/2" open stderr
 	set lf=$char(10)
@@ -408,8 +408,10 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	; Remove trailing commas from building subscript lists
 	set $zextract(sub,$zlength(sub))=""
 	set $zextract(trigsub,$zlength(trigsub))=""
-	set sep=$get(sep),tmp=$zlength(sep),zpiece=+$get(zpiece),z=$select(zpiece:"z",1:"")
-	set name="^%ydbAIMD"_$zysuffix(gbl_name_$select(tmp:sep_$select(zpiece:1,1:$zchset),1:"")_$select(omitflag:1,1:""))
+	set sep=$get(sep),zlsep=$zlength(sep),zpiece=+$get(zpiece),z=$select(zpiece:"z",1:"")
+	set asciisep=1
+	for i=1:1:zlsep set:$zascii($zextract(sep,i))>127 asciisep=0 quit:'asciisep
+	set name="^%ydbAIMD"_$zysuffix(gbl_name_$select(zlsep:sep_$select(asciisep:0,zpiece:1,1:$zchset),1:"")_$select(omitflag:1,1:""))
 	quit:+$get(nmonly) name				; Caller only wants name
 	if $data(@name)#10 set:gbl'=@name $ecode=",U242,"
 	set ztout=$view("ztrigger_output")
@@ -455,7 +457,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. . else  set $ecode=",U241,"
 	. . for i=6:1:8 if $zlength($get(@name@(i)))&$ztrigger("item","-"_$zextract(^(i),2,$zlength(^(i))))
 	. . set @name=gbl,@name@(4)=newpstr,^(5)=z,^(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix
-	. . if $ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)
+	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. tcommit
 	. ; Cross reference existing nodes, if needed. Note that even if this
 	. ; process set triggers, another concurrent process might have
@@ -488,7 +490,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. . . set trigdel=trigprefix_"kill -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_")) kill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"("""",$ztoldval),-1) zkill ^($ztoldval) zkill:1>$increment("_name_"(""""),-1) ^("""")"_lf
 	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"("""",$ztoldval),-1) zkill ^($ztoldval) if 1>$increment("_name_"(""""),-1) zkill ^("""")"_lf
 	. . else  set $ecode=",U241,"
-	. . if $ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)
+	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode="U239,"
 	. . set @name=gbl,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix
 	. tcommit
 	. do xrefdata(name,gbl,nsubs,.locxsub,"","","",omitfix,.constlist,stat)
@@ -679,6 +681,7 @@ xrefdata:(name,gblref,nsubs,locxsub,sep,pstr,zpiece,omitfix,constlist,stat)
 	quit
 
 ;	Error message texts
+U239	;"-F-SETZTRIGGERFAIL Out of design condition - setting $ZTRIGGER() failed"
 U240	;"-F-CANTADDSTAT stat="_stat_" and "_name_"(10)="_+$get(@name@(10))_" - adding statistics not yet supported"
 U241	;"-F-INVSTAT """_stat_""" is invalid stat; must be 0, 1, or 2"
 U242	;"-F-OUTOFDESIGN """_name_""" already used to xref """_@name_""" cannot reuse for """_gbl_""""
