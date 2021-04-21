@@ -28,7 +28,7 @@ endif()
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 # Sources
-set(source_files _YDBAIM.m _YDBAIMTEST.m)
+set(source_files _YDBAIM.m)
 
 # .so file for plugin
 add_library(_ydbaim SHARED ${source_files})

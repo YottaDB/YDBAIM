@@ -1,0 +1,54 @@
+#!/usr/bin/env tcsh
+#
+#################################################################
+#                                                               #
+# Copyright (c) 2020-2021 YottaDB LLC and/or its subsidiaries.  #
+# All rights reserved.                                          #
+#                                                               #
+#       This source code contains the intellectual property     #
+#       of its copyright holder(s), and is made available       #
+#       under a license.  If you do not know the terms of       #
+#       the license, please stop and do not read further.       #
+#                                                               #
+#################################################################
+#
+# -----------------------------------------------------------------
+cd `git rev-parse --show-toplevel`
+set filelist = `git diff --name-only --cached HEAD`
+set fixlist = ""
+set curyear = `date +%Y`
+set skip = 0
+@ exitstatus = 0
+# -----------------------------------------------------------------
+# 1) Removes trailing white space
+# -----------------------------------------------------------------
+set filelist = `git diff --name-only --cached HEAD`
+foreach file ($filelist)
+
+	if (! -e $file) then
+		# If file is being deleted as part of this commit, skip whitespace conversion on it
+		continue
+	endif
+
+	file --mime $file | grep "binary" > /dev/null
+	if ($status == 0) then
+		set skip = 1
+		break
+	endif
+	if ($skip) then
+		continue
+	endif
+
+	grep -q '[ 	][ 	]*$' $file
+	if ! ($status) then
+		echo $file
+		sed -i 's/[ 	][ 	]*$//' $file
+		git add $file
+		if ($status) then
+			@ exitstatus = 1
+			echo "GITADD-E-FAIL : Command failed after removing trailing whitespace : git add $file"
+		endif
+	endif
+end
+
+exit $exitstatus

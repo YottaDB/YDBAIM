@@ -9,29 +9,40 @@
 	;	the license, please stop and do not read further.	;
 	;								;
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-ydb674	; test for YDB#674 (https://gitlab.com/YottaDB/DB/YDB/-/issues/674)
-	new stderr,xrefgbl,x
-	set stderr="/proc/self/fd/2"
-	open stderr
+	;
+%YDBAIMSAN	; Sanity Tester for %YDBAIM
+	do en^%ut($t(+0),3)
+	quit
+	;
+assert:(boolexpr,msg) ; [private] shortcut to tf^%ut
+	do tf^%ut(boolexpr,$get(msg))
+	quit
+	;
+tmain	; @TEST Main Sanity YDBAIM tester
+	write !
 	do init
 	do simappstart(12)
 	do xrefprocrun(4)
-	set x="" for  set x=$order(^%ydb674test("xref",x)) quit:""=x  do
-	. if $data(xrefgbl) write:xrefgbl'=^%ydb674test("xref",x) "xrefgbl=",xrefgbl,"; ^%ydb674test(""xref"",x)=",^%ydb674test("xref",x),!
-	. else  set xrefgbl=^%ydb674test("xref",x)
-	hang 8
+	; Verify the names of all the cross-references
+	new xrefgbl
+	new eachxref set eachxref=""
+	for  set eachxref=$order(^%ydb674test("xref","aimxref",eachxref)) quit:""=eachxref  do
+	. if $data(xrefgbl) do assert(xrefgbl=^%ydb674test("xref","aimxref",eachxref)) if 1
+	. else  set xrefgbl=^%ydb674test("xref","aimxref",eachxref)
+	; Let the jobs create random data for one second
+	hang 1
+	; Stop application and check xref
 	do simappstop
 	do xrefgblchk
 	quit
-
-init	new gbl,io
-	set io=$io
+	;
+	;
+init	new gbl,io,%
 	view "jobpid":1,"ztrigger_output":0
-	k ^%ydb674test,^ABC
-	set gbl="^%ydbAIMD" for  kill:$data(@gbl) @gbl set gbl=$order(@gbl) quit:""=gbl
-	use stderr
+	kill ^%ydb674test,^ABC
+	set (gbl,%)="^%ydbAIMD" for  set gbl=$order(@gbl) quit:gbl'[%  kill @gbl
 	if $ztrigger("item","-*")
-	use io
+	view "ztrigger_output":1
 	quit
 
 	; The simapp label simulates an application that randomly sets, modifies, and deletes nodes of global variable, ^ABC. The intent is
@@ -82,7 +93,7 @@ simappstart(nproc)
 	set ^%ydb674test("simapp","start")=nproc			; number of simapp processes
 	write "Starting ",nproc," simulated application processes",!
 	lock +^%ydb674test("simapp")					; get lock that tells simapp processes to run
-	for i=1:1:nproc job simapp
+	for i=1:1:nproc job simapp set ^%ydb674test("simapp","jobs",$zjob)=""
 	for  quit:'^%ydb674test("simapp","start")  hang .001		; zero ^%ydb674test("simapp","start") means all simapp processes are up
 	quit
 
@@ -90,31 +101,32 @@ simappstart(nproc)
 simappstop
 	lock -^%ydb674test("simapp")					; releasing lock instructs simapp processes to stop
 	write "Stopping simulated application",!
+	; Wait for all children to die
+	new zjob set zjob=""
+	for  set zjob=$order(^%ydb674test("simapp","jobs",zjob)) quit:'zjob  do
+	. for  quit:'$zgetjpi(zjob,"isprocalive")  hang .001
 	quit
 
 	; Check complete nodes and cross references for Consistency - a cross reference for each node, and a node for each cross reference
 xrefgblchk
 	new flag,sub1,sub2,sub3,val
-	write "Checking that a node exists for each cross reference "
+	write "Checking that a node exists for each cross reference ",!
 	; Should check whether a $query() loop is faster than the following nested $order() loop
-	set flag=0,val="" for  set val=$order(@xrefgbl@(val)) quit:""=val  do
-	. set sub1="" for  set sub1=$order(@xrefgbl@(val,sub1)) quit:""=sub1  do
-	. . set sub2="" for  set sub2=$order(@xrefgbl@(val,sub1,sub2)) quit:""=sub2  do
-	. . . set sub3="" for  set sub3=$order(@xrefgbl@(val,sub1,sub2,sub3)) quit:""=sub3  do
+	set flag=0,val="" for  set val=$order(@xrefgbl@(0,val)) quit:""=val  do
+	. set sub1="" for  set sub1=$order(@xrefgbl@(0,val,sub1)) quit:""=sub1  do
+	. . set sub2="" for  set sub2=$order(@xrefgbl@(0,val,sub1,sub2)) quit:""=sub2  do
+	. . . set sub3="" for  set sub3=$order(@xrefgbl@(0,val,sub1,sub2,sub3)) quit:""=sub3  do
 	. . . . if '$data(^ABC(sub1,sub2,sub3))#10 write !,xrefgbl,"(",val,",",sub1,",",sub2,",",sub3,") exists but ^ABC node does not" set flag=1
 	. . . . else  if val'=^ABC(sub1,sub2,sub3) write !,"^ABC(",sub1,",",sub2,",",sub3,")=",^ABC(sub1,sub2,sub3)," but xref is ",val set flag=1
-	if flag write !,"FAIL",!
-	else  write "PASS",!
-	write "Checking that an xref exists for each global node "
+	do assert('flag)
+	write "Checking that an xref exists for each global node ",!
 	set flag=0,sub1=""  for  set sub1=$order(^ABC(sub1)) quit:""=sub1  do:$data(^ABC(sub1))\10
 	. set sub2="" for  set sub2=$order(^ABC(sub1,sub2)) quit:""=sub2  do:$data(^ABC(sub1,sub2))\10
 	. . set sub3="" for  set sub3=$order(^ABC(sub1,sub2,sub3)) quit:""=sub3  do:$data(^ABC(sub1,sub2,sub3))#10
 	. . . set val=^ABC(sub1,sub2,sub3)
-	. . . if '$data(@xrefgbl@(val,sub1,sub2,sub3)) write !,"^ABC(",sub1,",",sub2,",",sub3,")=",val," has no xref" set flag=1
-	if flag write !,"FAIL",!
-	else  write "PASS",!
+	. . . if '$data(@xrefgbl@(0,val,sub1,sub2,sub3)) write !,"^ABC(",sub1,",",sub2,",",sub3,")=",val," has no xref" set flag=1
+	do assert('flag)
 	quit
-
 
 	; Run multiple parallel xref processes, to show parallel processes can concurrently cross reference
 xrefprocrun(nproc)
@@ -122,11 +134,15 @@ xrefprocrun(nproc)
 	set ^%ydb674test("xref","start")=nproc				; number of xref processes
 	lock ^%ydb674test("xref","start")
 	write "Starting ",nproc," concurrent xrefs",!
-	for i=1:1:nproc job xrefproc
+	for i=1:1:nproc job xrefproc set ^%ydb674test("xref","jobs",$zjob)=""
 	for  quit:'^%ydb674test("xref","start")  hang .001		; zero ^%ydb674test("xref","start") means all xref processes are up
 	kill ^%ydb674test("xref","start")
 	lock -^%ydb674test("xref","start")
 	lock +^%ydb674test("xref","stop")
+	; Make sure all xref jobs died off
+	new zjob set zjob=""
+	for  set zjob=$order(^%ydb674test("xref","jobs",zjob)) quit:'zjob  do
+	. for  quit:'$zgetjpi(zjob,"isprocalive")  hang .001
 	write "Cross reference processes complete",!
 	quit
 
@@ -135,7 +151,7 @@ xrefproc
 	if $increment(^%ydb674test("xref","start"),-1)
 	lock +^%ydb674test("xref","start",$job)				; Gate to ensure all xref processes are up and running
 	lock -^%ydb674test("xref","start",$job)
-	set ^%ydb674test("xref",$job)=$$XREFDATA^%YDBAIM("^ABC",3)
+	set ^%ydb674test("xref","aimxref",$job)=$$XREFDATA^%YDBAIM("^ABC",3)
 	lock -^%ydb674test("xref","stop",$job)
 	quit
 

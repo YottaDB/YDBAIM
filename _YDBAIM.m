@@ -221,7 +221,7 @@ LSXREFDATA(lvn,gbl)
 ;   of $PIECE(); this is part of the trigger signature.
 ; - omitfix exists only to allow the parameters of UNXREFDATA() to match those
 ;   of XREFDATA() and is ignored.
-; - stat exists only to allow the parameters of UNXREFDATA() to match 
+; - stat exists only to allow the parameters of UNXREFDATA() to match
 UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 	if ""=$etrap!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
 	new i,nsubs,xrefvar,ztout
@@ -316,12 +316,13 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ; process is in M mode or UTF-8 mode.  Cross references are in global variables
 ; such as ^%ydbAIMDZzUmfwxt80MHPiWLZNtq4, which are derived from a "trigger
 ; signature" derived from:
-; - the name of the global variable being cross referended
+; - the name of the global variable being cross referenced
 ; - the specification to match subscripts at each level of the global variable
 ; - if a piece separator is specified, then also:
 ;   - the piece separator
+;   - Whether a piece separator is ASCII or not (digit 0 if yes)
 ;   - if zpiece is specified, then the digit 1
-;   - else if zpiece is not specified, $zchset
+;   - if the separator is not ASCII and zpiece is not specified, $zchset
 ; The global variable name of the cross reference is derived from by prefixing
 ; "^%ydbAIMD" to a 128-bit MurMurHash (a non-cryptographic hash with excellent
 ; statistical properties) rendered into a 22-character alphanumeric string.

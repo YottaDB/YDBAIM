@@ -12,12 +12,12 @@ downloading this repository, you can install as follows:
 
 ```
 cd <project directory>
-sudo ./install.sh
+sudo -E ./install.sh
 ```
 
 Here is some sample output:
 ```
-# sudo ./install.sh
+# sudo -E ./install.sh
 -- The C compiler identification is GNU 9.3.0
 -- Check for working C compiler: /usr/bin/cc
 -- Check for working C compiler: /usr/bin/cc -- works
@@ -64,3 +64,14 @@ Install the project...
 -- Install configuration: "Release"
 -- Installing: /usr/library/V989_R131/dbg/plugin/o/utf8/_ydbaim.so
 ```
+
+## Contributing
+To contribute or help with further development, [fork the repository](https://docs.gitlab.com/ee/gitlab-basics/fork-project.html), clone your fork to a local copy and begin contributing!
+
+Please also set up the pre-commit script to automatically enforce some coding conventions. Creating a symbolic link to YDBOcto/pre-commit will be enough for the setup. Assuming you are in the top-level directory of your local copy, the following will work:
+
+```sh
+ln -s ../../pre-commit .git/hooks
+```
+
+Note that this script will require `tcsh`.
