@@ -13,7 +13,17 @@
 stages:
   - build
 
-gpgkey-verify:
+.make:
+  stage: build
+  artifacts:
+    paths:
+      - build/
+      - db/
+      - tests/
+    expire_in: 1 month
+    when: always
+
+commit-verify:
   image: ubuntu:20.04
   stage: build
   before_script:
@@ -23,3 +33,15 @@ gpgkey-verify:
     - wget https://gitlab.com/YottaDB/DB/YDB/-/raw/master/ci/commit_verify.sh
     - chmod +x commit_verify.sh
     - ./commit_verify.sh tests/needs_copyright.sh https://gitlab.com/YottaDB/Util/YDBAIM
+
+make-ubuntu:
+  image: yottadb/yottadb-base:latest-master
+  extends:
+    - .make
+  script:
+    - export DEBIAN_FRONTEND=noninteractive
+    - ln -fs /usr/share/zoneinfo/US/Eastern /etc/localtime
+    - apt-get update -qq
+    - apt-get install -y -qq build-essential cmake git curl
+    - ./install.sh
+    - ./tests/test.sh

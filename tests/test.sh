@@ -94,3 +94,14 @@ $ydb_dist/yottadb -r %YDBAIMSAN    | tee -a test_output.txt
 $ydb_dist/yottadb -r %YDBAIMTEST   | tee -a test_output.txt
 $ydb_dist/yottadb -r %YDBAIMSPEED  | tee -a test_output.txt
 popd
+
+set +e # grep will have status of 1 if no lines are found, and that will exit the script!
+grep -B1 -F '[FAIL]' $ydb_tmp/test_output.txt
+grep_status=$?
+set -e
+
+if [ "$grep_status" -eq 1 ]; then
+	exit 0
+else
+	exit 1
+fi
