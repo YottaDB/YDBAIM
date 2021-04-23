@@ -40,6 +40,7 @@ if [ "$1" = "clean" ]; then
 fi
 source `pkg-config --variable=prefix yottadb`/ydb_env_set
 
+
 # Remove files we created in prior test runs
 rm -f $ydb_tmp/*
 
@@ -48,6 +49,13 @@ cp $script_dir/munit-tests/*.m $ydb_dir/r/
 
 # Don't recreate database if it already exists... so that we can re-run faster
 if [ ! -f $ydb_dir/r/_ut.m ]; then
+	# Add null region for global ^null to test null subscripting
+	$ydb_dist/yottadb -r ^GDE <<END &> /dev/null
+add -segment NULLSEG -file="$ydb_dir/$ydb_rel/g/null.dat"
+add -region  NULLREG -null_subscripts=true -dyn=NULLSEG -autodb
+add -name    null* -region=NULLREG
+END
+
 	# Load test data.
 	# 5200 rows of VistA Data (50.6+VA GENERIC)
 	# A small VistA file (vista-mini.zwr)
