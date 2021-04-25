@@ -114,6 +114,7 @@
 err	; Error handler
 	new io,stderr,tmp1,tmp2
 	set io=$io
+	trollback:$data(tlevel) tlevel
 	set tmp1=$zpiece($ecode,",",2),tmp2=$text(@tmp1)
 	set:'$zlength(tmp2) tmp2=$text(U251)
 	set stderr="/proc/self/fd/2"
@@ -214,7 +215,8 @@ LSXREFDATA(lvn,gbl)
 ; - sep is the piece separator for values at that node; if unspecified or the
 ;   empty string, the cross reference signature is entire node values.
 ; - pnum exists to allow the parameters of UNXREFDATA() to match those of
-;   XREFDATA() and is ignored.
+;   XREFDATA() and is ignored. Note that it is not possible to remove the cross
+;   reference of one piece of a node.
 ; - nmonly exists to allow the parameters of UNXREFDATA() to match those of
 ;   XREFDATA() and is ignored.
 ; - zpiece, if 1 means that $ZPIECE() was used as the piece separator instead
@@ -371,7 +373,7 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ; After reviewing and/or editing the triggers, reverse the above.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	if ""=$etrap!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
-	new asciisep,cond1,cond2,cond3,i,io,j,lastsub,lf,locxsub,modflag,name,newpnum,newpstr,nsubs,constlist,omitflag,oldpstr,stderr,sub,tmp,trigdel,trigdelx,trigprefix,trigset,trigsub,z,zlsep,ztout
+	new asciisep,cond1,cond2,cond3,i,io,j,lastsub,lf,locxsub,modflag,name,newpnum,newpstr,nsubs,constlist,omitflag,oldpstr,stderr,sub,tlevel,tmp,trigdel,trigdelx,trigprefix,trigset,trigsub,z,zlsep,ztout
 	set io=$io
 	set stderr="/proc/self/fd/2" open stderr
 	set lf=$char(10)
@@ -428,14 +430,15 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	lock +(^%ydbAIMD($job),^%ydbAIMD(gbl,$job),@name@($job))
 	; Determine whether to xref pieces or entire node, and act accordingly
 	set stat=+$get(stat)
-	if $data(@name@(10))#10 do
-	. set tmp=^(10)
-	. set:stat>tmp $ecode=",U240,"
-	. set:stat<tmp stat=tmp
+	set tlevel=$tlevel
 	if $zlength(sep) do				; xref pieces
 	. set:'$zlength($get(pnum)) $ecode=",U250,"
 	. ; Make any trigger updates needed
 	. tstart ()
+	. do:$data(@name@(10))#10
+	. . set tmp=^(10)
+	. . set:stat>tmp $ecode=",U240,"
+	. . set:stat<tmp stat=tmp
 	. set oldpstr=$get(@name@(4),"#"),modflag=0
 	. set newpstr=$$unravel(pnum)
 	. for i=2:1:$zlength(newpstr) set:+$zextract(oldpstr,i)'=+$zextract(newpstr,i) ($zextract(newpstr,i),modflag)=1
@@ -457,7 +460,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1,mj=-j,q=$"_z_"piece($ztoldval,p,j) if $data("_name_"(j,q,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"(mj,q),-1) zkill ^(q) if 1>$increment("_name_"(mj),-1) zkill ^(mj)"_lf
 	. . else  set $ecode=",U241,"
 	. . for i=6:1:8 if $zlength($get(@name@(i)))&$ztrigger("item","-"_$zextract(^(i),2,$zlength(^(i))))
-	. . set @name=gbl,@name@(4)=newpstr,^(5)=z,^(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix
+	. . set @name=gbl,@name@(4)=newpstr,^(5)=z,^(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. tcommit
 	. ; Cross reference existing nodes, if needed. Note that even if this
@@ -466,17 +469,21 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. set oldpstr=$get(@name@(3),"#"),modflag=0
 	. for i=2:1:$zlength(newpstr) if +$zextract(newpstr,i)&'+$zextract(oldpstr,i) set modflag=1 quit
 	. do:modflag
-	. . do xrefdata(name,gbl,nsubs,.locxsub,sep,newpstr,zpiece,omitfix,.constlist,stat)
+	. . do xrefdata(name,gbl,nsubs,.locxsub,sep,newpstr,zpiece,omitfix,.constlist,stat,$$^%PEEKBYNAME("sgmnt_data.null_subs",$view("region",$qsubscript(gbl,0))))
 	. . ; Update medatadata
 	. . tstart ()
-	. . set @name=gbl,@name@(0)=$zut_" "_$job_" "_$zyrelease,^(1)=nsubs,^(2)=sep,^(10)=stat
+	. . set @name=gbl,@name@(0)=$zut_" "_$job_" "_$zyrelease,^(1)=nsubs,^(2)=sep
 	. . set oldpstr=$get(^(3),"#")
 	. . for i=2:1:$zlength(newpstr) set $zextract(oldpstr,i)=$select(+$zextract(newpstr,i):1,1:+$zextract(oldpstr,i))
 	. . set ^(3)=oldpstr
 	. . tcommit
 	else  do			; No piece sep; xref entire node
 	. tstart ()
-	. do:'$data(@name@(0))
+	. do:$data(@name@(10))#10
+	. . set tmp=^(10)
+	. . set:stat>tmp $ecode=",U240,"
+	. . set:stat<tmp stat=tmp
+	. do:'$data(@name@(0))#10
 	. . for i=6:1:8 if $data(@name@(i))#10 set tmp=^(i) if $ztrigger("item","-"_$zextract(tmp,2,$zlength(tmp)))
 	. . if 'stat do
 	. . . set trigset=trigprefix_"set -xecute=""zkill:$data("_name_"(0,$ztoldval,"_sub_"))#10 ^("_lastsub_") set:'$data("_name_"(0,$ztvalue,"_sub_")) ^("_lastsub_")="""""""""""
@@ -492,12 +499,12 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"("""",$ztoldval),-1) zkill ^($ztoldval) if 1>$increment("_name_"(""""),-1) zkill ^("""")"_lf
 	. . else  set $ecode=",U241,"
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode="U239,"
-	. . set @name=gbl,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix
+	. . set @name=gbl,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
 	. tcommit
-	. do xrefdata(name,gbl,nsubs,.locxsub,"","","",omitfix,.constlist,stat)
+	. do xrefdata(name,gbl,nsubs,.locxsub,"","","",omitfix,.constlist,stat,$$^%PEEKBYNAME("sgmnt_data.null_subs",$view("region",$qsubscript(gbl,0))))
 	. ; Add metadata to indicate completion
 	. tstart ()
-	. set @name@(0)=$zut_" "_$job_" "_$zyrelease,^(1)=nsubs,(^(2),^(3),^(4),^(5))="",^(10)=stat
+	. set @name@(0)=$zut_" "_$job_" "_$zyrelease,^(1)=nsubs,(^(2),^(3),^(4),^(5))=""
 	. tcommit
 	; Release locks that block UNXREFDATA()
 	lock -(^%ydbAIMD($job),^%ydbAIMD(gbl,$job),@name@($job))
@@ -590,8 +597,9 @@ unravel:(pnum)
 ; variable.
 unxrefdata:(xrefgbl)
 	do:$data(@xrefgbl)
-	. new i,trig
+	. new i,tlevel,trig
 	. lock +@xrefgbl
+	. set tlevel=$tlevel
 	. tstart ()
 	. for i=6:1:8 set trig=@xrefgbl@(i) if $ztrigger("item","-"_$zextract(trig,2,$zlength(trig)))
 	. kill @xrefgbl
@@ -613,21 +621,22 @@ unxrefdata:(xrefgbl)
 ; a different ordering of tests for the various code paths. Fortunately, this
 ; code is executed only for the initial creation of a cross reference, and not
 ; in the triggers that maintain cross references as globals are updated.
-xrefdata:(name,gblref,nsubs,locxsub,sep,pstr,zpiece,omitfix,constlist,stat)
-	new flag,i,j,k,lastsub,nodelen1,nodeval,nullsub,piece1,piece2,pieceval,sublist,sublvl,thisrange,thissub,thissubz,tmp,xflag,xref
-	set nullsub=$$^%PEEKBYNAME("sgmnt_data.null_subs",$view("region",$qsubscript(gblref,0)))
+xrefdata:(name,gblref,nsubs,locxsub,sep,pstr,zpiece,omitfix,constlist,stat,nullsub)
+	new flag,gblrefind,i,j,k,lastsub,nameind,nodelen1,nodeval,nullflag,piece1,piece2,pieceval,sublist,sublvl,thisrange,thissub,thissubz,tmp,xflag,xref
 	set thissub=""
+	set gblrefind=$select(")"=$zextract(gblref,$zlength(gblref)):$zextract(gblref,1,$zlength(gblref)-1)_",",1:gblref_"(")_"thissub)"
 	; If nsubs>1 it means call the function recursively for the next
 	; subscript level. Where the specification is to not match all
 	; subscripts at this level, each subscript will need to be checked
 	; as to whether it should be cross referenced.
+	set nullflag=nullsub
 	set sublvl=$order(locxsub(""),-1)-nsubs+1
 	if nsubs>1 do
-	. if "*"=locxsub(sublvl) for  do:nullsub  set nullsub=1,thissub=$order(@gblref@(thissub)) quit:""=thissub
-	. . do:$data(@gblref@(thissub))\10 xrefdata(name,$select($qlength(gblref):$zextract(gblref,1,$zlength(gblref)-1)_",",1:gblref_"(")_$zwrite(thissub)_")",nsubs-1,.locxsub,sep,pstr,zpiece,omitfix,.constlist,stat)
+	. if "*"=locxsub(sublvl) for  do:nullflag  set nullflag=1,thissub=$order(@gblrefind) quit:""=thissub
+	. . do:$data(@gblrefind)\10 xrefdata(name,$select(")"=$zextract(gblref,$zlength(gblref)):$zextract(gblref,1,$zlength(gblref)-1)_",",1:gblref_"(")_$zwrite(thissub)_")",nsubs-1,.locxsub,sep,pstr,zpiece,omitfix,.constlist,stat,nullsub)
 	. ; do with postconditional to cross reference "" subscripts.
-	. else  for  do:nullsub  set nullsub=1,thissub=$order(@gblref@(thissub)) quit:""=thissub
-	. . do:$data(@gblref@(thissub))\10
+	. else  for  do:nullflag  set nullflag=1,thissub=$order(@gblrefind) quit:""=thissub
+	. . do:$data(@gblrefind)\10
 	. . . set thissubz=$zwrite(thissub)
 	. . . if zpiece do
 	. . . . for i=1:1:$zlength(locxsub(sublvl),";") do
@@ -639,12 +648,12 @@ xrefdata:(name,gblref,nsubs,locxsub,sep,pstr,zpiece,omitfix,constlist,stat)
 	. . . . . set thisrange=$piece(locxsub(sublvl),";",i)
 	. . . . . set piece1=$piece(thisrange,":",1)
 	. . . . . set piece2=$select(1=$length(thisrange,":"):piece1,1:$piece(thisrange,":",2))
-	. . . do:thissubz=piece1!(thissubz=piece2!(thissubz]]piece1&(piece2]]thissubz)))&($data(@gblref@(thissub))\10) xrefdata(name,$select($qlength(gblref):$zextract(gblref,1,$zlength(gblref)-1)_",",1:gblref_"(")_thissubz_")",nsubs-1,.locxsub,sep,pstr,zpiece,omitfix,.constlist,stat)
+	. . . do:thissubz=piece1!(thissubz=piece2!(thissubz]]piece1&(piece2]]thissubz)))&($data(@gblrefind)\10) xrefdata(name,$select(")"=$zextract(gblref,$zlength(gblref)):$zextract(gblref,1,$zlength(gblref)-1)_",",1:gblref_"(")_thissubz_")",nsubs-1,.locxsub,sep,pstr,zpiece,omitfix,.constlist,stat,nullsub)
 	; if nsubs=1 (this else clause) then cross reference those
 	; subscripts that the specification says to cross reference.
 	; do with postconditional to cross reference "" subscripts.
-	else  for  do:nullsub  set nullsub=1,thissub=$order(@gblref@(thissub)) quit:""=thissub
-	. do:$data(@gblref@(thissub))#10
+	else  for  do:nullflag  set nullflag=1,thissub=$order(@gblrefind) quit:""=thissub
+	. do:$data(@gblrefind)#10
 	. . set thissubz=$zwrite(thissub)
 	. . tstart ()
 	. . set xflag=0
@@ -662,8 +671,8 @@ xrefdata:(name,gblref,nsubs,locxsub,sep,pstr,zpiece,omitfix,constlist,stat)
 	. . . . . set piece1=$piece(thisrange,":",1)
 	. . . . . set piece2=$select(1=$length(thisrange,":"):piece1,1:$piece(thisrange,":",2))
 	. . . . . set:thissubz=piece1!(thissubz=piece2!(thissubz]]piece1&(piece2]]thissubz))) xflag=1
-	. . do:xflag&($data(@gblref@(thissub))#10)
-	. . . set nodeval=@gblref@(thissub),sublist=""
+	. . do:xflag&($data(@gblrefind)#10)
+	. . . set nodeval=@gblrefind,sublist=""
 	. . . for i=1:1:$qlength($reference) do:'omitflag!'$get(constlist(i),0)
 	. . . . set lastsub=$qsubscript($reference,i)
 	. . . . set sublist=sublist_","_$zwrite(lastsub)
@@ -671,13 +680,15 @@ xrefdata:(name,gblref,nsubs,locxsub,sep,pstr,zpiece,omitfix,constlist,stat)
 	. . . if $zlength(sep) do
 	. . . . set nodelen1=1+$select(zpiece:$zlength(nodeval,sep),1:$length(nodeval,sep))
 	. . . . set tmp=$zlength(pstr),k=$select(tmp>nodelen1:nodelen1,1:tmp)
+	. . . . set nameind=name_"(-j,pieceval)"
 	. . . . for i=2:1:k do:+$zextract(pstr,i)
 	. . . . . set j=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,j),1:$piece(nodeval,sep,j))
 	. . . . . set xref=name_"("_j_","_$zwrite(pieceval)_sublist_")"
-	. . . . . if '$data(@xref)#10 set ^(lastsub)="" if stat,$increment(@name@(-j,pieceval)),(2=stat),$increment(@name@(11)),1=@name@(-j,pieceval),$increment(@name@(-j))
+	. . . . . if '$data(@xref)#10 set ^(lastsub)="" if stat,$increment(@nameind),(2=stat),$increment(@name@(11)),1=@nameind,$increment(@name@(-j))
 	. . . else  do
 	. . . . set xref=name_"(0,"_$zwrite(nodeval)_sublist_")"
-	. . . . if '$data(@xref)#10 set ^(lastsub)="" if stat,$increment(@name@("",nodeval)),(2=stat),$increment(@name@(11)),1=@name@("",nodeval),$increment(@name@(""))
+	. . . . set nameind=name_"("""",nodeval)"
+	. . . . if '$data(@xref)#10 set ^(lastsub)="" if stat,$increment(@nameind),(2=stat),$increment(@name@(11)),1=@nameind,$increment(@name@(""))
 	. . tcommit
 	quit
 
