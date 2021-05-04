@@ -82,7 +82,7 @@ tinv2	; @TEST Invalid Input: Global including subscripts
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
 	if $$XREFDATA^%YDBAIM("^ORD(100.01)",2,"^",2)
-	do assert(ecodetest="U239")
+	do assert(ecodetest="U252")
 	quit
 	;
 tinv3	; @TEST Invalid Input: Bad Level
