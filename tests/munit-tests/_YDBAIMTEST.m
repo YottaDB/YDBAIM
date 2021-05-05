@@ -42,6 +42,13 @@ STARTUP	; Runs once to create test data
 	set ^null("B","")="test3"
 	set ^null("",4)="test4"
 	set ^null(5,"")="test5"
+	;
+	new numrows set numrows=1000
+	for i=1:4:numrows set ^names(i)="A|B"
+	for i=2:4:numrows set ^names(i)="C|B"
+	for i=3:4:numrows set ^names(i)="A|C"
+	for i=4:4:numrows set ^names(i)="B|A"
+	;
 	quit
 	;
 TEARDOWN ; Runs after each test
@@ -606,7 +613,83 @@ tcon3job2 ; [Job target] Concurrent unxref of different globals
 	do UNXREFDATA^%YDBAIM("^ORD",.subs,"^",2)
 	lock -racegate($J)
 	quit
-
+	;
+tcon4	; @TEST Concurrent xref of the same global
+	lock +racegate
+	job tcon4job1
+	new job1 set job1=$zjob
+	job tcon4job2
+	new job2 set job2=$zjob
+	; Now jobs can run
+	lock -racegate
+	; Wait till they are done.
+	for  quit:'$zgetjpi(job1,"ISPROCALIVE")  hang 0.001
+	for  quit:'$zgetjpi(job2,"ISPROCALIVE")  hang 0.001
+	;
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^names",1,"|",1,1)
+	;
+	do assert($data(@aimgbl@(3)),"AIM says we completed")
+	;
+	; verify that all nodes in names are in aimgbl and vice versa
+	; ^names -> aimgbl
+	new i,v set i=""
+	for  set i=$order(^names(i)) quit:i=""  do
+	. set v=$piece(^names(i),"|",1)
+	. do assert($data(@aimgbl@(1,v,i)),^names(i)_" does not match "_$name(@aimgbl@(1,v,i)))
+	;
+	; aimgbl -> ^names
+	kill i,v
+	set (i,v)=""
+	for  set v=$order(@aimgbl@(1,v)) quit:v=""  for  set i=$order(@aimgbl@(1,v,i)) quit:i=""  do
+	. do assert($piece(^names(i),"|",1)=v,$name(@aimgbl@(1,v,i))_" does not match "_$name(^names(i))_"="_^names(i))
+	;
+	; Verify stats work properly
+	; For stats, we should have these nodes (we have 500 A, 250 of each B and C; total of 1000):
+	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1)=3
+	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"A")=500
+	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"B")=250
+	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"C")=250
+	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(11)=1000
+	do assert(@aimgbl@(-1)=3)
+	do assert(@aimgbl@(-1,"A")=500)
+	do assert(@aimgbl@(-1,"B")=250)
+	do assert(@aimgbl@(-1,"C")=250)
+	do assert(@aimgbl@(11)=1000)
+	;
+	set ^names(1001)="A|Q"
+	set ^names(1002)="Z|F"
+	;
+	do assert(@aimgbl@(-1)=4)
+	do assert(@aimgbl@(-1,"A")=501)
+	do assert(@aimgbl@(-1,"B")=250)
+	do assert(@aimgbl@(-1,"C")=250)
+	do assert(@aimgbl@(-1,"Z")=1)
+	do assert(@aimgbl@(11)=1002)
+	;
+	; ^names(1)="A|B"
+	; ^names(2)="C|B"
+	kill ^names(1),^names(2)
+	;
+	do assert(@aimgbl@(-1)=4)
+	do assert(@aimgbl@(-1,"A")=500)
+	do assert(@aimgbl@(-1,"B")=250)
+	do assert(@aimgbl@(-1,"C")=249)
+	do assert(@aimgbl@(-1,"Z")=1)
+	do assert(@aimgbl@(11)=1000)
+	quit
+	;
+tcon4job1 ; [Job target] Concurrent xref of the same global
+	lock +racegate($J)
+	if $$XREFDATA^%YDBAIM("^names",1,"|",1,"","","",2)
+	lock -racegate($J)
+	quit
+	;
+tcon4job2 ; [Job target] Concurrent xref of the same global
+	lock +racegate($J)
+	if $$XREFDATA^%YDBAIM("^names",1,"|",1,"","","",2)
+	lock -racegate($J)
+	quit
+	;
 tnull	; @TEST Index data with null subscripts
 	; Index everything (no fixed subs)
 	new aimgbl1 set aimgbl1=$$XREFDATA^%YDBAIM("^null",2)

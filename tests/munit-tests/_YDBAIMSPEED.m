@@ -17,7 +17,7 @@
 STARTUP	; Runs once to create test data
 	;
 	kill ^names,^names2,^composite
-	set numrows=1000
+	new numrows set numrows=1000
 	for i=1:4:numrows set ^names(i)="A|B"
 	for i=2:4:numrows set ^names(i)="C|B"
 	for i=3:4:numrows set ^names(i)="A|C"
