@@ -138,10 +138,9 @@ tinv8	; @TEST Test interaction of separators vs pieces
 	do assert(ecodetest="U250")
 	;
 	; piece without separator
-	; Based on discussion in https://gitlab.com/YottaDB/Util/YDBAIM/-/issues/33, it's by design.
-	;new ecodetest
-	;if $$XREFDATA^%YDBAIM("^customers",1,"",2)
-	;do assert($get(ecodetest)'="","piece without separator does not error")
+	new ecodetest
+	if $$XREFDATA^%YDBAIM("^customers",1,"",2)
+	do assert(ecodetest="U238")
 	quit
 	;
 tinv9	; @TEST Request a higher level of stat after a lower level
@@ -499,15 +498,14 @@ trange2 ; @TEST String Subscript Range
 	kill ^sam
 	quit
 	;
-tcon1	; #TEST Concurrent do/undo
-	; This fails now. Tracked at: https://gitlab.com/YottaDB/Util/YDBAIM/-/issues/30
+tcon1	; @TEST Concurrent do/undo of the same global
 	; First lock prevents the "horses" from running until it is open
 	lock +racegate
 	job tcon1job
 	new job1 set job1=$zjob
 	job tcon1job
-	; Now jobs can run
 	new job2 set job2=$zjob
+	; Now jobs can run
 	lock -racegate
 	; Wait till they are done.
 	for  quit:'$zgetjpi(job1,"ISPROCALIVE")  hang 0.001
@@ -517,29 +515,98 @@ tcon1	; #TEST Concurrent do/undo
 	new files,file set file="tcon1jobet.*.jobexam"
 	for  set file=$zsearch(file)  quit:file=""  set files(file)=""
 	do assert('$data(files),"There should not be any error files; first error: "_$order(files("")))
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^names",1,"|",2,1) ; nmonly
+	do assert('$data(@aimgbl),"Shouldn't exist as the last operation should have been an unxref")
 	quit
 	;
-tcon1job ; [Job target] Concurrent xref/unxref
+tcon1job ; [Job target] Concurrent do/undo of the same global
 	new aimgbl
 	new $etrap set $etrap="goto tcon1jobet^"_$text(+0)
 	lock +racegate($J)
 	new i for i=1:1:10 do
 	. set aimgbl=$$XREFDATA^%YDBAIM("^names",1,"|",2)
-	. do assert($data(@aimgbl@(2,"A")))
 	. new % set %=$random(2)
 	. if % do
 	.. do UNXREFDATA^%YDBAIM("^names",1,"|",2)
-	.. do assert('$data(@aimgbl))
 	. else  do
 	.. do UNXREFDATA^%YDBAIM(aimgbl)
-	.. do assert('$data(@aimgbl))
 	lock -racegate($J)
 	quit
 	;
-tcon1jobet ; [Error trap]
+tcon1jobet ; [Error trap] Concurrent do/undo of the same global
 	if $zjobexam("tcon1jobet."_$job_".jobexam")
 	halt
 	;
+tcon2	; @TEST Concurrent xref of different globals
+	; First lock prevents the "horses" from running until it is open
+	lock +racegate
+	job tcon2job1
+	new job1 set job1=$zjob
+	job tcon2job2
+	new job2 set job2=$zjob
+	; Now jobs can run
+	lock -racegate
+	; Wait till they are done.
+	for  quit:'$zgetjpi(job1,"ISPROCALIVE")  hang 0.001
+	for  quit:'$zgetjpi(job2,"ISPROCALIVE")  hang 0.001
+	;
+	new job1aim set job1aim=$$XREFDATA^%YDBAIM("^names",1,"|",1,1)
+	new subs set subs(1)=100.01,subs(2)=":",subs(3)=0
+	new job2aim set job2aim=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2,1)
+	do assert($data(@job1aim))
+	do assert($data(@job2aim))
+	quit
+	;
+tcon2job1 ; [Job target] Concurrent xref of different globals
+	lock +racegate($J)
+	if $$XREFDATA^%YDBAIM("^names",1,"|",1)
+	lock -racegate($J)
+	quit
+	;
+tcon2job2 ; [Job target] Concurrent xref of different globals
+	lock +racegate($J)
+	new subs set subs(1)=100.01,subs(2)=":",subs(3)=0
+	if $$XREFDATA^%YDBAIM("^ORD",.subs,"^",2)
+	lock -racegate($J)
+	quit
+	;
+	;
+tcon3	; @TEST Concurrent unxref of different globals
+	new aimgbl1 set aimgbl1=$$XREFDATA^%YDBAIM("^names",1,"|",1)
+	new subs set subs(1)=100.01,subs(2)=":",subs(3)=0
+	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2)
+	;
+	do assert($data(@aimgbl1))
+	do assert($data(@aimgbl2))
+	;
+	lock +racegate
+	job tcon3job1
+	new job1 set job1=$zjob
+	job tcon3job2
+	new job2 set job2=$zjob
+	; Now jobs can run
+	lock -racegate
+	; Wait till they are done.
+	for  quit:'$zgetjpi(job1,"ISPROCALIVE")  hang 0.001
+	for  quit:'$zgetjpi(job2,"ISPROCALIVE")  hang 0.001
+	;
+	do assert('$data(@aimgbl1))
+	do assert('$data(@aimgbl2))
+	quit
+	;
+tcon3job1 ; [Job target] Concurrent unxref of different globals
+	lock +racegate($J)
+	do UNXREFDATA^%YDBAIM("^names",1,"|",1)
+	lock -racegate($J)
+	quit
+	;
+tcon3job2 ; [Job target] Concurrent unxref of different globals
+	lock +racegate($J)
+	new subs set subs(1)=100.01,subs(2)=":",subs(3)=0
+	do UNXREFDATA^%YDBAIM("^ORD",.subs,"^",2)
+	lock -racegate($J)
+	quit
+
 tnull	; @TEST Index data with null subscripts
 	; Index everything (no fixed subs)
 	new aimgbl1 set aimgbl1=$$XREFDATA^%YDBAIM("^null",2)

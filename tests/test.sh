@@ -103,6 +103,13 @@ $ydb_dist/yottadb -r %YDBAIMTEST   | tee -a test_output.txt
 $ydb_dist/yottadb -r %YDBAIMSPEED  | tee -a test_output.txt
 popd
 
+# Copy error files to our db directory so that we can look at the output from the pipeline
+# We can't put /tmp/yottadb as one of the output directories apparently.
+# https://stackoverflow.com/questions/2937407/test-whether-a-glob-has-any-matches-in-bash
+if compgen -G "$ydb_tmp/tcon1jobet.*.jobexam" > /dev/null; then
+	cp $ydb_tmp/tcon1jobet.*.jobexam $ydb_dir/
+fi
+
 set +e # grep will have status of 1 if no lines are found, and that will exit the script!
 grep -B1 -F '[FAIL]' $ydb_tmp/test_output.txt
 grep_status=$?
