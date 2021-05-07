@@ -114,7 +114,7 @@
 err	; Error handler
 	new io,stderr,tmp1,tmp2
 	set io=$io
-	trollback:+$get(tlevel) tlevel
+	trollback:$data(tlevel) tlevel
 	set tmp1=$zpiece($ecode,",",2),tmp2=$text(@tmp1)
 	set:'$zlength(tmp2) tmp2=$text(U251)
 	set stderr="/proc/self/fd/2"
@@ -515,7 +515,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	; Release locks that block UNXREFDATA()
 	lock -(^%ydbAIMD($job),^%ydbAIMD(gbl,$job),@name@($job))
 	view "ztrigger_output":ztout
-	quit name
+	quit:$quit name quit
 
 ; The functions below are intended only to be called internally.
 
@@ -564,12 +564,17 @@ lsxrefdata:(lvn,xref)
 ;   valcntind, xrefind
 mkindxrefdata:
 	new cflag,i,tmp
-	set gblind(1)=gbl_"(subary(1))"
-	for i=2:1:nsubs set tmp=gblind(i-1),gblind(i)=$zextract(tmp,1,$zlength(tmp)-1)_",subary("_i_"))"
+	set gblind(1)=gbl_"("_$select($get(constlist(1),0):locxsub(1),1:"subary(1)")
+	for i=2:1:nsubs set gblind(i)=gblind(i-1)_","_$select($get(constlist(i),0):locxsub(i),1:"subary("_i_")")
+	for i=1:1:nsubs set gblind(i)=gblind(i)_")"
 	set cflag=0
-	set xrefind=name_"("_$select($zlength(sep):"j,pieceval",1:"0,nodeval")_")"
-	for i=1:1:nsubs if 'omitflag!'$get(constlist(i),0) set cflag=1,lastsubind="subary("_i_")",xrefind=$zextract(xrefind,1,$zlength(xrefind)-1)_","_lastsubind_")"
+	set xrefind=name_"("_$select($zlength(sep):"j,pieceval",1:"0,nodeval")
+	for i=1:1:nsubs do
+	. if $get(constlist(i),0) do
+	. . if 'omitfix set cflag=1,lastsubind=locxsub(i),xrefind=xrefind_","_lastsubind
+	. else  set cflag=1,lastsubind="subary("_i_")",xrefind=xrefind_","_lastsubind
 	set:'cflag $ecode=",U244,"
+	set xrefind=xrefind_")"
 	if $zlength(sep) set nameind=name_"(-j,pieceval)",valcntind=name_"(-j)"
 	else  set nameind=name_"("""",nodeval)",valcntind=name_"("""")"
 	set totcntind=name_"(11)"
@@ -659,6 +664,7 @@ xrefdata:(nsubs,pstr)
 	if nsubs>1 do
 	. if "*"=locxsub(sublvl) for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
 	. . do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1,pstr)
+	. else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1,pstr)
 	. else  for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
 	. . do:$data(@gblind(sublvl))\10
 	. . . set thissubz=$zwrite(subary(sublvl))
@@ -676,10 +682,21 @@ xrefdata:(nsubs,pstr)
 	; if nsubs=1 (this else clause) then cross reference those
 	; subscripts that the specification says to cross reference.
 	; do with postconditional to cross reference "" subscripts.
+	else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))#10
+	. tstart ():transactionid="batch"
+	. set nodeval=@gblind(sublvl)
+	. if $zlength(sep) do
+	. . set nodelen1=1+$select(zpiece:$zlength(nodeval,sep),1:$length(nodeval,sep))
+	. . set tmp=$zlength(pstr),k=$select(tmp>nodelen1:nodelen1,1:tmp)
+	. . for i=2:1:k do:+$zextract(pstr,i)
+	. . . set j=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,j),1:$piece(nodeval,sep,j))
+	. . . if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. else  if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. tcommit
 	else  for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
 	. do:$data(@gblind(sublvl))#10
 	. . set thissubz=$zwrite(subary(sublvl))
-	. . tstart ()
+	. . tstart ():transactionid="batch"
 	. . set xflag=0
 	. . if "*"=locxsub(sublvl) set xflag=1
 	. . else  do
@@ -703,8 +720,7 @@ xrefdata:(nsubs,pstr)
 	. . . . for i=2:1:k do:+$zextract(pstr,i)
 	. . . . . set j=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,j),1:$piece(nodeval,sep,j))
 	. . . . . if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
-	. . . else  do
-	. . . . if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . else  if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
 	. . tcommit
 	quit
 
