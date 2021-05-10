@@ -682,7 +682,7 @@ xrefdata:(nsubs,pstr)
 	; if nsubs=1 (this else clause) then cross reference those
 	; subscripts that the specification says to cross reference.
 	; do with postconditional to cross reference "" subscripts.
-	else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))#10
+	else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))#10  quit
 	. tstart ():transactionid="batch"
 	. set nodeval=@gblind(sublvl)
 	. if $zlength(sep) do
