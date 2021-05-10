@@ -664,7 +664,7 @@ xrefdata:(nsubs,pstr)
 	if nsubs>1 do
 	. if "*"=locxsub(sublvl) for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
 	. . do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1,pstr)
-	. else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1,pstr)
+	. else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1,pstr) quit
 	. else  for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
 	. . do:$data(@gblind(sublvl))\10
 	. . . set thissubz=$zwrite(subary(sublvl))
@@ -682,7 +682,7 @@ xrefdata:(nsubs,pstr)
 	; if nsubs=1 (this else clause) then cross reference those
 	; subscripts that the specification says to cross reference.
 	; do with postconditional to cross reference "" subscripts.
-	else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))#10  quit
+	else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))#10
 	. tstart ():transactionid="batch"
 	. set nodeval=@gblind(sublvl)
 	. if $zlength(sep) do
