@@ -375,7 +375,7 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ; After reviewing and/or editing the triggers, reverse the above.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	if ""=$etrap!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
-	new asciisep,gblind,i,io,j,lastsub,lastsubind,lf,locxsub,modflag,name,nameind,newpnum,newpstr,nsubs,nullsub,constlist,omitflag,oldpstr,stderr,sub,subary,tlevel,tmp,totcntind,trigdel,trigdelx,trigprefix,trigset,trigsub,valcntind,xrefind,z,zlsep,ztout
+	new asciisep,gblind,i,io,j,lastsub,lastsubind,lastvarsub,lf,locxsub,modflag,name,nameind,newpnum,newpstr,nsubs,nullsub,constlist,omitflag,oldpstr,stderr,sub,subary,tlevel,tmp,totcntind,trigdel,trigdelx,trigprefix,trigset,trigsub,valcntind,xrefind,z,zlsep,ztout
 	set io=$io
 	set stderr="/proc/self/fd/2" open stderr
 	set lf=$char(10)
@@ -398,7 +398,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. set:i>nsubs nsubs=i
 	set:1>nsubs $ecode=",U253,"
 	set:nsubs\1'=nsubs!(31<nsubs) $ecode=",U247,"
-	for i=1:1:nsubs set:'$data(locxsub(i)) locxsub(i)="*"
+	for i=1:1:nsubs set:'$data(locxsub(i)) locxsub(i)="*" set:'$data(constlist(i)) constlist(i)=0
 	; Derive subscript specification for trigger definitions from parameters
 	; and build string from which to derive xref variable name
 	set omitfix=+$get(omitfix,1),omitflag=0
@@ -406,7 +406,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	for i=1:1:nsubs do
 	. set name=name_locxsub(i)
 	. set tmp="sub"_i,trigsub=trigsub_tmp_"="_locxsub(i)_","
-	. if 'omitfix!'$get(constlist(i)) set lastsub=tmp,sub=sub_tmp_","
+	. if 'omitfix!'constlist(i) set lastsub=tmp,sub=sub_tmp_","
 	. else  set omitflag=1		; At least one xref subscript omitted
 	; Ensure at least one subscript selected for cross reference global
 	set:","'=$zextract(sub,$zlength(sub)) $ecode=",U244,"
@@ -560,19 +560,19 @@ lsxrefdata:(lvn,xref)
 
 ; Create indirection strings to be used by xrefdata()
 ; Uses or references local variables passed to or defined in XREFDATA():
-;   constlist, gbl, name, nameind, nsubs, omitflags, sep, subary, totcntind,
-;   valcntind, xrefind
+;   constlist, gbl, name, lastvarsub, nameind, nsubs, omitflags, sep, subary,
+;   totcntind, valcntind, xrefind
 mkindxrefdata:
 	new cflag,i,tmp
-	set gblind(1)=gbl_"("_$select($get(constlist(1),0):locxsub(1),1:"subary(1)")
-	for i=2:1:nsubs set gblind(i)=gblind(i-1)_","_$select($get(constlist(i),0):locxsub(i),1:"subary("_i_")")
+	set gblind(1)=gbl_"("_$select(constlist(1):locxsub(1),1:"subary(1)")
+	for i=2:1:nsubs set gblind(i)=gblind(i-1)_","_$select(constlist(i):locxsub(i),1:"subary("_i_")")
 	for i=1:1:nsubs set gblind(i)=gblind(i)_")"
 	set cflag=0
 	set xrefind=name_"("_$select($zlength(sep):"j,pieceval",1:"0,nodeval")
 	for i=1:1:nsubs do
-	. if $get(constlist(i),0) do
-	. . if 'omitfix set cflag=1,lastsubind=locxsub(i),xrefind=xrefind_","_lastsubind
-	. else  set cflag=1,lastsubind="subary("_i_")",xrefind=xrefind_","_lastsubind
+	. if constlist(i) do
+	. . if 'omitfix set cflag=1,lastvarsub=i,lastsubind=locxsub(i),xrefind=xrefind_","_lastsubind
+	. else  set cflag=1,lastvarsub=i,lastsubind="subary("_i_")",xrefind=xrefind_","_lastsubind
 	set:'cflag $ecode=",U244,"
 	set xrefind=xrefind_")"
 	if $zlength(sep) set nameind=name_"(-j,pieceval)",valcntind=name_"(-j)"
@@ -650,8 +650,8 @@ unxrefdata:(xrefgbl)
 ; code is executed only for the initial creation of a cross reference, and not
 ; in the triggers that maintain cross references as globals are updated.
 ; Uses or references variables defined in XREFDATA():
-;   constlist, gbl, name, nameind, locxsub, nullsub, omitfix, stat, totcntind,
-;   valcntind, xref, zpiece
+;   constlist, gbl, lastvarsub, name, nameind, locxsub, nullsub, omitfix, stat,
+;   totcntind, valcntind, xref, zpiece
 xrefdata:(nsubs,pstr)
 	new flag,i,j,nodelen1,nodeval,nullflag,piece1,piece2,pieceval,sublvl,thisrange,thissubz,tmp,xflag
 	; If nsubs>1 it means call the function recursively for the next
@@ -682,7 +682,7 @@ xrefdata:(nsubs,pstr)
 	; if nsubs=1 (this else clause) then cross reference those
 	; subscripts that the specification says to cross reference.
 	; do with postconditional to cross reference "" subscripts.
-	else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))#10
+	else  if constlist(sublvl) do:$data(@gblind(sublvl))#10
 	. tstart ():transactionid="batch"
 	. set nodeval=@gblind(sublvl)
 	. if $zlength(sep) do
@@ -690,8 +690,8 @@ xrefdata:(nsubs,pstr)
 	. . set tmp=$zlength(pstr),k=$select(tmp>nodelen1:nodelen1,1:tmp)
 	. . for i=2:1:k do:+$zextract(pstr,i)
 	. . . set j=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,j),1:$piece(nodeval,sep,j))
-	. . . if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
-	. else  if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . if '$data(@xrefind)#10 set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. else  if '$data(@xrefind)#10 set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
 	. tcommit
 	else  for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
 	. do:$data(@gblind(sublvl))#10
