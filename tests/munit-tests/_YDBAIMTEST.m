@@ -705,7 +705,7 @@ tnull	; @TEST Index data with null subscripts
 	do assert($data(@aimgbl2@(0,"test4",4)))
 	quit
 	;
-tomitfix ; @TEST Omit fixed subscripts aka omitfix
+tomitfix1 ; @TEST Omit fixed subscripts aka omitfix
 	; Default is to omit fixed subscripts.
 	; Assert that nodes that are expected are present and those that are not are not.
 	new subs set subs(1)="""""",subs=2
@@ -730,6 +730,13 @@ tomitfix ; @TEST Omit fixed subscripts aka omitfix
 	do assert($data(@aimgbl2@(0,"test1",""))#2=0) ; This is special as we do have ("","") existing up above
 	do assert('$data(@aimgbl2@(0,"test2","A")))
 	do assert('$data(@aimgbl2@(0,"test4",4)))
+	quit
+	;
+tomitfix2 ; @TEST Omitfix crash [#35]
+	new subs set subs(1)=100.01,subs(2)=":",subs(3)=0
+	; params = gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2,0,0,0,0)
+	do assert($data(@aimgbl))
 	quit
 	;
 tnmonly	; @TEST Name only paramater aka nmonly
