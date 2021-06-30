@@ -23,8 +23,10 @@ mkdir build && cd build
 $cmakeCommand -DM_UTF8_MODE=0 ..
 make && make install
 cd ..
-rm -rf build
-mkdir build && cd build
-$cmakeCommand -DM_UTF8_MODE=1 ..
-make && make install
-cd ..
+if [ -d "$ydb_dist/utf8" ] | [ -d "$(pkg-config --variable=prefix yottadb)/utf8" ] ; then
+	rm -rf build
+	mkdir build && cd build
+	$cmakeCommand -DM_UTF8_MODE=1 ..
+	make && make install
+	cd ..
+fi
