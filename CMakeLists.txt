@@ -13,7 +13,7 @@
 # Prelim
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/ydbcmake/")
 project(YDBAIM C M) # C needed for ld
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0.0)
 
 # Find YottaDB and set Install Destination
 find_package(YOTTADB REQUIRED)
