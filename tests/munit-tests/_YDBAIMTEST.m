@@ -297,28 +297,30 @@ tutf8tp	; @TEST UTF-8 data; seq pieces; updates (kill, set $piece)
 	; Add Record 6 (with a twist, 7th piece is not specified)
 	set ^customers(6)="Road§Runner§rr@yottadb.com"
 	do assert($data(@aimgbl1@(3,"rr@yottadb.com",6)))
-	do assert('$data(@aimgbl1@(7,"",6)))
+	do assert($data(@aimgbl1@(7,"",6)))
 	kill ^customers(6)
 	quit
 	;
 tmpiece	; @TEST multiple pieces requested sequentially
 	new aimgbl1 set aimgbl1=$$XREFDATA^%YDBAIM("^customers",1,"§","3;7")
+	new lines do trigout(.lines)
+	do assert(lines(2)'["-delim=""§""")
 	do assert($order(@aimgbl1@(3,""))'="")
 	do assert($order(@aimgbl1@(7,""))'="")
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^customers",1,"§","3:4")
 	do assert(aimgbl1=aimgbl2)
 	do assert($order(@aimgbl1@(4,""))'="")
-	new lines do trigout(.lines)
-	do assert(lines(2)["-delim=""§"" -pieces=3:4;7")
+	kill lines do trigout(.lines)
+	do assert(lines(3)["=3,4,7")
 	new aimgbl3 set aimgbl3=$$XREFDATA^%YDBAIM("^customers",1,"§","4:5")
-	new lines do trigout(.lines)
-	do assert(lines(2)["-delim=""§"" -pieces=3:5;7")
+	kill lines do trigout(.lines)
+	do assert(lines(3)["=3,4,5,7")
 	new aimgbl4 set aimgbl4=$$XREFDATA^%YDBAIM("^customers",1,"§","5:8;10")
-	new lines do trigout(.lines)
-	do assert(lines(2)["-delim=""§"" -pieces=3:8;10")
+	kill lines do trigout(.lines)
+	do assert(lines(3)["=3,4,5,6,7,8,10")
 	new aimgbl5 set aimgbl5=$$XREFDATA^%YDBAIM("^customers",1,"§","1;2;5")
-	new lines do trigout(.lines)
-	do assert(lines(2)["-delim=""§"" -pieces=1:8;10")
+	kill lines do trigout(.lines)
+	do assert(lines(3)["=1,2,3,4,5,6,7,8,10")
 	do assert($order(@aimgbl1@(1,""))'="")
 	do assert($order(@aimgbl1@(2,""))'="")
 	do assert($order(@aimgbl1@(3,""))'="")
@@ -352,29 +354,33 @@ trmindex1 ; #TEST Remove a single piece index (NOT SUPPORTED RIGHT NOW; disablin
 	;
 	new trigs do trigout(.trigs)
 	new aims  do aimgbls(.aims)
-	do assert(trigs(2)["-delim=""§"" -pieces=3;7")
+	do assert(trigs(2)'["-delim=""§"" -pieces=3;7")
 	do assert(aims=1)
 	;
 	do UNXREFDATA^%YDBAIM("^customers",1,"§",7)
 	new trigs do trigout(.trigs)
 	new aims  do aimgbls(.aims)
-	do assert(trigs(2)["-delim=""§"" -pieces=3")
+	do assert(trigs(2)'["-delim=""§"" -pieces=3")
 	do assert(aims=1)
 	quit
 	;
 trmindex2 ; @TEST Remove indexs on a specific entire global
+	; Note: this test depends on the AIM global for ^customers preceding those for
+	; ^orders. This is the case with YottaDB r1.32 on x86_64. Depending on the
+	; hash used by AIM and the underlying platform, this may need to change for
+	; future releases of YottaDB and for other platforms.
 	if $$XREFDATA^%YDBAIM("^orders",1,"§",1)
 	if $$XREFDATA^%YDBAIM("^customers",1,"§",3)
 	if $$XREFDATA^%YDBAIM("^customers",1,"§",7)
 	new trigs do trigout(.trigs)
 	new aims  do aimgbls(.aims)
-	do assert(aims=2)
-	do assert(trigs(2)["-delim=""§"" -pieces=3;7")
+	do assert(aims=3)
+	do assert(trigs(3)["=3,7")
 	do UNXREFDATA^%YDBAIM("^customers",1,"§")
-	new trigs do trigout(.trigs)
-	new aims  do aimgbls(.aims)
-	do assert(aims=1)
-	do assert(trigs(2)'["-delim=""§"" -pieces=3;7")
+	kill trigs do trigout(.trigs)
+	kill aims  do aimgbls(.aims)
+	do assert(aims=2)
+	do assert(trigs(3)'["=3,7")
 	quit
 	;
 trmindex3 ; @TEST Remove all indexes
@@ -383,11 +389,11 @@ trmindex3 ; @TEST Remove all indexes
 	if $$XREFDATA^%YDBAIM("^customers",1,"§",7)
 	new trigs do trigout(.trigs)
 	new aims  do aimgbls(.aims)
-	do assert(aims=2)
-	do assert(trigs(2)["-delim=""§"" -pieces=3;7")
+	do assert(aims=3)
+	do assert(trigs(3)["=3,7")
 	do UNXREFDATA^%YDBAIM
-	new trigs do trigout(.trigs)
-	new aims  do aimgbls(.aims)
+	kill trigs do trigout(.trigs)
+	kill aims  do aimgbls(.aims)
 	do assert('$data(trigs))
 	do assert('$data(aims))
 	quit
@@ -398,14 +404,14 @@ trmindex4 ; @TEST Remove indexes on subscripts parts of the same global
 	new subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_namespace""",subs(4)="*"
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",2)
 	new aims do aimgbls(.aims)
-	do assert(aims=2)
-	new subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_type""",subs(4)="*"
+	do assert(aims=3)
+	kill subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_type""",subs(4)="*"
 	do UNXREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",1)
-	new aims do aimgbls(.aims)
-	do assert(aims=1)
-	new subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_namespace""",subs(4)="*"
+	kill aims do aimgbls(.aims)
+	do assert(aims=2)
+	kill subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_namespace""",subs(4)="*"
 	do UNXREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",2)
-	new aims do aimgbls(.aims)
+	kill aims do aimgbls(.aims)
 	do assert('$data(aims))
 	quit
 	;
@@ -414,12 +420,12 @@ trmindex5 ; @TEST Remove indexes by %ydbAIMD global name
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^customers",1,"§",3)
 	new aimgbl3 set aimgbl3=$$XREFDATA^%YDBAIM("^customers",1,"§",7)
 	new aims do aimgbls(.aims)
-	do assert(aims=2)
+	do assert(aims=3)
 	do UNXREFDATA^%YDBAIM(aimgbl1)
-	new aims do aimgbls(.aims)
-	do assert(aims=1)
+	kill aims do aimgbls(.aims)
+	do assert(aims=2)
 	do UNXREFDATA^%YDBAIM(aimgbl2)
-	new aims do aimgbls(.aims)
+	kill aims do aimgbls(.aims)
 	do assert('$data(aims))
 	quit
 	;

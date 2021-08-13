@@ -104,42 +104,58 @@
 ;   datatset cannot include Joe Biden as he is still in office, and the
 ;   subscripts of ^USPresidents in the example are the years the President took
 ;   and relinquished the office).
+;     - stat=0 - no statistics
+;     - stat=1 - stat
 ;
-%YDBAIM
+; Note that $data(@name@(SUB))#10 constructs where SUB is an integer are found
+; throughout the code because these root nodes are metadata about the metadata
+; and subtrees then contain the stored metadata of application globals.
+;
+; Number after the %YDBAIM label is a version number of the metadata format.
+%YDBAIM;1
 	; Top level entry not supported
 	do etrap		; set error trap
 	set $ecode=",U255,"	; top level entry not supported
-	quit			; should never get here
-
-err	; Error handler
-	new io,stderr,tmp1,tmp2
-	set io=$io
-	trollback:$data(tlevel) tlevel
-	set tmp1=$zpiece($ecode,",",2),tmp2=$text(@tmp1)
-	set:'$zlength(tmp2) tmp2=$text(U251)
-	set stderr="/proc/self/fd/2"
-	open stderr
-	use stderr
-	write $text(+0),@$zpiece(tmp2,";",2,$zlength(tmp2,";")),!
-	set $ecode=""
-	zshow "s":tmp1
-	view:$data(ztout) "ztrigger_output":ztout
-	use io
-	zhalt:"%XCMD"=$piece($get(tmp1("S",$order(tmp1("S",""""),-1))),"^",2) +$extract(tmp1,2,$zlength(tmp1))
-	quit
+	quit			; should get here only in direct mode
 
 ; Set error trap. The first action the error trap does is set a failsafe error
 ; trap (e.g., if $zroutines is not correct). Thereafter, it jumps to the actual
 ; error trap to print an error message and terminate, with a return code.
 ;
-; Note that all external entry points NEW $ETRAP and DO etrap if $ETRAP is the
-; default error handler. This allows them to report the error messages for
-; %YDBAIM errors, instead of just reporting that $ECODE was assigned a
-; non-empty value, which the default error trap will report. If an application
-; sets an error trap ($ETRAP or $ETRAP) that will be used.
+; Note that all external entry points:
+; - NEW $ETRAP and DO etrap if $ETRAP is the default error handler. This allows
+;   them to report the error messages for %YDBAIM errors, instead of just
+;   reporting that $ECODE was assigned a non-empty value, which the default
+;   error trap will report. If an application sets an error trap ($ETRAP or
+;   $ETRAP) that will be used.
+; - Capture existing locks in currlck so that the error trap can release
+;   locks acquired by %YDBAIM. In non-error code paths, acquired locks are
+;   released without the need to refer to captured locks.
 etrap
-	set $etrap="set $etrap=""open """"/proc/self/fd/2"""" use """"/proc/self/fd/2"""" write $zstatus,! zshow """"*"""" zhalt 1""  goto err^"_$text(+0)
+	set $etrap="set $etrap=""open """"/proc/self/fd/2"""" use """"/proc/self/fd/2"""" write $zstatus,! zshow """"*"""" zhalt $piece($zstatus,"""","""",1)""  goto err^"_$text(+0)
 	quit
+
+err	; Error handler
+	new errcode,errtxt,i,io,stderr,tmp1,tmp2,usestderr
+	set io=$io
+	set usestderr=1
+	zshow "d":tmp1
+	set tmp2="" for  set tmp2=$order(tmp1("D",tmp2)) quit:'usestderr!(""=tmp2)  set:tmp1("D",tmp2)?.E1" TERMINAL ".E usestderr=0
+	trollback:+$get(tlevel) tlevel
+	set errcode=$zpiece($ecode,",",2),errtxt=$text(@errcode)
+	set stderr="/proc/self/fd/2"
+	open stderr
+	use:usestderr stderr
+	if $zlength(errtxt) write $text(+0),@$zpiece(errtxt,";",2,$zlength(errtxt,";")),!
+	else  for i=1:1:$length($zstatus,"%YDB-") write "%YDB-",$piece($zstatus,"%YDB-",i),!
+	set $ecode=""
+	zshow "s":tmp1
+	view:$data(ztout) "ztrigger_output":ztout
+	use io
+	do unsnaplck(.currlck)
+	zhalt:"%XCMD"=$piece($get(tmp1("S",$order(tmp1("S",""""),-1))),"^",2) +$extract(tmp1,2,$zlength(tmp1))
+	do etrap
+	quit:$quit $select($zlength(errtxt):$zpiece($zstatus,",",1),1:$zpiece(errcode,"U",2)) quit
 
 ; List metadata for a cross reference, all cross references for a global
 ; variable, or all cross references
@@ -152,8 +168,8 @@ etrap
 ;     "^%ydbAIMDgBPWsnL76HLyVnlvsrvE19". The value of that node (i.e., with a
 ;     first subscript and no second subscript) is the application global
 ;     variable name, e.g., "^xyz".
-;   - Nodes with second subscripts 0 through 8 have the metadata in nodes (0)
-;     through (9) described below with XREFDATA().
+;   - Nodes with positive integer second subscripts have metadata about the
+;     metadata. These are described below with XREFDATA().
 ;   Nodes of lvn other than those corresponding to reported cross references
 ;   remain unaltered.
 ; - gbl is a global variable name. There are three cases:
@@ -166,13 +182,13 @@ etrap
 ;     information about all cross references.
 LSXREFDATA(lvn,gbl)
 	if "Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap new $etrap do etrap
-	new tlevel,xrefvar
+	new currlck,tlevel,xrefvar
+	do snaplck(.currlck)
 	if ""=$get(gbl) do
-	. set xrefvar="^%ydbAIM"
-	. for  set xrefvar=$order(@xrefvar) quit:xrefvar'?1"^%ydbAIM".E  do lsxrefdata(.lvn,xrefvar)
+	. set gbl="" for  set gbl=$order(^%ydbAIMDxref(gbl)) quit:""=gbl  do
+	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:""=xrefvar  do lsxrefdata(.lvn,xrefvar)
 	else  if gbl'?1"^%ydbAIMD".E do
-	. set xrefvar="^%ydbAIM"
-	. for  set xrefvar=$order(@xrefvar) quit:xrefvar'?1"^%ydbAIM".E!(""=xrefvar)  do:gbl=@xrefvar lsxrefdata(.lvn,xrefvar)
+	. set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:""=xrefvar  do lsxrefdata(.lvn,xrefvar)
 	else  do lsxrefdata(.lvn,gbl)
 	quit
 
@@ -181,7 +197,16 @@ LSXREFDATA(lvn,gbl)
 ; it to remove triggers and cross references, even though some parameters are
 ; not required and are therefore ignored.
 ;
-; Usage: DO UNXREFDATA^%YDBAIM(gbl,xsub,sep,pnum,nmonl,zpiece)
+; Usage: DO UNXREFDATA^%YDBAIM(gbl,xsub,sep,pnum,nmonly,zpiece)
+; Quick summary:
+;  - UNXREFDATA() deletes all metadata
+;  - UNXREFDATA(gbl) where gbl is an application global name deletes all AIM
+;    metadata for that application global.
+;  - UNXREFDATA(aimgbl) where aimgbl is an AIM metadata global variable remove
+;    that metadata
+; Triggers associated with maintaining any requested metadata are removed when
+; the metadata is removed.
+;
 ; Parameters:
 ; - gbl is the global variable name, e.g., "^ABC" for which the specified
 ;   triggers are to be removed. If omitted, all xrefs and triggers for xrefs are
@@ -208,11 +233,12 @@ LSXREFDATA(lvn,gbl)
 ;     has nodes (1) and (3) but not (2)), means that all subscripts at that level
 ;     are in the cross reference signature.
 ;   - xsub has both a value at the root, as well as positive integer subscripts
-;     (($DATA() is 11): This is similar to the previous case, except that if the
-;     number at the root exceeds the last subscript, that is the level of the
-;     cross reference signature, with all global variables to be included at
-;     levels beyond those of the last local variable subscript. A value at the
-;     root smaller than the last subscript is ignored.
+;     (($DATA() is 11): This is similar to the previous case, except that
+;     should the number at the root exceed the last subscript, the value at the
+;     root is the level of the cross reference signature, with all global
+;     variables to be included at levels beyond those of the last local
+;     variable subscript. A value at the root smaller than the last subscript
+;     is ignored.
 ;   Other cases (e.g., non integer subscripts of xsub) raise errors.
 ; - sep is the piece separator for values at that node; if unspecified or the
 ;   empty string, the cross reference signature is entire node values.
@@ -225,18 +251,22 @@ LSXREFDATA(lvn,gbl)
 ;   of $PIECE(); this is part of the trigger signature.
 ; - omitfix exists only to allow the parameters of UNXREFDATA() to match those
 ;   of XREFDATA() and is ignored.
-; - stat exists only to allow the parameters of UNXREFDATA() to match
-UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
+; - stat exists only to allow the parameters of UNXREFDATA() to match and is
+;   ignored
+UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	if ""=$etrap!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
-	new i,nsubs,tlevel,xrefvar,ztout
-	set ztout=$view("ztrigger_output")
-	view "ztrigger_output":0
-	if ""=$get(gbl) do			; remove all xrefs
+	new currlck,i,nsubs,tlevel,xrefvar
+	do snaplck(.currlck)
+	set gbl=$get(gbl)
+	if gbl?1"^%ydbAIMD".22AN,$data(@gbl) set xrefvar=gbl,gbl=@xrefvar do unxrefdata(xrefvar)
+	else  if '$zlength(gbl) do			; remove all xrefs
 	. lock +^%ydbAIMD
-	. set xrefvar="^%ydbAIMD"
-	. for  set xrefvar=$order(@xrefvar) quit:xrefvar'?1"^%ydbAIMD".AN!(""=xrefvar)  do unxrefdata(xrefvar)
+	. set gbl="" for  set gbl=$order(^%ydbAIMDxref(gbl)) quit:""=gbl  do
+	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:""=xrefvar  do unxrefdata(xrefvar)
 	. lock -^%ydbAIMD
 	else  do
+	. ; Xrefs are only supported for global variables
+	. set:(gbl'?1"^"1(1"%",1AN).AN)!(32<$zlength(gbl)) $ecode=",U252,"
 	. set nsubs=$get(xsub,0)
 	. ; If constraints specified for subscripts, ensure all refer to
 	. ; subscripts that are integers in the range 1 through 31
@@ -248,14 +278,10 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 	. . set:i>nsubs nsubs=i
 	. set:31<nsubs $ecode=",U247,"
 	. if 'nsubs do		; remove all xrefs for gbl
-	. . ; Xrefs are only supported for global variables
-	. . set:"^"'=$zextract(gbl,1) $ecode=",U252,"
 	. . lock +^%ydbAIMD(gbl)
-	. . set xrefvar="^%ydbAIMD"
-	. . for  set xrefvar=$order(@xrefvar) quit:xrefvar'?1"^%ydbAIMD".AN!(""=xrefvar)  do:gbl=xrefvar!(gbl=@xrefvar) unxrefdata(xrefvar)
+	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:""=xrefvar  do unxrefdata(xrefvar)
 	. . lock -^%ydbAIMD(gbl)
 	. else  do unxrefdata($$XREFDATA(gbl,.xsub,$get(sep),,1,$get(zpiece),$get(omitfix,1)))
-	view "ztrigger_output":ztout
 	quit:$quit "" quit
 
 ; Create triggers to maintain cross references and compute cross references
@@ -266,26 +292,29 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ; - gbl is the global variable name, e.g., "^ABC"
 ; - xsub is a specification of the subscripts to be cross referenced. There are
 ;   three cases:
-;   - xsub has a positive integer value at the root, and no subtrees ($DATA() is
-;     1): The value specifies the level (number of subscripts) of the global
-;     variable for whch the cross reference is to be created, with all
-;     subscripts at each level to be included in the cross reference. In this
-;     case, the actual parameter can be a literal or a variable passed by
+;   - xsub has a positive integer value at the root, and no subtrees (i.e.,
+;     $DATA() is 1): The value specifies the level (number of subscripts) of
+;     the global variable for whch the cross reference is to be created, with
+;     all subscripts at each level to be included in the cross reference. In
+;     this case, the actual parameter can be a literal or a variable passed by
 ;     value. In other cases it must be passed by reference.
 ;   - xsub has no value at the root, but positive integer subscripts (1), (2),
-;     (3), etc. ($DATA() is 10): The subscripts of the local variable specify
-;     the values of the global variable subscript to be cross referenced, using
-;     the same syntax as trigvn field of trigger definitions. The last subscript
-;     defines the level of the global variable to be cross referenced. Any
-;     omitted intervening subscript (e.g., if the local variable has nodes (1)
-;     and (3) but not (2)), means that all subscripts at that level should be
-;     included in the cross reference.
+;     (3), etc. (i.e., $DATA() is 10): The subscripts of the local variable
+;     specify the values of the global variable subscript to be cross
+;     referenced, using the same syntax as trigvn field of trigger
+;     definitions. The last subscript defines the level of the global variable
+;     to be cross referenced. Any omitted intervening subscript (e.g., if the
+;     local variable has nodes (1) and (3) but not (2)), means that all
+;     subscripts at that level should be included in the cross reference.
 ;   - xsub has both a value at the root, as well as positive integer subscripts
-;     (($DATA() is 11): This is similar to the previous case, except that if the
-;     number at the root exceeds the last subscript, that is the level of the
-;     global variable to be cross referenced, with all global variables to be
-;     included at levels beyond those of the last local variable subscript. A
-;     value at the root smaller than the last subscript is ignored.
+;     (i.e., ($DATA() is 11): This is similar to the previous case, except that
+;     if the value at the root exceeds the last subscript, that is the level of
+;     the global variable to be cross referenced. For example, if the local
+;     variable has nodes (1) and (3) but the value at the root is 5, five
+;     subscripts of the global variable will be cross referenced. A value at
+;     the root smaller than the last subscript is ignored, so with the
+;     subscripts above and a value of 2 at the root, three subscripts will be
+;     cross referenced.
 ;   Other cases (e.g., non integer subscripts of xsub) raise errors.
 ; - sep is the piece separator for values at that node; if unspecified or the
 ;   empty string, the cross reference is for entire node values.
@@ -310,7 +339,7 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ; are:
 ; - (pnum,value,sub[,sub]) where pnum is a positive integer for cross references
 ;   of pieces of nodes; and
-; - (value,sub[,sub]) for cross references of entire nodes.
+; - (0,value,sub[,sub]) for cross references of entire nodes.
 ;
 ; The function is coded so that the function tries as efficiently as possible to
 ; determine whether the cross reference already exists. This means that it is
@@ -339,8 +368,8 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ; Just as cross references are metadata for application global variables,
 ; metadata for the cross reference global variables are stored in the cross
 ; reference global variables as follows:
-; - the root node is the application global variable; subscripted nodes are:
-; - (0) space separated $zut, $job, $zyrelease
+; - the root node is the application global variable name; subscripted nodes are:
+; - (0) space separated $zut, $job, $zyrelease, metadata format version number
 ; - (1) number of subscripts of the application global variable xref'd
 ; - (2) piece separator, "" for an xref of entire nodes
 ; - (3) & (4) piece numbers, in the form of a bit-map like string,
@@ -363,27 +392,23 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonl,zpiece,omitfix,stat)
 ; Since the cross references themselves must have at least two subscripts, any
 ; node with one subscript is metadata for the cross reference.
 ;
-; Note to anyone reading the code: lines to set triset, trigdel, and trigdelx
-; can be hard to read. The following might make them more readable:
-; - Copy the three lines into another edit buffer
-; - Delete leading whitespace dots on each line.
-; - Replace "_lf_" (including the quotes) with a linefeed.
-; - Replace "_lastsub_" (including the quotes) with a string like LASTSUB.
-; - Replace "_name_" (including the quotes) with a string like NAME.
-; - Replace "_sub_" (including the quotes) with a string like SUB
-; - Replace $"_z_" (including the dollar & quotes) with a string like ZZ.
-; After reviewing and/or editing the triggers, reverse the above.
+; Nodes of ^%ydbAIMDxref(gbl,aimgbl) are metadata on metadata, where gbl is an
+; application global and aimgbl is the AIM global.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	if ""=$etrap!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
-	new asciisep,gblind,i,io,j,lastsub,lastsubind,lastvarsub,lf,locxsub,modflag,name,nameind,newpnum,newpstr,nsubs,nullsub,constlist,omitflag,oldpstr,stderr,sub,subary,tlevel,tmp,totcntind,trigdel,trigdelx,trigprefix,trigset,trigsub,valcntind,xrefind,z,zlsep,ztout
+	new asciisep,currlck,gblind,i,io,j,lastsub,lastsubind,lastvarsub,lf,locxsub,modflag,name,nameind,newpnum,newpstr,pieces
+	new nsubs,nullsub,constlist,omitflag,oldpstr,stderr,sub,subary,suffix,tlevel,tmp,totcntind,trigdel,trigdelx,trigprefix
+	new trigset,trigsub,valcntind,xrefind,z,zlsep,ztout
+	do snaplck(.currlck)
 	set io=$io
 	set stderr="/proc/self/fd/2" open stderr
 	set lf=$char(10)
 	zshow "s":tmp do:"%XCMD"=$piece($get(tmp("S",$order(tmp("S",""""),-1))),"^",2) etrap
+	set:'$data(gbl) $ecode=",U252,"
 	; Extended references are not supported
 	set:""'=$qsubscript(gbl,-1) $ecode=",U254,"
 	; Xrefs are only supported for global variables other than AIM global variables
-	set:gbl'?1"^"1(1"%",1AN).AN!($zlength(gbl)>32) $ecode=",U252,"
+	set:gbl'?1"^"1(1"%",1AN).AN!(32<$zlength(gbl)) $ecode=",U252,"
 	set:gbl?1"^%ydbAIMD".AN $ecode=",U243,"
 	; Get number of subcripts to cross reference
 	set nsubs=$get(xsub,0)
@@ -398,7 +423,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. set:i>nsubs nsubs=i
 	set:1>nsubs $ecode=",U253,"
 	set:nsubs\1'=nsubs!(31<nsubs) $ecode=",U247,"
-	for i=1:1:nsubs set:'$data(locxsub(i)) locxsub(i)="*" set:'$data(constlist(i)) constlist(i)=0
+	for i=1:1:nsubs set:'$data(locxsub(i)) locxsub(i)="*",constlist(i)=0
 	; Derive subscript specification for trigger definitions from parameters
 	; and build string from which to derive xref variable name
 	set omitfix=+$get(omitfix,1),omitflag=0
@@ -406,22 +431,27 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	for i=1:1:nsubs do
 	. set name=name_locxsub(i)
 	. set tmp="sub"_i,trigsub=trigsub_tmp_"="_locxsub(i)_","
-	. if 'omitfix!'constlist(i) set lastsub=tmp,sub=sub_tmp_","
-	. else  set omitflag=1		; At least one xref subscript omitted
+	. if omitfix&constlist(i) set omitflag=1
+	. else  set lastsub=tmp,sub=sub_tmp_","
 	; Ensure at least one subscript selected for cross reference global
-	set:","'=$zextract(sub,$zlength(sub)) $ecode=",U244,"
 	; Remove trailing commas from building subscript lists
 	set $zextract(sub,$zlength(sub))=""
 	set $zextract(trigsub,$zlength(trigsub))=""
 	set sep=$get(sep),zlsep=$zlength(sep),zpiece=+$get(zpiece),z=$select(zpiece:"z",1:"")
 	set asciisep=1
 	for i=1:1:zlsep set:$zascii($zextract(sep,i))>127 asciisep=0 quit:'asciisep
-	set name="^%ydbAIMD"_$zysuffix(gbl_name_$select(zlsep:sep_$select(asciisep:0,zpiece:1,1:$zchset),1:"")_$select(omitflag:1,1:""))
-	quit:+$get(nmonly) name		; Caller only wants name
-	if $data(@name)#10 set:gbl'=@name $ecode=",U242,"
+	set suffix=$zysuffix(gbl_name_$select(zlsep:sep_$select(asciisep:0,zpiece:1,1:$zchset),1:"")_$select(omitflag:1,1:""))
+	set name="^%ydbAIMD"_suffix
+	; Flagging this error needs to be deferred as the error handler may
+	; need name to be set.
+	set:'$data(lastsub) $ecode=",U244,"
+	; Quit if caller only wants the variable name. Note that asking for a
+	; name requires that XREFDATA() be called as a function that returns
+	; a value, as calling it as a routine asking for a name is a
+	; meaningless operation that is likely an application program bug.
+	quit:+$get(nmonly) name
 	do mkindxrefdata		; Create indirection strings to be used
 	set ztout=$view("ztrigger_output")
-	view "ztrigger_output":0
 	; Common prefix for all triggers
 	set trigprefix="+"_gbl_"("_trigsub_") -command="
 	; As cross referencing does not require exclusivity, multiple processes
@@ -431,60 +461,68 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	; uses $JOB as a subscript to the lock resource, whereas UNXREFDATA()
 	; does not.
 	lock +(^%ydbAIMD($job),^%ydbAIMD(gbl,$job),@name@($job))
-	; Determine whether to xref pieces or entire node, and act accordingly
 	set stat=+$get(stat)
-	set tlevel=$tlevel
-	; Determine whether application global permits null subscripts
-	set nullsub=$$^%PEEKBYNAME("sgmnt_data.null_subs",$view("region",gbl))
+	set tlevel=$tlevel	; tlevel is required by error trap to rollback
+	; Determine whether application global permits null subscripts. For a
+	; global variable that spans multiple regions, all regions must be
+	; consistent in allowing or not allowing null subscripts. Two cascading
+	; unary operators ('') are used to force non-zero values to 1.
+	set tmp=$view("region",gbl),nullsub=''$$^%PEEKBYNAME("sgmnt_data.null_subs",$zpiece(tmp,",",1))
+	for i=2:1:$zlength(tmp,",") set:nullsub'=''$$^%PEEKBYNAME("sgmnt_data.null_subs",$zpiece(tmp,",",i)) $ecode=",U251,"
+	; Determine whether to xref pieces or entire node, and act accordingly
 	if $zlength(sep) do				; xref pieces
 	. set:'$zlength($get(pnum)) $ecode=",U250,"
 	. ; Make any trigger updates needed
-	. tstart ()
+	. view "ztrigger_output":0
+	. tstart ():transactionid="batch"
 	. do:$data(@name@(10))#10
 	. . set tmp=^(10)
 	. . set:stat>tmp $ecode=",U240,"
 	. . set:stat<tmp stat=tmp
-	. set oldpstr=$get(@name@(4),"#"),modflag=0
+	. set oldpstr=$get(@name@(4),"#")
 	. set newpstr=$$unravel(pnum)
-	. for i=2:1:$zlength(newpstr) set:+$zextract(oldpstr,i)'=+$zextract(newpstr,i) ($zextract(newpstr,i),modflag)=1
-	. do:modflag
+	. do:oldpstr'=newpstr
+	. . for i=2:1:$zlength(newpstr) set:+$zextract(oldpstr,i)'=+$zextract(newpstr,i) $zextract(newpstr,i)=1
 	. . set:$zlength(oldpstr)>$zlength(newpstr) $zextract(newpstr,i+1,$zlength(oldpstr))=$zextract(oldpstr,i+1,$zlength(oldpstr))
-	. . set newpnum=$$ravel(newpstr)
+	. . set pieces=$$ravel(newpstr)
+	. . ; $data()#10 needed as nodes can have subtrees which are cross references of application globals
 	. . for i=6:1:8 if $data(@name@(i))#10 set tmp=^(i) if $ztrigger("item","-"_$zextract(tmp,2,$zlength(tmp)))
 	. . if 'stat do
-	. . . set trigset=trigprefix_"set -"_z_"delim="_$zwrite(sep)_" -pieces="_newpnum_" -xecute=""for i=1:1:$zlength($ztupdate,"""","""") set p=$piece($ztupdate,"""","""",i) zkill:$data("_name_"(p,$"_z_"piece($ztoldval,$ztdelim,p),"_sub_"))#10 ^("_lastsub_") set:'$data("_name_"(p,$"_z_"piece($ztvalue,$ztdelim,p),"_sub_")) ^("_lastsub_")="""""""""""
-	. . . set trigdel=trigprefix_"kill -xecute=""set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1 kill:$data("_name_"(j,$"_z_"piece($ztoldval,p,j),"_sub_")) ^("_lastsub_")"""
-	. . . set trigdelx=trigprefix_"zkill -xecute=""set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1 zkill:$data("_name_"(j,$"_z_"piece($ztoldval,p,j),"_sub_"))#10 ^("_lastsub_")"""
+	. . . set trigset=trigprefix_"set -name=%ydb"_suffix_"S -xecute="_$$exptempl("ttSp0")
+	. . . set trigdel=trigprefix_"kill -name=%ydb"_suffix_"K -xecute="_$$exptempl("ttKp0")
+	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl("ttZKp0")
 	. . else  if 1=stat do
-	. . . set trigset=trigprefix_"set -"_z_"delim="_$zwrite(sep)_" -pieces="_newpnum_" -xecute=<<"_lf_" for i=1:1:$zlength($ztupdate,"","") set p=$piece($ztupdate,"","",i),mp=-p do"_lf_" . set q=$"_z_"piece($ztoldval,$ztdelim,p) if $data("_name_"(p,q,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(mp,q),-1) ^(q)"_lf_" . set q=$"_z_"piece($ztvalue,$ztdelim,p) if '$data("_name_"(p,q,"_sub_")) set:$increment("_name_"(mp,q)) ^("_lastsub_")="""""_lf
-	. . . set trigdel=trigprefix_"kill -xecute=<<"_lf_" set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1,q=$"_z_"piece($ztoldval,p,j) if $data("_name_"(j,q,"_sub_")) kill ^("_lastsub_") zkill:1>$increment("_name_"(-j,q),-1) ^(q)"_lf
-	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1,q=$"_z_"piece($ztoldval,p,j) if $data("_name_"(j,q,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment(name(-j,q),-1) ^(q)"_lf
+	. . . set trigset=trigprefix_"set -name=%ydb"_suffix_"S -xecute="_$$exptempl("ttSp1")
+	. . . set trigdel=trigprefix_"kill -xecute="_$$exptempl("ttKp1")
+	. . . set trigdelx=trigprefix_"zkill -xecute="_$$exptempl("ttZKp1")
 	. . else  if 2=stat do
-	. . . set trigset=trigprefix_"set -"_z_"delim="_$zwrite(sep)_" -pieces="_newpnum_" -xecute=<<"_lf_" for i=1:1:$zlength($ztupdate,"","") set p=$piece($ztupdate,"","",i),mp=-p do"_lf_" . set q=$"_z_"piece($ztoldval,$ztdelim,p) if $data("_name_"(p,q,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"(mp,q),-1) zkill ^(q) zkill:1>$increment("_name_"(mp),-1) ^(mp)"_lf_" . set q=$"_z_"piece($ztvalue,$ztdelim,p) if '$data("_name_"(p,q,"_sub_")) set ^("_lastsub_")="""" if $increment("_name_"(11)),(1=$increment("_name_"(mp,q))),$increment("_name_"(mp))"_lf
-	. . . set trigdel=trigprefix_"kill -xecute=<<"_lf_" set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1,mj=-j,q=$"_z_"piece($ztoldval,p,j) if $data("_name_"(j,q,"_sub_")) kill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"(mj,q),-1) zkill ^(q) zkill:1>$increment("_name_"(mj),-1) ^(mj)"_lf
-	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" set p="_name_"(2) for i=2:1:$zlength("_name_"(4)) if +$zextract("_name_"(4),i) set j=i-1,mj=-j,q=$"_z_"piece($ztoldval,p,j) if $data("_name_"(j,q,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"(mj,q),-1) zkill ^(q) if 1>$increment("_name_"(mj),-1) zkill ^(mj)"_lf
+	. . . set trigset=trigprefix_"set -name=%ydb"_suffix_"S -xecute="_$$exptempl("ttSp2")
+	. . . set trigdel=trigprefix_"kill -name=%ydb"_suffix_"K -xecute="_$$exptempl("ttKp2")
+	. . . set trigdelx=trigprefix_"zkill -name="_suffix_"Z -xecute="_$$exptempl("ttZKp2")
 	. . else  set $ecode=",U241,"
-	. . for i=6:1:8 if $zlength($get(@name@(i)))&$ztrigger("item","-"_$zextract(^(i),2,$zlength(^(i))))
 	. . set @name=gbl,@name@(4)=newpstr,^(5)=z,^(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
+	. . set ^%ydbAIMDxref(gbl,name)=""
 	. tcommit
+	. view "ztrigger_output":ztout
 	. ; Cross reference existing nodes, if needed. Note that even if this
 	. ; process set triggers, another concurrent process might have
 	. ; cross referenced the pieces this process wants xref'd.
 	. set oldpstr=$get(@name@(3),"#"),modflag=0
 	. for i=2:1:$zlength(newpstr) if +$zextract(newpstr,i)&'+$zextract(oldpstr,i) set modflag=1 quit
 	. do:modflag
-	. . do xrefdata(nsubs,newpstr)
-	. . ; Update medatadata
-	. . tstart ()
-	. . set @name=gbl,@name@(0)=$zut_" "_$job_" "_$zyrelease,^(1)=nsubs,^(2)=sep
+	. . do xrefdata(nsubs)
+	. . ; Update metadata to indicate completion
+	. . tstart ():transactionid="batch"
+	. . set @name=gbl,@name@(0)=$zut_" "_$job_" "_$zyrelease_" "_$zpiece($text(%YDBAIM),";",2),^(1)=nsubs,^(2)=sep
 	. . set oldpstr=$get(^(3),"#")
 	. . for i=2:1:$zlength(newpstr) set $zextract(oldpstr,i)=$select(+$zextract(newpstr,i):1,1:+$zextract(oldpstr,i))
 	. . set ^(3)=oldpstr
 	. . tcommit
 	else  do			; No piece sep; xref entire node
 	. set:$zlength($get(pnum)) $ecode=",U238,"
-	. tstart ()
+	. view "ztrigger_output":0
+	. tstart ():transactionid="batch"
 	. do:$data(@name@(10))#10
 	. . set tmp=^(10)
 	. . set:stat>tmp $ecode=",U240,"
@@ -492,29 +530,30 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. do:'$data(@name@(0))#10
 	. . for i=6:1:8 if $data(@name@(i))#10 set tmp=^(i) if $ztrigger("item","-"_$zextract(tmp,2,$zlength(tmp)))
 	. . if 'stat do
-	. . . set trigset=trigprefix_"set -xecute=""zkill:$data("_name_"(0,$ztoldval,"_sub_"))#10 ^("_lastsub_") set:'$data("_name_"(0,$ztvalue,"_sub_")) ^("_lastsub_")="""""""""""
-	. . . set trigdel=trigprefix_"kill -xecute=""kill:$data("_name_"(0,$ztoldval,"_sub_")) ^("_lastsub_")"""
-	. . . set trigdelx=trigprefix_"zkill -xecute=""zkill:$data("_name_"(0,$ztoldval,"_sub_"))#10 ^("_lastsub_")"""
+	. . . set trigset=trigprefix_"set -xecute="_$$exptempl("ttSe0")
+	. . . set trigdel=trigprefix_"kill -xecute="_$$exptempl("ttKe0")
+	. . . set trigdelx=trigprefix_"zkill -xecute="_$$exptempl("ttZKe0")
 	. . else  if 1=stat do
-	. . . set trigset=trigprefix_"set -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"("""",$ztoldval),-1) ^($ztoldval)"_lf_" if '$data("_name_"(0,$ztvalue,"_sub_")) set ^("_lastsub_")="""" if $increment("_name_"("""",$ztvalue))"_lf
-	. . . set trigdel=trigprefix_"kill -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval"_sub_")) kill ^("_lastsub_") zkill:1>$increment("_name_"("""",$ztoldval),-1) ^($ztoldval)"_lf
-	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"("""",$ztoldval),-1) ^($ztoldval)"_lf
+	. . . set trigset=trigprefix_"set -xecute="_$$exptempl("ttSe1")
+	. . . set trigdel=trigprefix_"kill -xecute="_$$exptempl("ttKe1")
+	. . . set trigdelx=trigprefix_"zkill -xecute="_$$exptempl("ttZKe1")
 	. . else  if 2=stat do
-	. . . set trigset=trigprefix_"set -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"("""",$ztoldval),-1) zkill ^($ztoldval) zkill:1>$increment("_name_"(""""),-1) ^("""")"_lf_" if '$data("_name_"(0,$ztvalue,"_sub_")) set ^("_lastsub_")="""" if $increment("_name_"(11)),(1=$increment("_name_"("""",$ztvalue))),$increment("_name_"(""""))"_lf
-	. . . set trigdel=trigprefix_"kill -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_")) kill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"("""",$ztoldval),-1) zkill ^($ztoldval) zkill:1>$increment("_name_"(""""),-1) ^("""")"_lf
-	. . . set trigdelx=trigprefix_"zkill -xecute=<<"_lf_" if $data("_name_"(0,$ztoldval,"_sub_"))#10 zkill ^("_lastsub_") zkill:1>$increment("_name_"(11),-1) ^(11) if 1>$increment("_name_"("""",$ztoldval),-1) zkill ^($ztoldval) if 1>$increment("_name_"(""""),-1) zkill ^("""")"_lf
+	. . . set trigset=trigprefix_"set -xecute="_$$exptempl("ttSe2")
+	. . . set trigdel=trigprefix_"kill -xecute="_$$exptempl("ttKe2")
+	. . . set trigdelx=trigprefix_"zkill -xecute="_$$exptempl("ttZKe2")
 	. . else  set $ecode=",U241,"
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. . set @name=gbl,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
+	. . set ^%ydbAIMDxref(gbl,name)=""
 	. tcommit
-	. do xrefdata(nsubs,"")
+	. view "ztrigger_output":ztout
+	. set newpstr="" do xrefdata(nsubs)
 	. ; Add metadata to indicate completion
-	. tstart ()
-	. set @name@(0)=$zut_" "_$job_" "_$zyrelease,^(1)=nsubs,(^(2),^(3),^(4),^(5))=""
+	. tstart ():transactionid="batch"
+	. set @name@(0)=$zut_" "_$job_" "_$zyrelease_" "_$zpiece($text(%YDBAIM),";",2),^(1)=nsubs,(^(2),^(3),^(4),^(5))=""
 	. tcommit
 	; Release locks that block UNXREFDATA()
 	lock -(^%ydbAIMD($job),^%ydbAIMD(gbl,$job),@name@($job))
-	view "ztrigger_output":ztout
 	quit:$quit name quit
 
 ; The functions below are intended only to be called internally.
@@ -523,8 +562,6 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 ; specifications supported by Application Independent Metadata:
 ; - A specific value, e.g., 100.1 or "PATIENT" with * (the default if not
 ;   specified) to indicate that all subscripts at that level should be matched.
-;   A current limitation is that literal strings should not contain semicolons
-;   or colons.
 ; - An inclusive range of specific values separated by a colon, e.g.,
 ;   "1700:1799" or "A":"Z" where an omitted value is either the first possible
 ;   subscript or the last possible subscript in the collation sequence for that
@@ -543,19 +580,44 @@ chktrgspec:(locxsub,n)
 	. ; Nothing to check if single value; only ranges need to be checked
 	. if 1=piecelen
 	. else  if 2=piecelen do
-	. . set lower=$piece(subpiece,":",1),upper=$piece(subpiece,":",2)
-	. . ; if upper=lower, this piece is really a constant value
-	. . if upper=lower set piecelen=1,$piece(locxsub(n),";",i)=lower
-	. . else  set:lower]]upper $ecode=",U246,"
+	. . if (":"=$zextract(subpiece,1))!(":"=$zextract(subpiece,$zlength(subpiece)))
+	. . else  do
+	. . . set lower=$piece(subpiece,":",1),upper=$piece(subpiece,":",2)
+	. . . ; if upper=lower, this piece is really a constant value
+	. . . if upper=lower set piecelen=1,$piece(locxsub(n),";",i)=lower
+	. . . else  set:lower]]upper $ecode=",U246,"
 	. else  set okflag=0,$ecode=",U245,"
-	quit 1=i&(1=piecelen)
+	quit (1=i)&(1=piecelen)
+
+; Expand trigger template into -xecute string for trigger Note that this relies
+; on the (per standard) behavior of $text() to report empty source code lines
+; as a single space.
+; Note: exptempl() uses the line just before the label to get list of variables
+; to replace.  A variable name ending in $ means $ZWRITE() its value when
+; expanding.
+; Uses local variables from XREFDATA(): lastsub,name,pieces,sep$,sub,z
+exptempl:(lab)
+	new i,j,len,line,multiline,outstr,rep,str,tmp,var,vars,zflag
+	set tmp=$text(@lab),len=$zlength(tmp,";"),line=$zpiece(tmp,";",2,len)
+	set str=line
+	for i=1:1 set tmp=$text(@lab+i) quit:" "=tmp  set len=$zlength(tmp,";"),line=$zpiece(tmp,";",2,len),str=str_$char(10,9)_line
+	set multiline=i-1
+	set vars=$zpiece($text(exptempl+-1),": ",2)
+	for i=1:1:$zlength(vars,",") set tmp=$zpiece(vars,",",i),var=$zpiece(tmp,"$",1),zflag=$zlength(tmp,"$")-1 do:$data(@var)
+	. set rep="@"_var,len=$zlength(str,rep),outstr=$zpiece(str,rep,1)
+	. for j=2:1:len do
+	. . set outstr=outstr_$select(zflag:$zwrite(@var),1:@var)_$zpiece(str,rep,j)
+	. set str=outstr
+	quit $select(multiline:"<<"_$char(10,9)_outstr_$c(10),1:$zwrite(outstr))
 
 ; Output metadata for a specific xref variable.
 lsxrefdata:(lvn,xref)
-	new s
-	set lvn(xref)=@xref
-	set s=""
-	for  set:$data(@xref@(s))#10 lvn(xref,s)=^(s) set s=$order(^(s)) quit:""=s
+	tstart ():transactionid="batch"
+	do:$data(@xref)
+	. new s
+	. set lvn(xref)=@xref
+	. set s="" for  set:$data(@xref@(s))#10 lvn(xref,s)=^(s) set s=$order(^(s)) quit:""=s
+	tcommit
 	quit
 
 ; Create indirection strings to be used by xrefdata()
@@ -563,49 +625,49 @@ lsxrefdata:(lvn,xref)
 ;   constlist, gbl, name, lastvarsub, nameind, nsubs, omitflags, sep, subary,
 ;   totcntind, valcntind, xrefind
 mkindxrefdata:
-	new cflag,i,tmp
+	new i,tmp
 	set gblind(1)=gbl_"("_$select(constlist(1):locxsub(1),1:"subary(1)")
 	for i=2:1:nsubs set gblind(i)=gblind(i-1)_","_$select(constlist(i):locxsub(i),1:"subary("_i_")")
 	for i=1:1:nsubs set gblind(i)=gblind(i)_")"
-	set cflag=0
 	set xrefind=name_"("_$select($zlength(sep):"j,pieceval",1:"0,nodeval")
 	for i=1:1:nsubs do
 	. if constlist(i) do
 	. . if 'omitfix set cflag=1,lastvarsub=i,lastsubind=locxsub(i),xrefind=xrefind_","_lastsubind
-	. else  set cflag=1,lastvarsub=i,lastsubind="subary("_i_")",xrefind=xrefind_","_lastsubind
-	set:'cflag $ecode=",U244,"
+	. else  set lastvarsub=i,lastsubind="subary("_i_")",xrefind=xrefind_","_lastsubind
 	set xrefind=xrefind_")"
 	if $zlength(sep) set nameind=name_"(-j,pieceval)",valcntind=name_"(-j)"
 	else  set nameind=name_"("""",nodeval)",valcntind=name_"("""")"
 	set totcntind=name_"(11)"
 	quit
 
-; This label is the inverse of the unravel() function. ravel() takes a bit-map
-; like piece number string, e.g., "#0010100111", and composes from it the
-; compact form suitable for input to a trigger specification, e.g, "3;5;8:10"
-; for the example above.
+; ravel() takes a bit-map like piece number string, e.g., "#0010100111", and
+; composes from it the form sultable for the index values of a for loop,
+; e.g., 3,5,8,9,10
 ravel:(pstr)
-	new i,j,newpspec,nextp
+	new i,newpspec
 	set newpspec=""
-	set i=2 for  do  quit:i>$zlength(pstr)
-	. if $zextract(pstr,i) do
-	. . set nextp=i-1 if $increment(i)
-	. . for j=i:1 quit:j>$zlength(pstr)!('$zextract(pstr,j))  set:$increment(i) $zpiece(nextp,":",2)=j-1
-	. . set newpspec=newpspec_$select($zlength(newpspec):";",1:"")_nextp
-	. else  if $increment(i)
-	quit newpspec
+	for i=2:1:$zlength(pstr) if $zextract(pstr,i) set newpspec=newpspec_(i-1)_","
+	quit $zextract(newpspec,1,$zlength(newpspec)-1)
+
+; Snapshots state of locks. Parameter must be passed by reference.
+snaplck:(snap)
+	new i,lcks,tmp
+	zshow "l":lcks
+	for i=1:1 quit:'$data(lcks("L",i))  do
+	. set tmp=lcks("L",i)
+	. set snap($piece($piece(tmp,"LOCK ",2)," LEVEL=",1))=$piece(tmp," LEVEL=",2)
+	quit
 
 ; This label takes a piece number specification, e.g., "3;5;8:10" and returns
 ; the bit-map like piece specification, preceded by "#", e.g., "#0010100111" for
 ; the example above.  and determines if there are new pieces to xref. Pieces are
 ; separated by semi-colons. Each piece can be a number, or two colon separated
-; numbers, with the first number smaller than the second. Unraveled piece
-; numbers are in a bit-map like string, prefixed with "#".
+; numbers, with the first number smaller than the second.
 unravel:(pnum)
-	new i,newpstr,nextp,nextp1,nextpl,nextplen,nextpu
-	set modflag=0,newpstr="#"
-	for i=1:1:$zlength(pnum,";") do
-	. set nextp=$zpiece(pnum,";",i),nextplen=$zlength(nextp,":")
+	new k,newpstr,nextp,nextp1,nextpl,nextplen,nextpu
+	set newpstr="#"
+	for k=1:1:$zlength(pnum,";") do
+	. set nextp=$zpiece(pnum,";",k),nextplen=$zlength(nextp,":")
 	. if 1=nextplen do
 	. . set:nextp\1'=nextp!(nextp<=0) $ecode=",U248,"
 	. . set nextp1=nextp+1
@@ -613,25 +675,44 @@ unravel:(pnum)
 	. . set $zextract(newpstr,nextp1)=1
 	. else  if 2=nextplen do
 	. . set nextpl=$zpiece(nextp,":",1),nextpu=$zpiece(nextp,":",2)
-	. . set:nextpl\1'=nextpl!(nextpl<=0!(nextpu\1'=nextpu!(nextpu<=0!(nextpu<=nextpl)))) $ecode=",U248,"
+	. . set:(nextpl\1'=nextpl)!(0>=nextpl)!(nextpu\1'=nextpu)!(0>=nextpu)!(nextpu<nextpl) $ecode=",U248,"
 	. . set nextp1=nextpu+1
 	. . set:nextp1>$zlength(newpstr) newpstr=newpstr_$ztranslate($justify("",nextp1-$zlength(newpstr))," ",0)
 	. . for j=nextpl+1:1:nextp1 set $zextract(newpstr,j)=1
 	. else  set $ecode=",U249,"
 	quit newpstr
 
+; Releases locks so that locks owned by the process match those in the
+; parameter, which should be created by snaplck(). Parameter should be
+; passed by reference.
+unsnaplck:(oldlck)
+	new currlck,i,lck,relstr
+	do snaplck(.currlck)
+	set lck=""
+	for  set lck=$order(currlck(lck)) quit:""=lck  do
+	. if $increment(currlck(lck),-$get(oldlck(lck),0))
+	. for i=1:1:currlck(lck) lock -@lck
+	quit
+
 ; Given the name of a cross reference global, this function removes the triggers
 ; used to maintain the xref, and then deletes the cross reference global
-; variable.
+; variable. Variable(s) used from caller: gbl
 unxrefdata:(xrefgbl)
 	do:$data(@xrefgbl)
-	. new i,tlevel,trig
+	. new i,tlevel,trig,ztout
+	. ; The M lock protects against concurrent XREFDATA() and UNXREFDATA()
+	. ; and the transaction ensures Consistency of the metadata about the
+	. ; metadata.
 	. lock +@xrefgbl
 	. set tlevel=$tlevel
-	. tstart ()
+	. set ztout=$view("ztrigger_output")
+	. view "ztrigger_output":0
+	. tstart ():transactionid="batch"
 	. for i=6:1:8 if $data(@xrefgbl@(i))#10 set trig=^(i) if $ztrigger("item","-"_$zextract(trig,2,$zlength(trig)))
 	. kill @xrefgbl
+	. zkill ^%ydbAIMDxref(gbl,xrefgbl)
 	. tcommit
+	. view "ztrigger_output":ztout
 	. lock -@xrefgbl
 	quit
 
@@ -644,15 +725,15 @@ unxrefdata:(xrefgbl)
 ; needs to be concerned with setting cross references for nodes that don't
 ; already have cross references, which is done in a transaction to ensure
 ; Consistency.
-; The following code has some built-in assumptions about the frequencey of
+; The following code has some built-in assumptions about the frequency of
 ; occurrence of different options, and actual application data might imply
 ; a different ordering of tests for the various code paths. Fortunately, this
 ; code is executed only for the initial creation of a cross reference, and not
 ; in the triggers that maintain cross references as globals are updated.
 ; Uses or references variables defined in XREFDATA():
-;   constlist, gbl, lastvarsub, name, nameind, locxsub, nullsub, omitfix, stat,
-;   totcntind, valcntind, xref, zpiece
-xrefdata:(nsubs,pstr)
+;   constlist, gbl, lastvarsub, locxsub, name, nameind, newpstr, nullsub,
+;   omitfix, stat, totcntind, valcntind, xref, zpiece
+xrefdata:(nsubs)
 	new flag,i,j,nodelen1,nodeval,nullflag,piece1,piece2,pieceval,sublvl,thisrange,thissubz,tmp,xflag
 	; If nsubs>1 it means call the function recursively for the next
 	; subscript level. Where the specification is to not match all
@@ -663,33 +744,37 @@ xrefdata:(nsubs,pstr)
 	set subary(sublvl)=""
 	if nsubs>1 do
 	. if "*"=locxsub(sublvl) for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
-	. . do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1,pstr)
-	. else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1,pstr) quit
+	. . do xrefdata(nsubs-1)
+	. else  if $get(constlist(sublvl),0) do xrefdata(nsubs-1) quit
 	. else  for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
-	. . do:$data(@gblind(sublvl))\10
-	. . . set thissubz=$zwrite(subary(sublvl))
-	. . . if zpiece do
-	. . . . for i=1:1:$zlength(locxsub(sublvl),";") do
-	. . . . . set thisrange=$zpiece(locxsub(sublvl),";",i)
-	. . . . . set piece1=$zpiece(thisrange,":",1)
-	. . . . . set piece2=$select(1=$zlength(thisrange,":"):piece1,1:$zpiece(thisrange,":",2))
-	. . . else  do
-	. . . . for i=1:1:$length(locxsub(sublvl),";") do
-	. . . . . set thisrange=$piece(locxsub(sublvl),";",i)
-	. . . . . set piece1=$piece(thisrange,":",1)
-	. . . . . set piece2=$select(1=$length(thisrange,":"):piece1,1:$piece(thisrange,":",2))
-	. . . do:thissubz=piece1!(thissubz=piece2!(thissubz]]piece1&(piece2]]thissubz)))&($data(@gblind(sublvl))\10) xrefdata(nsubs-1,pstr)
-	; if nsubs=1 (this else clause) then cross reference those
-	; subscripts that the specification says to cross reference.
-	; do with postconditional to cross reference "" subscripts.
-	else  if constlist(sublvl) do:$data(@gblind(sublvl))#10
+	. . set thissubz=$zwrite(subary(sublvl))
+	. . if zpiece do
+	. . . for i=1:1:$zlength(locxsub(sublvl),";") do
+	. . . . set thisrange=$zpiece(locxsub(sublvl),";",i)
+	. . . . set piece1=$zpiece(thisrange,":",1)
+	. . . . set piece2=$select(1=$zlength(thisrange,":"):piece1,1:$zpiece(thisrange,":",2))
+	. . else  do
+	. . . for i=1:1:$length(locxsub(sublvl),";") do
+	. . . . set thisrange=$piece(locxsub(sublvl),";",i)
+	. . . . set piece1=$piece(thisrange,":",1)
+	. . . . set piece2=$select(1=$length(thisrange,":"):piece1,1:$piece(thisrange,":",2))
+	. . do:(thissubz=piece1)!(thissubz=piece2)!((thissubz]]piece1)&(piece2]]thissubz)) xrefdata(nsubs-1)
+	; if nsubs=1 (the else command below) then cross reference those
+	; subscripts that the specification says to cross reference.  do with
+	; postconditional to cross reference "" subscripts.
+	else  if constlist(sublvl) do
 	. tstart ():transactionid="batch"
-	. set nodeval=@gblind(sublvl)
+	. set nodeval=$get(@gblind(sublvl))
 	. if $zlength(sep) do
-	. . for i=2:1:$zlength(pstr) do:+$zextract(pstr,i)
+	. . set nodelen1=$zlength(newpstr)
+	. . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
 	. . . set j=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,j),1:$piece(nodeval,sep,j))
-	. . . if '$data(@xrefind)#10 set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
-	. else  if '$data(@xrefind)#10 set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . do:'$data(@xrefind)
+	. . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
+	. . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. else  do:'$data(@xrefind)
+	. . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
+	. . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
 	. tcommit
 	else  for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
 	. do:$data(@gblind(sublvl))#10
@@ -703,39 +788,95 @@ xrefdata:(nsubs,pstr)
 	. . . . . set thisrange=$zpiece(locxsub(sublvl),";",i)
 	. . . . . set piece1=$zpiece(thisrange,":",1)
 	. . . . . set piece2=$select(1=$zlength(thisrange,":"):piece1,1:$zpiece(thisrange,":",2))
-	. . . . . set:thissubz=piece1!(thissubz=piece2!(thissubz]]piece1&(piece2]]thissubz))) xflag=1
+	. . . . . set:(thissubz=piece1)!(thissubz=piece2)!((thissubz]]piece1)&(piece2]]thissubz)) xflag=1
 	. . . else  do
 	. . . . for i=1:1:$length(locxsub(sublvl),";") quit:xflag  do
 	. . . . . set thisrange=$piece(locxsub(sublvl),";",i)
 	. . . . . set piece1=$piece(thisrange,":",1)
 	. . . . . set piece2=$select(1=$length(thisrange,":"):piece1,1:$piece(thisrange,":",2))
-	. . . . . set:thissubz=piece1!(thissubz=piece2!(thissubz]]piece1&(piece2]]thissubz))) xflag=1
+	. . . . . set:(thissubz=piece1)!(thissubz=piece2)!((thissubz]]piece1)&(piece2]]thissubz)) xflag=1
 	. . do:xflag&($data(@gblind(sublvl))#10)
-	. . . set nodeval=@gblind(sublvl)
+	. . . set nodeval=$get(@gblind(sublvl))
 	. . . if $zlength(sep) do
-	. . . . for i=2:1:$zlength(pstr) do:+$zextract(pstr,i)
+	. . . . set nodelen1=$zlength(newpstr)
+	. . . . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
 	. . . . . set j=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,j),1:$piece(nodeval,sep,j))
 	. . . . . if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
 	. . . else  if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
 	. . tcommit
 	quit
 
+; Templates for triggers
+; The labeling convention is as follows:
+; - tt for trigger template
+; - trigger command: S, ZK, K
+; - e for entire node, p for pieces of node
+; - statistics level: 0, 1 or 2
+; Each template must end in a blank line so that exptempl() knows the end of a template
+ttSe0	;zkill @name(0,$ztoldval,@sub) set @name(0,$ztvalue,@sub)=""
+
+ttKe0	;kill @name(0,$ztoldval,@sub)
+
+ttZKe0	;zkill @name(0,$ztoldval,@sub)
+
+ttSe1	;if $data(@name(0,$ztoldval,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",$ztoldval),-1) ^($ztoldval)
+	;if '$data(@name(0,$ztvalue,@sub)) set ^(@lastsub)="" if $increment(@name("",$ztvalue))
+
+ttKe1	;if $data(@name(0,$ztoldval,@sub)) kill ^(@lastsub) zkill:1>$increment(@name("",$ztoldval),-1) ^($ztoldval)
+
+ttZKe1	;if $data(@name(0,$ztoldval,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",$ztoldval),-1) ^($ztoldval)
+
+ttSe2	;if $data(@name(0,$ztoldval,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name("",$ztoldval),-1) zkill ^($ztoldval) zkill:1>$increment(@name(""),-1) ^("")
+	;if '$data(@name(0,$ztvalue,@sub)) set ^(@lastsub)="" if $increment(@name(11)),(1=$increment(@name("",$ztvalue))),$increment(@name(""))
+
+ttKe2	;if $data(@name(0,$ztoldval,@sub)) kill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name("",$ztoldval),-1) zkill ^($ztoldval) zkill:1>$increment(@name(""),-1) ^("")
+
+ttZKe2	;if $data(@name(0,$ztoldval,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name("",$ztoldval),-1) zkill ^($ztoldval) if 1>$increment(@name(""),-1) zkill ^("")
+
+ttSp0	;for i=@pieces set p=$@zpiece($ztoldval,@sep,i),q=$@zpiece($ztvalue,@sep,i) do
+	;. if p'=q zkill @name(i,p,@sub) set @name(i,q,@sub)=""
+	;. else  set:'$zlength(q) @name(i,"",@sub)=""
+
+ttKp0	;set p=@name(2),b=^(4),q=$zlength(b) for i=2:1:q if +$zextract(b,i) set j=i-1 kill @name(j,$@zpiece($ztoldval,p,j),@sub)
+
+ttZKp0	;set p=@name(2),b=^(4),q=$zlength(b) for i=2:1:q if +$zextract(b,i) set j=i-1 zkill @name(j,$@zpiece($ztoldval,p,j),@sub)
+
+ttSp1	;for i=@pieces set p=$@zpiece($ztoldval,@sep,i),q=$@zpiece($ztvalue,@sep,i),j=-i do
+	;. if p'=q do
+	;. . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
+	;. . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" if $increment(@name(j,q))
+	;. else  if '$zlength(q),'($data(@name(i,"",@sub))#10) set ^(@lastsub)="" if $increment(@name(j,""))
+
+ttKp1	;set p=@name(2),b=^(4),q=$zlength(b) for i=2:1:q if +$zextract(b,i) set j=i-1,k=-j,x=$@zpiece($ztoldval,p,j) kill @name(j,x,@sub) zkill:1>$increment(@name(k,x),-1) ^(x)
+
+ttZKp1	;set p=@name(2),b=^(4),q=$zlength(b) for i=2:1:q if +$zextract(b,i) set j=i-1,k=-j,x=$@zpiece($ztoldval,p,j) zkill @name(j,x,@sub) zkill:1>$increment(@name(k,x),-1) ^(x)
+
+ttSp2	;for i=@pieces set p=$@zpiece($ztoldval,@sep,i),q=$@zpiece($ztvalue,@sep,i),j=-i do
+	;. if p'=q do
+	;. . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(j,p),-1) zkill ^(p) if 1>$increment(@name(j),-1) zkill ^(j)
+	;. . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" if $increment(@name(11)),(1=$increment(@name(j,q))),$increment(@name(j))
+	;. else  if '$zlength(q),'($data(@name(i,"",@sub))#10) set ^(@lastsub)="" if $increment(@name(11)),(1=$increment(@name(j,""))),$increment(@name(j))
+
+ttKp2	;set p=@name(2) for i=2:1:$zlength(@name(4)) if +$zextract(@name(4),i) set j=i-1,mj=-j,q=$@zpiece($ztoldval,p,j) if $data(@name(j,q,@sub)) kill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(mj,q),-1) zkill ^(q) zkill:1>$increment(@name(mj),-1) ^(mj)
+
+ttZKp2	;set p=@name(2) for i=2:1:$zlength(@name(4)) if +$zextract(@name(4),i) set j=i-1,mj=-j,q=$@zpiece($ztoldval,p,j) if $data(@name(j,q,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(mj,q),-1) zkill ^(q) zkill:1>$increment(@name(mj),-1) ^(mj)
+
 ;	Error message texts
 U238	;"-F-NOPSEP Piece numbers "_pnum_" specified, but piece separator not specifed"
 U239	;"-F-SETZTRIGGERFAIL Out of design condition - setting $ZTRIGGER() failed"
-U240	;"-F-CANTADDSTAT stat="_stat_" and "_name_"(10)="_+$get(@name@(10))_" - adding statistics not yet supported"
+U240	;"-F-CANTADDSTAT stat="_stat_" and "_name_"(10)="_+$get(@name@(10))_" - adding statistics to existing metadata not supported"
 U241	;"-F-INVSTAT """_stat_""" is invalid stat; must be 0, 1, or 2"
 U242	;"-F-OUTOFDESIGN """_name_""" already used to xref """_@name_""" cannot reuse for """_gbl_""""
 U243	;"-F-ALREADYXREF """_gbl_""" is already a cross reference global variable"
 U244	;"-F-NEEDSUB Need at least one subscript for cross reference"
-U245	;"-F-INVPIECE Range """_trgpiece_""" has invalid number of pieces: "_piecelen
+U245	;"-F-INVPIECE Range """_subpiece_""" has invalid number of pieces: "_piecelen
 U246	;"-F-INVRANGE upper """_upper_""" is less than lower """_lower_""" in range specification"
 U247	;"-F-INVSUB Subscript """_$get(i,nsubs)_""" is not an integer 1 through 31"
 U248	;"-F-INVPIECE Piece """_nextp_""" is invalid piece specification"
-U249	;"-F-INVPSEPLEN Piece number "_i_", "_nextp_" has "_nextplen_" "":"" separated pieces, invalid"
+U249	;"-F-INVPNUMSEP Range specification "_k_" ("_$zwrite(nextp)_") has "_nextplen_" "":"" separated pieces, invalid"
 U250	;"-F-NOPIECE Piece separator """_sep_""" specified, but no piece numbers"
-U251	;"-F-UNKNERR """_tmp1_""" is not a recognized error code"
-U252	;"-F-NOTAGBL Variable """_gbl_""" is not a valid global variable name"
+U251	;"-F-INCONSISTENTNULL Regions "_tmp_" for global variable "_gbl_" are inconsistent with regard to null subscripts"
+U252	;"-F-NOTAGBL Variable """_$get(gbl)_""" is not a valid global variable name"
 U253	;"-F-NOSUBS Need at least 1 subscript to cross reference; nsubs="_nsubs
-U254	;"-F-NOEXTREF Extended reference in "_var_" is not supported"
+U254	;"-F-NOEXTREF Extended reference in "_gbl_" is not supported"
 U255	;"-F-BADINVOCATION Top level invocation of "_$text(+0)_" not supported; must invoke a label"
