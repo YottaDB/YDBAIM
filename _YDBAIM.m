@@ -153,7 +153,7 @@ err	; Error handler
 	view:$data(ztout) "ztrigger_output":ztout
 	use io
 	do unsnaplck(.currlck)
-	zhalt:"%XCMD"=$piece($get(tmp1("S",$order(tmp1("S",""""),-1))),"^",2) +$extract(tmp1,2,$zlength(tmp1))
+	zhalt:"%XCMD"=$piece($get(tmp1("S",$order(tmp1("S",""""),-1))),"^",2) +$extract(errcode,2,$zlength(errcode))
 	do etrap
 	quit:$quit $select($zlength(errtxt):$zpiece($zstatus,",",1),1:$zpiece(errcode,"U",2)) quit
 

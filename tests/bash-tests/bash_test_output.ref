@@ -1,0 +1,55 @@
+BADINVOCATION DO ^%YDBAIM
+%YDBAIM-F-BADINVOCATION Top level invocation of %YDBAIM not supported; must invoke a label
+255
+---------------
+
+NOSUBS write $$XREFDATA^%YDBAIM("^abcd")
+%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference; nsubs=0
+253
+---------------
+
+NOTAGBL1 write $$XREFDATA^%YDBAIM
+%YDBAIM-F-NOTAGBL Variable "" is not a valid global variable name
+252
+---------------
+
+NOPIECE write $$XREFDATA^%YDBAIM("^abcd",1,"|")
+%YDBAIM-F-NOPIECE Piece separator "|" specified, but no piece numbers
+250
+---------------
+
+NOEXTREF write $$XREFDATA^%YDBAIM("^|""x.gld""|x")
+%YDBAIM-F-NOEXTREF Extended reference in ^|"x.gld"|x is not supported
+254
+---------------
+
+INVPIECE set subs(1)="1:2:3" write $$XREFDATA^%YDBAIM("^x",.subs)
+%YDBAIM-F-INVPIECE Range "1:2:3" has invalid number of pieces: 3
+245
+---------------
+
+NOTAGBL2 write $$UNXREFDATA^%YDBAIM("xy123456789012345678901234567890",1)
+%YDBAIM-F-NOTAGBL Variable "xy123456789012345678901234567890" is not a valid global variable name
+252
+---------------
+
+NOTAGBL3 write $$XREFDATA^%YDBAIM("^xy123456789012345678901234567890",0)
+%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+252
+---------------
+
+NOTAGBL4 write $$XREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)
+%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+252
+---------------
+
+NOTAGBL5 write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",0)
+%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+252
+---------------
+
+NOTAGBL6 write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)
+%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+252
+---------------
+

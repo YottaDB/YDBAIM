@@ -49,11 +49,29 @@ cp $script_dir/munit-tests/*.m $ydb_dir/r/
 
 # Don't recreate database if it already exists... so that we can re-run faster
 if [ ! -f $ydb_dir/r/_ut.m ]; then
-	# Add null region for global ^null to test null subscripting
-	$ydb_dist/yottadb -r ^GDE <<END &> /dev/null
+	$ydb_dist/yottadb -r ^GDE <<END &> $ydb_dir/$ydb_rel/g/db.gde.out
+! Add null region for global ^null to test null subscripting
 add -segment NULLSEG -file="$ydb_dir/$ydb_rel/g/null.dat"
 add -region  NULLREG -null_subscripts=true -dyn=NULLSEG -autodb
 add -name    null* -region=NULLREG
+
+! Add spanning seg/reg with same null across regions
+add -segment SAMESET1 -file="$ydb_dir/$ydb_rel/g/sameset1.dat"
+add -region  SAMESET1 -null_subscripts=true -dyn=SAMESET1 -autodb
+add -segment SAMESET2 -file="$ydb_dir/$ydb_rel/g/sameset2.dat"
+add -region  SAMESET2 -null_subscripts=true -dyn=SAMESET2 -autodb
+add -name    sameset            -region=SAMESET1
+add -name    sameset("A":"z")   -region=SAMESET2
+
+! Add spanning seg/reg with diff null across regions
+add -segment DIFFSET1 -file="$ydb_dir/$ydb_rel/g/diffset1.dat"
+add -region  DIFFSET1 -null_subscripts=true -dyn=DIFFSET1 -autodb
+add -segment DIFFSET2 -file="$ydb_dir/$ydb_rel/g/diffset2.dat"
+add -region  DIFFSET2 -null_subscripts=false -dyn=DIFFSET2 -autodb
+add -name    diffset            -region=DIFFSET1
+add -name    diffset("A":"z")   -region=DIFFSET2
+
+show -a
 END
 
 	# Load test data.
@@ -98,9 +116,11 @@ fi
 # Run tests
 # %YDBAIMTEST spews .mj* files. We don't want that in the repo; put in $ydb_tmp
 pushd $ydb_tmp
-$ydb_dist/yottadb -r %YDBAIMSAN    | tee -a test_output.txt
-$ydb_dist/yottadb -r %YDBAIMTEST   | tee -a test_output.txt
-$ydb_dist/yottadb -r %YDBAIMSPEED  | tee -a test_output.txt
+$ydb_dist/yottadb -r %YDBAIMSAN       | tee -a test_output.txt
+$ydb_dist/yottadb -r %YDBAIMTEST      | tee -a test_output.txt
+$ydb_dist/yottadb -r %YDBAIMSPEED     | tee -a test_output.txt
+# Run Bash tests
+$script_dir/bash-tests/ydbaim_test.sh |& tee -a bash_test_output.txt
 popd
 
 # Copy error files to our db directory so that we can look at the output from the pipeline
@@ -115,6 +135,10 @@ grep -B1 -F '[FAIL]' $ydb_tmp/test_output.txt
 grep_status=$?
 set -e
 
+# Check that the bash tests match the reference file
+diff $script_dir/bash-tests/bash_test_output.ref $ydb_tmp/bash_test_output.txt
+
+# Check if we have M-Unit failures.
 if [ "$grep_status" -eq 1 ]; then
 	exit 0
 else
