@@ -140,8 +140,8 @@ err	; Error handler
 	set io=$io
 	set usestderr=1
 	zshow "d":tmp1
-	set tmp2="" for  set tmp2=$order(tmp1("D",tmp2)) quit:'usestderr!(""=tmp2)  set:tmp1("D",tmp2)?.E1" TERMINAL ".E usestderr=0
-	trollback:+$get(tlevel) tlevel
+	set tmp2="" for  set tmp2=$order(tmp1("D",tmp2)) quit:'usestderr!'$zlength(tmp2)  set:tmp1("D",tmp2)?.E1" TERMINAL ".E usestderr=0
+	trollback:$tlevel&$data(tlevel) tlevel
 	set errcode=$zpiece($ecode,",",2),errtxt=$text(@errcode)
 	set stderr="/proc/self/fd/2"
 	open stderr
@@ -155,7 +155,7 @@ err	; Error handler
 	do unsnaplck(.currlck)
 	zhalt:"%XCMD"=$piece($get(tmp1("S",$order(tmp1("S",""""),-1))),"^",2) +$extract(errcode,2,$zlength(errcode))
 	do etrap
-	quit:$quit $select($zlength(errtxt):$zpiece($zstatus,",",1),1:$zpiece(errcode,"U",2)) quit
+	zgoto 1
 
 ; List metadata for a cross reference, all cross references for a global
 ; variable, or all cross references
@@ -183,12 +183,13 @@ err	; Error handler
 LSXREFDATA(lvn,gbl)
 	if "Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap new $etrap do etrap
 	new currlck,tlevel,xrefvar
+	set tlevel=$tlevel
 	do snaplck(.currlck)
-	if ""=$get(gbl) do
-	. set gbl="" for  set gbl=$order(^%ydbAIMDxref(gbl)) quit:""=gbl  do
-	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:""=xrefvar  do lsxrefdata(.lvn,xrefvar)
+	if '$zlength($get(gbl)) do
+	. set gbl="" for  set gbl=$order(^%ydbAIMDxref(gbl)) quit:'$zlength(gbl)  do
+	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do lsxrefdata(.lvn,xrefvar)
 	else  if gbl'?1"^%ydbAIMD".E do
-	. set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:""=xrefvar  do lsxrefdata(.lvn,xrefvar)
+	. set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do lsxrefdata(.lvn,xrefvar)
 	else  do lsxrefdata(.lvn,gbl)
 	quit
 
@@ -254,15 +255,16 @@ LSXREFDATA(lvn,gbl)
 ; - stat exists only to allow the parameters of UNXREFDATA() to match and is
 ;   ignored
 UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
-	if ""=$etrap!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
+	if '$zlength($etrap)!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
 	new currlck,i,nsubs,tlevel,xrefvar
+	set tlevel=$tlevel
 	do snaplck(.currlck)
 	set gbl=$get(gbl)
 	if gbl?1"^%ydbAIMD".22AN,$data(@gbl) set xrefvar=gbl,gbl=@xrefvar do unxrefdata(xrefvar)
 	else  if '$zlength(gbl) do			; remove all xrefs
 	. lock +^%ydbAIMD
-	. set gbl="" for  set gbl=$order(^%ydbAIMDxref(gbl)) quit:""=gbl  do
-	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:""=xrefvar  do unxrefdata(xrefvar)
+	. set gbl="" for  set gbl=$order(^%ydbAIMDxref(gbl)) quit:'$zlength(gbl)  do
+	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do unxrefdata(xrefvar)
 	. lock -^%ydbAIMD
 	else  do
 	. ; Xrefs are only supported for global variables
@@ -273,13 +275,13 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. do:$data(xsub)\10
 	. . set i=$order(xsub(""))
 	. . set:1>i!(i\1'=i)!(31<i) $ecode=",U247,"
-	. . for  set i=$order(xsub(i)) quit:""=i  set:i\1'=i!(31<i) $ecode=",U247,"
+	. . for  set i=$order(xsub(i)) quit:'$zlength(i)  set:i\1'=i!(31<i) $ecode=",U247,"
 	. . set i=$order(xsub(""),-1)
 	. . set:i>nsubs nsubs=i
 	. set:31<nsubs $ecode=",U247,"
 	. if 'nsubs do		; remove all xrefs for gbl
 	. . lock +^%ydbAIMD(gbl)
-	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:""=xrefvar  do unxrefdata(xrefvar)
+	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do unxrefdata(xrefvar)
 	. . lock -^%ydbAIMD(gbl)
 	. else  do unxrefdata($$XREFDATA(gbl,.xsub,$get(sep),,1,$get(zpiece),$get(omitfix,1)))
 	quit:$quit "" quit
@@ -395,10 +397,11 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 ; Nodes of ^%ydbAIMDxref(gbl,aimgbl) are metadata on metadata, where gbl is an
 ; application global and aimgbl is the AIM global.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
-	if ""=$etrap!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
+	if '$zlength($etrap)!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
 	new asciisep,currlck,gblind,i,io,j,lastsub,lastsubind,lastvarsub,lf,locxsub,modflag,name,nameind,newpnum,newpstr,pieces
 	new nsubs,nullsub,constlist,omitflag,oldpstr,stderr,sub,subary,suffix,tlevel,tmp,totcntind,trigdel,trigdelx,trigprefix
 	new trigset,trigsub,valcntind,xrefind,z,zlsep,ztout
+	set tlevel=$tlevel	; tlevel is required by error trap to rollback
 	do snaplck(.currlck)
 	set io=$io
 	set stderr="/proc/self/fd/2" open stderr
@@ -415,7 +418,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	; If constraints specified for subscripts, ensure all refer to
 	; subscripts that are integers in the range 1 through 31
 	do:$data(xsub)\10
-	. set i="" for  set i=$order(xsub(i)) quit:""=i  do:$data(xsub(i))#10
+	. set i="" for  set i=$order(xsub(i)) quit:'$zlength(i)  do:$data(xsub(i))#10
 	. . set:1>i!(i\1'=i)!(31<i) $ecode=",U247,"
 	. . set tmp=xsub(i),locxsub(i)=$select(":"=tmp:"*",1:tmp)
 	. . set constlist(i)=$$chktrgspec(.locxsub,i)
@@ -462,7 +465,6 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	; does not.
 	lock +(^%ydbAIMD($job),^%ydbAIMD(gbl,$job),@name@($job))
 	set stat=+$get(stat)
-	set tlevel=$tlevel	; tlevel is required by error trap to rollback
 	; Determine whether application global permits null subscripts. For a
 	; global variable that spans multiple regions, all regions must be
 	; consistent in allowing or not allowing null subscripts. Two cascading
@@ -616,7 +618,7 @@ lsxrefdata:(lvn,xref)
 	do:$data(@xref)
 	. new s
 	. set lvn(xref)=@xref
-	. set s="" for  set:$data(@xref@(s))#10 lvn(xref,s)=^(s) set s=$order(^(s)) quit:""=s
+	. set s="" for  set:$data(@xref@(s))#10 lvn(xref,s)=^(s) set s=$order(^(s)) quit:'$zlength(s)
 	tcommit
 	quit
 
@@ -629,13 +631,13 @@ mkindxrefdata:
 	set gblind(1)=gbl_"("_$select(constlist(1):locxsub(1),1:"subary(1)")
 	for i=2:1:nsubs set gblind(i)=gblind(i-1)_","_$select(constlist(i):locxsub(i),1:"subary("_i_")")
 	for i=1:1:nsubs set gblind(i)=gblind(i)_")"
-	set xrefind=name_"("_$select($zlength(sep):"j,pieceval",1:"0,nodeval")
+	set xrefind=name_"("_$select($zlength(sep):"k,pieceval",1:"0,nodeval")
 	for i=1:1:nsubs do
 	. if constlist(i) do
 	. . if 'omitfix set cflag=1,lastvarsub=i,lastsubind=locxsub(i),xrefind=xrefind_","_lastsubind
 	. else  set lastvarsub=i,lastsubind="subary("_i_")",xrefind=xrefind_","_lastsubind
 	set xrefind=xrefind_")"
-	if $zlength(sep) set nameind=name_"(-j,pieceval)",valcntind=name_"(-j)"
+	if $zlength(sep) set nameind=name_"(-k,pieceval)",valcntind=name_"(-k)"
 	else  set nameind=name_"("""",nodeval)",valcntind=name_"("""")"
 	set totcntind=name_"(11)"
 	quit
@@ -689,7 +691,7 @@ unsnaplck:(oldlck)
 	new currlck,i,lck,relstr
 	do snaplck(.currlck)
 	set lck=""
-	for  set lck=$order(currlck(lck)) quit:""=lck  do
+	for  set lck=$order(currlck(lck)) quit:'$zlength(lck)  do
 	. if $increment(currlck(lck),-$get(oldlck(lck),0))
 	. for i=1:1:currlck(lck) lock -@lck
 	quit
@@ -699,12 +701,11 @@ unsnaplck:(oldlck)
 ; variable. Variable(s) used from caller: gbl
 unxrefdata:(xrefgbl)
 	do:$data(@xrefgbl)
-	. new i,tlevel,trig,ztout
+	. new i,trig,ztout
 	. ; The M lock protects against concurrent XREFDATA() and UNXREFDATA()
 	. ; and the transaction ensures Consistency of the metadata about the
 	. ; metadata.
 	. lock +@xrefgbl
-	. set tlevel=$tlevel
 	. set ztout=$view("ztrigger_output")
 	. view "ztrigger_output":0
 	. tstart ():transactionid="batch"
@@ -734,31 +735,30 @@ unxrefdata:(xrefgbl)
 ;   constlist, gbl, lastvarsub, locxsub, name, nameind, newpstr, nullsub,
 ;   omitfix, stat, totcntind, valcntind, xref, zpiece
 xrefdata:(nsubs)
-	new flag,i,j,nodelen1,nodeval,nullflag,piece1,piece2,pieceval,sublvl,thisrange,thissubz,tmp,xflag
+	new flag,i,j,k,nodelen1,nodeval,nranges,piece1,piece2,pieceval,rangeend,rangeflag,sublvl,thisrange,tmp
 	; If nsubs>1 it means call the function recursively for the next
-	; subscript level. Where the specification is to not match all
-	; subscripts at this level, each subscript will need to be checked
-	; as to whether it should be cross referenced.
-	set nullflag=nullsub
+	; subscript level.
+	set flag=nullsub
 	set sublvl=$order(locxsub(""),-1)-nsubs+1
 	set subary(sublvl)=""
 	if nsubs>1 do
-	. if "*"=locxsub(sublvl) for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
-	. . do xrefdata(nsubs-1)
-	. else  if $get(constlist(sublvl),0) do xrefdata(nsubs-1) quit
-	. else  for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
-	. . set thissubz=$zwrite(subary(sublvl))
-	. . if zpiece do
-	. . . for i=1:1:$zlength(locxsub(sublvl),";") do
+	. if "*"=locxsub(sublvl) for  do:flag  set flag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:'$zlength(subary(sublvl))
+	. . do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1)
+	. else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1) quit
+	. else  do
+	. . set nranges=$select(zpiece:$zlength(locxsub(sublvl),";"),1:$length(locxsub(sublvl),";"))
+	. . for i=1:1:nranges do
+	. . . if zpiece do
 	. . . . set thisrange=$zpiece(locxsub(sublvl),";",i)
-	. . . . set piece1=$zpiece(thisrange,":",1)
-	. . . . set piece2=$select(1=$zlength(thisrange,":"):piece1,1:$zpiece(thisrange,":",2))
-	. . else  do
-	. . . for i=1:1:$length(locxsub(sublvl),";") do
+	. . . . set piece1=$zpiece(thisrange,":",1),piece2=$zpiece(thisrange,":",$zlength(thisrange,":"))
+	. . . else  do
 	. . . . set thisrange=$piece(locxsub(sublvl),";",i)
-	. . . . set piece1=$piece(thisrange,":",1)
-	. . . . set piece2=$select(1=$length(thisrange,":"):piece1,1:$piece(thisrange,":",2))
-	. . do:(thissubz=piece1)!(thissubz=piece2)!((thissubz]]piece1)&(piece2]]thissubz)) xrefdata(nsubs-1)
+	. . . . set piece1=$piece(thisrange,":",1),piece2=$piece(thisrange,":",$length(thisrange,":"))
+	. . . if $zlength(piece1) set subary(sublvl)=$zwrite(piece1,1),flag=1
+	. . . else  set subary(sublvl)="",flag=nullsub
+	. . . set rangeend=$select($zlength(piece2):$zwrite(piece2,1),1:""),rangeflag=$zlength(rangeend)
+	. . . for  do:flag  set flag=1,(subary(sublvl),tmp)=$order(@gblind(sublvl)) quit:'$zlength(tmp)!(rangeflag&(tmp]]rangeend))
+	. . . . do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1)
 	; if nsubs=1 (the else command below) then cross reference those
 	; subscripts that the specification says to cross reference.  do with
 	; postconditional to cross reference "" subscripts.
@@ -768,7 +768,7 @@ xrefdata:(nsubs)
 	. if $zlength(sep) do
 	. . set nodelen1=$zlength(newpstr)
 	. . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
-	. . . set j=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,j),1:$piece(nodeval,sep,j))
+	. . . set k=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
 	. . . do:'$data(@xrefind)
 	. . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
 	. . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
@@ -776,34 +776,32 @@ xrefdata:(nsubs)
 	. . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
 	. . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
 	. tcommit
-	else  for  do:nullflag  set nullflag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:""=subary(sublvl)
-	. do:$data(@gblind(sublvl))#10
-	. . set thissubz=$zwrite(subary(sublvl))
-	. . tstart ():transactionid="batch"
-	. . set xflag=0
-	. . if "*"=locxsub(sublvl) set xflag=1
+	else  do
+	. set nranges=$select(zpiece:$zlength(locxsub(sublvl),";"),1:$length(locxsub(sublvl),";"))
+	. for i=1:1:nranges do
+	. . if "*"=locxsub(sublvl) do
+	. . . set (piece1,piece2)="",flag=nullsub
 	. . else  do
 	. . . if zpiece do
-	. . . . for i=1:1:$zlength(locxsub(sublvl),";") quit:xflag  do
-	. . . . . set thisrange=$zpiece(locxsub(sublvl),";",i)
-	. . . . . set piece1=$zpiece(thisrange,":",1)
-	. . . . . set piece2=$select(1=$zlength(thisrange,":"):piece1,1:$zpiece(thisrange,":",2))
-	. . . . . set:(thissubz=piece1)!(thissubz=piece2)!((thissubz]]piece1)&(piece2]]thissubz)) xflag=1
+	. . . . set thisrange=$zpiece(locxsub(sublvl),";",i)
+	. . . . set piece1=$zpiece(thisrange,":",1),piece2=$zpiece(thisrange,":",$zlength(thisrange,":"))
 	. . . else  do
-	. . . . for i=1:1:$length(locxsub(sublvl),";") quit:xflag  do
-	. . . . . set thisrange=$piece(locxsub(sublvl),";",i)
-	. . . . . set piece1=$piece(thisrange,":",1)
-	. . . . . set piece2=$select(1=$length(thisrange,":"):piece1,1:$piece(thisrange,":",2))
-	. . . . . set:(thissubz=piece1)!(thissubz=piece2)!((thissubz]]piece1)&(piece2]]thissubz)) xflag=1
-	. . do:xflag&($data(@gblind(sublvl))#10)
-	. . . set nodeval=$get(@gblind(sublvl))
-	. . . if $zlength(sep) do
-	. . . . set nodelen1=$zlength(newpstr)
-	. . . . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
-	. . . . . set j=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,j),1:$piece(nodeval,sep,j))
-	. . . . . if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
-	. . . else  if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
-	. . tcommit
+	. . . . set thisrange=$piece(locxsub(sublvl),";",i)
+	. . . . set piece1=$piece(thisrange,":",1),piece2=$piece(thisrange,":",$length(thisrange,":"))
+	. . . if $zlength(piece1) set subary(sublvl)=$zwrite(piece1,1),flag=1
+	. . . else  set subary(sublvl)="",flag=nullsub
+	. . set rangeend=$select($zlength(piece2):$zwrite(piece2,1),1:""),rangeflag=$zlength(rangeend)
+	. . for  do:flag  set flag=1,(subary(sublvl),tmp)=$order(@gblind(sublvl)) quit:'$zlength(tmp)!(rangeflag&(tmp]]rangeend))
+	. . . tstart ():transactionid="batch"
+	. . . do:$data(@gblind(sublvl))#10
+	. . . . set nodeval=@gblind(sublvl)
+	. . . . if $zlength(sep) do
+	. . . . . set nodelen1=$zlength(newpstr)
+	. . . . . for j=2:1:nodelen1 do:+$zextract(newpstr,j)
+	. . . . . . set k=j-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
+	. . . . . . if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . . else  if '$data(@xrefind)#10 set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . tcommit
 	quit
 
 ; Templates for triggers
