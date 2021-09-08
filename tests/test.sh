@@ -40,6 +40,7 @@ if [ "$1" = "clean" ]; then
 fi
 source `pkg-config --variable=prefix yottadb`/ydb_env_set
 
+echo "##################### ydb_tmp = $ydb_tmp"
 
 # Remove files we created in prior test runs
 rm -f $ydb_tmp/*

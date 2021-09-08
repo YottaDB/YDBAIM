@@ -811,13 +811,16 @@ tcon6	; @TEST Test concurrent xref, unxref, and lsxref together
         . xecute jobstr
         . set ^job(i)=$zjob
 	; Let child processes run for a max of 5 seconds. Stop before that if at least one process fails and sets ^stop=1
-	for i=1:1:50  quit:^stop=1
+	for i=1:1:50  quit:^stop=1  hang 0.1
 	; Signal child processes to stop
 	set ^stop=1
 	; Wait for child processes to terminate.
         for i=1:1:^njobs set pid=^job(i) for  quit:'$zgetjpi(pid,"ISPROCALIVE")  hang 0.1
 	; Check if all child processes finished cleanly
 	do assert(^cntr=0,"^cntr : Expected=0 : Actual="_^cntr)
+	if ^cntr do
+	. write "[FAIL] [cat tcon6job.mj*] output follows",!
+	. zsystem "cat tcon6job.mj* | sed 's/^/tcon6 : [FAIL] /'"
 	kill ^stop,^njobs,^cntr,^job
 	quit
 	;
