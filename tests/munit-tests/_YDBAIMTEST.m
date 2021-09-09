@@ -1229,3 +1229,33 @@ tbash	; @TEST Run bash tests through run_bash_tests.sh/ydbaim_test.sh
 	zsystem "$script_dir/run_bash_tests.sh"
 	do assert(0=$zsystem)
 	quit
+
+gvsuboflow(level)	;	Used by tbash
+        if level do gvsuboflowhelper quit  ; If level=1, test $ZLEVEL=1 by adding one more DO frame before calling gvsuboflowhelper.
+gvsuboflowhelper:    ;
+        do UNXREFDATA^%YDBAIM
+        kill ^x
+        for i=1:1:10 set ^x(i)=$j(2**i,2**i)
+	set $etrap="zwrite $zstatus set $ecode="""" zhalt +$zstatus"
+        set aimglobal=$$XREFDATA^%YDBAIM("^x",1)
+        zwrite aimglobal	; this line should not be reached as GVSUBOFLOW error should transfer control in previous line
+        quit
+
+badinvocation	; Used by tbash
+	set $etrap="zwrite $zstatus quit"
+	for label="","LSXREFDATA","UNXREFDATA","XREFDATA" do
+	. set entryref=label_"^%YDBAIM"
+	. for tp=0,1 do
+	. . write "# Testing "_entryref_" with tp=",tp,!
+	. . do badinvocationhelper(entryref,tp)
+	quit
+
+badinvocationhelper(entryref,tp)	;
+	new $etrap
+	set level=$zlevel
+	set $etrap="zwrite $zstatus set $ecode="""" trollback:tp  zgoto level-1"
+	tstart:tp ():serial
+	do @entryref
+	trollback:tp
+	quit
+

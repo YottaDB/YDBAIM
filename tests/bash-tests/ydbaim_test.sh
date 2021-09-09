@@ -23,7 +23,7 @@ function run_test() {
 
 # These are tests for error output that are compared later to a reference file
 # Commented out ones don't work correctly.
-run_test BADINVOCATION 'DO ^%YDBAIM'
+run_test BADINVOCATION 'DO badinvocation^%YDBAIMTEST'
 run_test NOSUBS 'write $$XREFDATA^%YDBAIM("^abcd")'
 run_test NOTAGBL1 'write $$XREFDATA^%YDBAIM'
 run_test NOPIECE 'write $$XREFDATA^%YDBAIM("^abcd",1,"|")'
@@ -36,4 +36,6 @@ run_test NOTAGBL3 'write $$XREFDATA^%YDBAIM("^xy123456789012345678901234567890",
 run_test NOTAGBL4 'write $$XREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)'
 run_test NOTAGBL5 'write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",0)'
 run_test NOTAGBL6 'write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)'
+run_test GVSUBOFLOW0 'do gvsuboflow^%YDBAIMTEST(0)'	# Test $ZLEVEL=0
+run_test GVSUBOFLOW1 'do gvsuboflow^%YDBAIMTEST(1)'	# Test $ZLEVEL=1
 set -e

@@ -114,7 +114,7 @@
 ; Number after the %YDBAIM label is a version number of the metadata format.
 %YDBAIM;1
 	; Top level entry not supported
-	do etrap		; set error trap
+	new $etrap do etrap
 	set $ecode=",U255,"	; top level entry not supported
 	quit			; should get here only in direct mode
 
@@ -135,27 +135,33 @@ etrap
 	set $etrap="set $etrap=""open """"/proc/self/fd/2"""" use """"/proc/self/fd/2"""" write $zstatus,! zshow """"*"""" zhalt $piece($zstatus,"""","""",1)""  goto err^"_$text(+0)
 	quit
 
-err	; Error handler
-	new errcode,errtxt,i,io,stderr,tmp1,tmp2,usestderr
-	set io=$io
-	set usestderr=1
-	zshow "d":tmp1
-	set tmp2="" for  set tmp2=$order(tmp1("D",tmp2)) quit:'usestderr!'$zlength(tmp2)  set:tmp1("D",tmp2)?.E1" TERMINAL ".E usestderr=0
-	trollback:$tlevel&$data(tlevel) tlevel
+err	; Primary Error Handler
+	; -----------------------------------------------------------------
+	; This is where control reaches when any error is encountered inside AIM.
+	; We do AIM-specific cleanup here and then switch $etrap to a non-AIM default handler that rethrows
+	; the error one caller frame at a time until we unwind to a non-AIM caller frame that has $etrap set
+	; at which point it can handle the error accordingly.
+	; -----------------------------------------------------------------
+	new errcode,errtxt
 	set errcode=$zpiece($ecode,",",2),errtxt=$text(@errcode)
-	set stderr="/proc/self/fd/2"
-	open stderr
-	use:usestderr stderr
-	if $zlength(errtxt) write $text(+0),@$zpiece(errtxt,";",2,$zlength(errtxt,";")),!
-	else  for i=1:1:$length($zstatus,"%YDB-") write "%YDB-",$piece($zstatus,"%YDB-",i),!
-	set $ecode=""
-	zshow "s":tmp1
+	; Check for AIM-specific errors (in that case "errtxt" will be non-empty).
+	if $zlength(errtxt) do
+	. new xstr
+	. ; This is an AIM specific error. Extract error text with potential unfilled parameter values.
+	. ; Run "xecute" on that string to fill it with actual values.
+	. set xstr="set errtxt="_$zpiece(errtxt,";",2,$zlength(errtxt,";")) xecute xstr
+	. set $zstatus=$zpiece($zstatus,",",1,2)_","_$text(+0)_errtxt
+	; Rollback the transaction to $TLEVEL at entry into the first caller AIM frame.
+	trollback:$tlevel&$data(tlevel)&(tlevel<$tlevel) tlevel
+	; Undo ztrigger_output changes if any done
 	view:$data(ztout) "ztrigger_output":ztout
-	use io
+	; Release locks obtained inside AIM
 	do unsnaplck(.currlck)
-	zhalt:"%XCMD"=$piece($get(tmp1("S",$order(tmp1("S",""""),-1))),"^",2) +$extract(errcode,2,$zlength(errcode))
-	do etrap
-	zgoto 1
+	; Now that primary error handling is done, switch to different handler to rethrow error in caller AIM frames.
+	; The rethrow will cause a different $etrap to be invoked in the first non-AIM caller frame (because AIM
+	; did a "new $etrap" at entry).
+	set $etrap="quit:$quit """" quit"
+	quit:$quit "" quit
 
 ; List metadata for a cross reference, all cross references for a global
 ; variable, or all cross references
@@ -181,7 +187,7 @@ err	; Error handler
 ;   - It is omitted or the empty string (""). In lvn, the function returns
 ;     information about all cross references.
 LSXREFDATA(lvn,gbl)
-	if "Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap new $etrap do etrap
+	new $etrap do etrap
 	new currlck,tlevel,xrefvar
 	set tlevel=$tlevel
 	do snaplck(.currlck)
@@ -255,7 +261,7 @@ LSXREFDATA(lvn,gbl)
 ; - stat exists only to allow the parameters of UNXREFDATA() to match and is
 ;   ignored
 UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
-	if '$zlength($etrap)!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
+	new $etrap do etrap
 	new currlck,i,nsubs,tlevel,xrefvar
 	set tlevel=$tlevel
 	do snaplck(.currlck)
@@ -397,16 +403,12 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 ; Nodes of ^%ydbAIMDxref(gbl,aimgbl) are metadata on metadata, where gbl is an
 ; application global and aimgbl is the AIM global.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
-	if '$zlength($etrap)!("Write:(0=$STACK) ""Error occurred: "",$ZStatus,!"=$etrap) new $etrap do etrap
-	new asciisep,currlck,gblind,i,io,j,lastsub,lastsubind,lastvarsub,lf,locxsub,modflag,name,nameind,newpnum,newpstr,pieces
-	new nsubs,nullsub,constlist,omitflag,oldpstr,stderr,sub,subary,suffix,tlevel,tmp,totcntind,trigdel,trigdelx,trigprefix
+	new $etrap do etrap
+	new asciisep,currlck,gblind,i,j,lastsub,lastsubind,lastvarsub,locxsub,modflag,name,nameind,newpnum,newpstr,pieces
+	new nsubs,nullsub,constlist,omitflag,oldpstr,sub,subary,suffix,tlevel,tmp,totcntind,trigdel,trigdelx,trigprefix
 	new trigset,trigsub,valcntind,xrefind,z,zlsep,ztout
-	set tlevel=$tlevel	; tlevel is required by error trap to rollback
+	set tlevel=$tlevel	; required by error trap to rollback/unwind
 	do snaplck(.currlck)
-	set io=$io
-	set stderr="/proc/self/fd/2" open stderr
-	set lf=$char(10)
-	zshow "s":tmp do:"%XCMD"=$piece($get(tmp("S",$order(tmp("S",""""),-1))),"^",2) etrap
 	set:'$data(gbl) $ecode=",U252,"
 	; Extended references are not supported
 	set:""'=$qsubscript(gbl,-1) $ecode=",U254,"
