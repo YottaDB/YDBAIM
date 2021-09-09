@@ -18,6 +18,12 @@ NOPIECE write $$XREFDATA^%YDBAIM("^abcd",1,"|")
 250
 ---------------
 
+CANTADDSTAT write $$XREFDATA^%YDBAIM("^abcd",1,"|",1),!,$$XREFDATA^%YDBAIM("^abcd",1,"|",1,,,,2)
+^%ydbAIMDGB3Ey8B4z3CDDZOF7U4Y52
+%YDBAIM-F-CANTADDSTAT stat=2 and ^%ydbAIMDGB3Ey8B4z3CDDZOF7U4Y52(10)=0 - adding statistics to existing metadata not supported
+240
+---------------
+
 NOEXTREF write $$XREFDATA^%YDBAIM("^|""x.gld""|x")
 %YDBAIM-F-NOEXTREF Extended reference in ^|"x.gld"|x is not supported
 254
@@ -26,6 +32,11 @@ NOEXTREF write $$XREFDATA^%YDBAIM("^|""x.gld""|x")
 INVPIECE set subs(1)="1:2:3" write $$XREFDATA^%YDBAIM("^x",.subs)
 %YDBAIM-F-INVPIECE Range "1:2:3" has invalid number of pieces: 3
 245
+---------------
+
+INVPNUMSEP kill ^x set ^x(1)="a1|b1",^x(2)="a2|",^x(3)="|b3",subs(1)="*" write $$XREFDATA^%YDBAIM("^x",.subs,"|","1:2:3")
+%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
+249
 ---------------
 
 NOTAGBL2 write $$UNXREFDATA^%YDBAIM("xy123456789012345678901234567890",1)

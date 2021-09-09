@@ -223,25 +223,10 @@ tinv12	; @TEST index spanning regions where null setting differs
 	quit
 	;
 err	; Error trap for tinv* tests
-	; ; do before creating any local variables just in case transaction deletes them (TSTART (*))
-	trollback:$tlevel
-	;
 	; Capture $ecode, strip commas, clear
 	set ecodetest=$ecode
-	set ecodetest=$piece(ecodetest,",",2) ; Change ,U252, -> U252
-	set $ecode="" ; Need to do this otherwise M does an emergency trap on the ,U-unwind,
-	;
-	; Set-up unwinder
-	set $etrap="goto errunwind^"_$text(+0)
-	set $ecode=",U-unwind,"
-	quit:$quit "" quit
-	;
-errunwind ; Unwinder (if we don't unwind, we can possibly continue inside %YDBAIM [happens in tinv10])
-	quit:($estack>1&$quit) ""
-	quit:$estack>1
+	set ecodetest=$piece(ecodetest,",",2) ; ,U252, -> U252
 	set $ecode=""
-	set $zstatus=""
-	set $etrap="goto err^"_$text(+0)
 	quit:$quit "" quit
 	;
 tsubs1	; @TEST XREFDATA with numbers & : as subs
