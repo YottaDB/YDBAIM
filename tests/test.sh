@@ -32,6 +32,8 @@ for e in `env | grep -E '^(ydb|gtm)' | cut -d= -f1`; do unset $e; done
 
 # Create db into db directory
 script_dir=$(realpath $(dirname "${BASH_SOURCE[0]}"))
+# Keep test output in "db" directory and not in /tmp/yottadb/... (set by "ydb_env_set") as it is easy
+# as it seems /tmp contents cannot be later downloaded as pipeline artifacts.
 ydb_dir=$(realpath "$script_dir/../db/")
 export ydb_dir
 if [ "$1" = "clean" ]; then
@@ -40,10 +42,11 @@ if [ "$1" = "clean" ]; then
 fi
 source `pkg-config --variable=prefix yottadb`/ydb_env_set
 
-echo "##################### ydb_tmp = $ydb_tmp"
+echo "# Info: [ydb_dir = $ydb_dir]"
 
-# Remove files we created in prior test runs
-rm -f $ydb_tmp/*
+# Remove files we created in prior test runs. But do not delete subdirectory structure
+# (e.g. "$ydb_dir/r") that ydb_env_set created as it is later needed to copy over some files.
+find $ydb_dir -maxdepth 1 -type f -delete
 
 # Move our test routines to the database we just created
 cp $script_dir/munit-tests/*.m $ydb_dir/r/
@@ -115,30 +118,14 @@ END
 fi
 
 # Run tests
-# %YDBAIMTEST spews .mj* files. We don't want that in the repo; put in $ydb_tmp
-pushd $ydb_tmp
-$ydb_dist/yottadb -r %YDBAIMSAN       | tee -a test_output.txt
-$ydb_dist/yottadb -r %YDBAIMTEST      | tee -a test_output.txt
-$ydb_dist/yottadb -r %YDBAIMSPEED     | tee -a test_output.txt
-# Run Bash tests
-$script_dir/bash-tests/ydbaim_test.sh |& tee -a bash_test_output.txt
-popd
-
-# Copy error files to our db directory so that we can look at the output from the pipeline
-# We can't put /tmp/yottadb as one of the output directories apparently.
-# https://stackoverflow.com/questions/2937407/test-whether-a-glob-has-any-matches-in-bash
-if compgen -G "$ydb_tmp/tcon1jobet.*.jobexam" > /dev/null; then
-	cp $ydb_tmp/tcon1jobet.*.jobexam $ydb_dir/
-fi
+cd $ydb_dir
+export script_dir	# used by "tbash" unit test to invoke bash test script "run_bash_tests.sh" and "ydbaim_test.sh"
+$ydb_dist/yottadb -r %YDBAIMTEST | tee -a test_output.txt
 
 set +e # grep will have status of 1 if no lines are found, and that will exit the script!
-grep -B1 -F '[FAIL]' $ydb_tmp/test_output.txt
+grep -B1 -F '[FAIL]' $ydb_dir/test_output.txt
 grep_status=$?
 set -e
-
-# Check that the bash tests match the reference file
-diff $script_dir/bash-tests/bash_test_output.ref $ydb_tmp/bash_test_output.txt
-
 # Check if we have M-Unit failures.
 if [ "$grep_status" -eq 1 ]; then
 	exit 0
