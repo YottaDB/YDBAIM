@@ -43,6 +43,8 @@ fi
 source `pkg-config --variable=prefix yottadb`/ydb_env_set
 
 echo "# Info: [ydb_dir = $ydb_dir]"
+echo "# Info: [ydb_gbldir = $ydb_gbldir]"
+echo "# Info: [ydb_routines = $ydb_routines]"
 
 # Remove files we created in prior test runs. But do not delete subdirectory structure
 # (e.g. "$ydb_dir/r") that ydb_env_set created as it is later needed to copy over some files.
