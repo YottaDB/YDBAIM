@@ -497,12 +497,12 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl("ttZKp0")
 	. . else  if 1=stat do
 	. . . set trigset=trigprefix_"set -name=%ydb"_suffix_"S -xecute="_$$exptempl("ttSp1")
-	. . . set trigdel=trigprefix_"kill -xecute="_$$exptempl("ttKp1")
-	. . . set trigdelx=trigprefix_"zkill -xecute="_$$exptempl("ttZKp1")
+	. . . set trigdel=trigprefix_"kill -name=%ydb"_suffix_"K -xecute="_$$exptempl("ttKp1")
+	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl("ttZKp1")
 	. . else  if 2=stat do
 	. . . set trigset=trigprefix_"set -name=%ydb"_suffix_"S -xecute="_$$exptempl("ttSp2")
 	. . . set trigdel=trigprefix_"kill -name=%ydb"_suffix_"K -xecute="_$$exptempl("ttKp2")
-	. . . set trigdelx=trigprefix_"zkill -name="_suffix_"Z -xecute="_$$exptempl("ttZKp2")
+	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl("ttZKp2")
 	. . else  set $ecode=",U241,"
 	. . set @name=gbl,@name@(4)=newpstr,^(5)=z,^(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
@@ -534,17 +534,17 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat)
 	. do:'$data(@name@(0))#10
 	. . for i=6:1:8 if $data(@name@(i))#10 set tmp=^(i) if $ztrigger("item","-"_$zextract(tmp,2,$zlength(tmp)))
 	. . if 'stat do
-	. . . set trigset=trigprefix_"set -xecute="_$$exptempl("ttSe0")
-	. . . set trigdel=trigprefix_"kill -xecute="_$$exptempl("ttKe0")
-	. . . set trigdelx=trigprefix_"zkill -xecute="_$$exptempl("ttZKe0")
+	. . . set trigset=trigprefix_"set -name=%ydb"_suffix_"S -xecute="_$$exptempl("ttSe0")
+	. . . set trigdel=trigprefix_"kill -name=%ydb"_suffix_"K -xecute="_$$exptempl("ttKe0")
+	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl("ttZKe0")
 	. . else  if 1=stat do
-	. . . set trigset=trigprefix_"set -xecute="_$$exptempl("ttSe1")
-	. . . set trigdel=trigprefix_"kill -xecute="_$$exptempl("ttKe1")
-	. . . set trigdelx=trigprefix_"zkill -xecute="_$$exptempl("ttZKe1")
+	. . . set trigset=trigprefix_"set -name=%ydb"_suffix_"S -xecute="_$$exptempl("ttSe1")
+	. . . set trigdel=trigprefix_"kill -name=%ydb"_suffix_"K -xecute="_$$exptempl("ttKe1")
+	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl("ttZKe1")
 	. . else  if 2=stat do
-	. . . set trigset=trigprefix_"set -xecute="_$$exptempl("ttSe2")
-	. . . set trigdel=trigprefix_"kill -xecute="_$$exptempl("ttKe2")
-	. . . set trigdelx=trigprefix_"zkill -xecute="_$$exptempl("ttZKe2")
+	. . . set trigset=trigprefix_"set -name=%ydb"_suffix_"S -xecute="_$$exptempl("ttSe2")
+	. . . set trigdel=trigprefix_"kill -name=%ydb"_suffix_"K -xecute="_$$exptempl("ttKe2")
+	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl("ttZKe2")
 	. . else  set $ecode=",U241,"
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. . set @name=gbl,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
@@ -857,9 +857,9 @@ ttSp2	;for i=@pieces set p=$@zpiece($ztoldval,@sep,i),q=$@zpiece($ztvalue,@sep,i
 	;. . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" if $increment(@name(11)),(1=$increment(@name(j,q))),$increment(@name(j))
 	;. else  if '$zlength(q),'($data(@name(i,"",@sub))#10) set ^(@lastsub)="" if $increment(@name(11)),(1=$increment(@name(j,""))),$increment(@name(j))
 
-ttKp2	;set p=@name(2) for i=2:1:$zlength(@name(4)) if +$zextract(@name(4),i) set j=i-1,mj=-j,q=$@zpiece($ztoldval,p,j) if $data(@name(j,q,@sub)) kill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(mj,q),-1) zkill ^(q) zkill:1>$increment(@name(mj),-1) ^(mj)
+ttKp2	;set p=@name(2),b=^(4),q=$zlength(b) for i=2:1:q if +$zextract(b,i) set j=i-1,k=-j,x=$@zpiece($ztoldval,p,j) if $data(@name(j,x,@sub)) kill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(k,x),-1) zkill ^(x) zkill:1>$increment(@name(k),-1) ^(k)
 
-ttZKp2	;set p=@name(2) for i=2:1:$zlength(@name(4)) if +$zextract(@name(4),i) set j=i-1,mj=-j,q=$@zpiece($ztoldval,p,j) if $data(@name(j,q,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(mj,q),-1) zkill ^(q) zkill:1>$increment(@name(mj),-1) ^(mj)
+ttZKp2	;set p=@name(2),b=^(4),q=$zlength(b) for i=2:1:q if +$zextract(b,i) set j=i-1,k=-j,x=$@zpiece($ztoldval,p,j) if $data(@name(j,x,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(k,x),-1) zkill ^(x) zkill:1>$increment(@name(k),-1) ^(k)
 
 ;	Error message texts
 U238	;"-F-NOPSEP Piece numbers "_pnum_" specified, but piece separator not specifed"
