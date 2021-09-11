@@ -826,6 +826,13 @@ tstat2assertstat2(xref,message)
 	do assert(@xref@(11)=4,message)
 	quit
 	;
+tstat3	; @TEST Ensure that stat=2 produces correct triggers
+	; https://gitlab.com/YottaDB/Util/YDBAIM/-/issues/47
+	kill ^x
+	new aim set aim=$$XREFDATA^%YDBAIM("^x",2,"|",1,0,0,1,2)
+	do assert(aim'="")
+	quit
+	;
 tspeed1	; @TEST Index 1000 rows of ^names(:)="A|B"
 	if $$XREFDATA^%YDBAIM("^names",1,"|",2)
 	quit
