@@ -501,7 +501,7 @@ trmindex5 ; @TEST Remove indexes by %ydbAIMD global name
 	;
 tresume ; @TEST Resuming an interrupted cross-reference
 	; Start job, wait, and interrupt
- 	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
+	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1,1) ; nmonly
 	kill ^tresumejobdone
 	job tresumejob:passcurlvn
@@ -531,7 +531,7 @@ tresume ; @TEST Resuming an interrupted cross-reference
 tresumejob ; [job target - tresume target]
 	set $zinterrupt="if $zjobexam() zgoto 0"
 	set ^tresumejobdone=1
- 	if $$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1)
+	if $$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1)
 	quit
 	;
 tresumecountdata:() ; [$$: # of data items in ^PSNDF(50.6)]
@@ -736,9 +736,9 @@ tstat1	; @TEST stats of 1 and 2 produce the correct output
 	quit
 	;
 tstat2	; @TEST xref operations with stats=0,1,2
-        ; Test 3 cases each of which is expected to produce the same output
-        ; irrespective of whether stat=0, or stat=1 or stat=2.
-        ;
+	; Test 3 cases each of which is expected to produce the same output
+	; irrespective of whether stat=0, or stat=1 or stat=2.
+	;
 	new stat for stat=0:1:2 do tstat2run(stat)
 	quit
 	;
@@ -833,6 +833,37 @@ tstat3	; @TEST Ensure that stat=2 produces correct triggers
 	do assert(aim'="")
 	quit
 	;
+tstat4	; @TEST More general regression test of #47 than tstat3
+	; Test that valid triggers get installed for stats=0,1,2 for random global names and subscript levels
+	; #47 (%YDBAIM-F-SETZTRIGGERFAIL error) was seen only in certain global names and subscript levels depending
+	; on whether the trigger name (minus the %ydb prefix) started with a decimal number or not. Since this is a
+	; hexadecimal hash value, it could be a number (0-9) or (A-F). The latter case is okay as the first letter but
+	; the former case is not. Hence the below $random() usage to try various global names and subscript levels
+	; and ensure all of those continue to work fine.
+	new stat,gblname,subslevel,$etrap
+	; In case of an error (like the %YDBAIM-F-SETZTRIGGERFAIL error we saw in #47), display relevant random variables
+	; in the error output so one can use that information to recreate the exact test that failed. Hence the zwrite below.
+	set $etrap="write ! zwrite $zstatus zwrite:$data(gblname) gblname zwrite:$data(subslevel) subslevel zwrite:$data(stat) stat"
+	set gblname=$$randgblname
+	set subslevel=1+$random(16)
+	for stat=0:1:2 do
+	. set xref=$$XREFDATA^%YDBAIM(gblname,subslevel,"|",1,,,,stat)
+	. set xref=$$UNXREFDATA^%YDBAIM(gblname,subslevel,"|",1,,,,stat)
+	quit
+	;
+randgblname()	;
+	; Returns a random valid global name
+	new gblname,alphabet,alphabetlen,gblnamelen,i,alphanumeric,alphanumericlen
+	set alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ%"	; Note: % is last character for a reason
+	set alphabetlen=$length(alphabet)
+	set numbers="0123456789"
+	set alphanumeric=$extract(alphabet,1,alphabetlen-1)_numbers	; -1 to not remove % (not valid after first character)
+	set alphanumericlen=$length(alphanumeric)
+	set gblname="^"_$extract(alphabet,1+$random(alphabetlen))
+	set gblnamelen=$random(31)
+	for i=1:1:gblnamelen set gblname=gblname_$extract(alphanumeric,1+$random(alphanumericlen))
+	quit gblname
+
 tspeed1	; @TEST Index 1000 rows of ^names(:)="A|B"
 	if $$XREFDATA^%YDBAIM("^names",1,"|",2)
 	quit
@@ -1062,16 +1093,16 @@ tcon6	; @TEST Test concurrent xref, unxref, and lsxref together
 	set ^cntr=^njobs
 	for i=1:1:^njobs set gbl="^x"_i kill @gbl set @gbl@(1)="",@gbl@(2)="abcd"
 	; Start ^njobs child processes
-        for i=1:1:^njobs do
-        . set jobstr="job tcon6job:(output=""tcon6job.mjo"_i_""":error=""tcon6job.mje"_i_""")"
-        . xecute jobstr
-        . set ^job(i)=$zjob
+	for i=1:1:^njobs do
+	. set jobstr="job tcon6job:(output=""tcon6job.mjo"_i_""":error=""tcon6job.mje"_i_""")"
+	. xecute jobstr
+	. set ^job(i)=$zjob
 	; Let child processes run for a max of 5 seconds. Stop before that if at least one process fails and sets ^stop=1
 	for i=1:1:50  quit:^stop=1  hang 0.1
 	; Signal child processes to stop
 	set ^stop=1
 	; Wait for child processes to terminate.
-        for i=1:1:^njobs set pid=^job(i) for  quit:'$zgetjpi(pid,"ISPROCALIVE")  hang 0.1
+	for i=1:1:^njobs set pid=^job(i) for  quit:'$zgetjpi(pid,"ISPROCALIVE")  hang 0.1
 	; Check if all child processes finished cleanly
 	do assert(^cntr=0,"^cntr : Expected=0 : Actual="_^cntr)
 	if ^cntr do
@@ -1238,15 +1269,15 @@ tbash	; @TEST Run bash tests through run_bash_tests.sh/ydbaim_test.sh
 	quit
 
 gvsuboflow(level)	;	Used by tbash
-        if level do gvsuboflowhelper quit  ; If level=1, test $ZLEVEL=1 by adding one more DO frame before calling gvsuboflowhelper.
+	if level do gvsuboflowhelper quit  ; If level=1, test $ZLEVEL=1 by adding one more DO frame before calling gvsuboflowhelper.
 gvsuboflowhelper:    ;
-        do UNXREFDATA^%YDBAIM
-        kill ^x
-        for i=1:1:10 set ^x(i)=$j(2**i,2**i)
+	do UNXREFDATA^%YDBAIM
+	kill ^x
+	for i=1:1:10 set ^x(i)=$j(2**i,2**i)
 	set $etrap="zwrite $zstatus set $ecode="""" zhalt +$zstatus"
-        set aimglobal=$$XREFDATA^%YDBAIM("^x",1)
-        zwrite aimglobal	; this line should not be reached as GVSUBOFLOW error should transfer control in previous line
-        quit
+	set aimglobal=$$XREFDATA^%YDBAIM("^x",1)
+	zwrite aimglobal	; this line should not be reached as GVSUBOFLOW error should transfer control in previous line
+	quit
 
 badinvocation	; Used by tbash
 	set $etrap="zwrite $zstatus quit"
