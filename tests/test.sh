@@ -37,8 +37,8 @@ script_dir=$(realpath $(dirname "${BASH_SOURCE[0]}"))
 ydb_dir=$(realpath "$script_dir/../db/")
 export ydb_dir
 if [ "$1" = "clean" ]; then
-	rm -r $ydb_dir
-	rm -r $script_dir/downloads/
+	rm -rf $ydb_dir
+	rm -rf $script_dir/downloads/
 fi
 source `pkg-config --variable=prefix yottadb`/ydb_env_set
 
@@ -49,9 +49,6 @@ echo "# Info: [ydb_routines = $ydb_routines]"
 # Remove files we created in prior test runs. But do not delete subdirectory structure
 # (e.g. "$ydb_dir/r") that ydb_env_set created as it is later needed to copy over some files.
 find $ydb_dir -maxdepth 1 -type f -delete
-
-# Move our test routines to the database we just created
-cp $script_dir/munit-tests/*.m $ydb_dir/r/
 
 # Don't recreate database if it already exists... so that we can re-run faster
 if [ ! -f $ydb_dir/r/_ut.m ]; then
@@ -76,6 +73,13 @@ add -segment DIFFSET2 -file="$ydb_dir/$ydb_rel/g/diffset2.dat"
 add -region  DIFFSET2 -null_subscripts=false -dyn=DIFFSET2 -autodb
 add -name    diffset            -region=DIFFSET1
 add -name    diffset("A":"z")   -region=DIFFSET2
+
+! ydb_env_set would have created YDBAIM/YDBOCTO/DEFAULT regions without expanding ydb_dir/ydb_rel env vars
+! Do that here so anyone who later analyzes a test failure does not need to have those env vars set to
+! examine the database files in say DSE.
+change -segment DEFAULT -file="$ydb_dir/$ydb_rel/g/yottadb.dat"
+change -segment YDBAIM  -file="$ydb_dir/$ydb_rel/g/%ydbaim.dat"
+change -segment YDBOCTO -file="$ydb_dir/$ydb_rel/g/%ydbocto.dat"
 
 show -a
 END
@@ -118,6 +122,9 @@ END
 	set -e
 	popd
 fi
+
+# Move our test routines to the database we just created
+cp $script_dir/munit-tests/*.m $ydb_dir/r/
 
 # Run tests
 cd $ydb_dir
