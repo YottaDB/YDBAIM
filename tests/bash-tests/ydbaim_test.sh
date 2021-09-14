@@ -22,7 +22,6 @@ function run_test() {
 }
 
 # These are tests for error output that are compared later to a reference file
-# Commented out ones don't work correctly.
 run_test BADINVOCATION 'DO badinvocation^%YDBAIMTEST'
 run_test NOSUBS 'write $$XREFDATA^%YDBAIM("^abcd")'
 run_test NOTAGBL1 'write $$XREFDATA^%YDBAIM'
@@ -38,4 +37,11 @@ run_test NOTAGBL5 'write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890
 run_test NOTAGBL6 'write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)'
 run_test GVSUBOFLOW0 'do gvsuboflow^%YDBAIMTEST(0)'	# Test $ZLEVEL=0
 run_test GVSUBOFLOW1 'do gvsuboflow^%YDBAIMTEST(1)'	# Test $ZLEVEL=1
+run_test BADINVOCATION2 'DO ^%YDBAIM'		# Test of BADINVOCATION via %XCMD
+
+echo "BADINVOCATION3 DO ^%YDBAIM in direct mode (not via %XCMD)"
+echo 'DO ^%YDBAIM' | yottadb -direct		# Test of BADINVOCATION in direct mode
+echo $?
+echo "---------------"
+echo
 set -e

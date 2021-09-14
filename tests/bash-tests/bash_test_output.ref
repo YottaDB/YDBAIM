@@ -85,3 +85,18 @@ $ZSTATUS="150372986,XREFDATA+400^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined len
 122
 ---------------
 
+BADINVOCATION2 DO ^%YDBAIM
+Error occurred: 150379506,%YDBAIM+3^%YDBAIM,%YDBAIM-F-BADINVOCATION Top level invocation of %YDBAIM not supported; must invoke a label
+242
+---------------
+
+BADINVOCATION3 DO ^%YDBAIM in direct mode (not via %XCMD)
+
+YDB>
+%YDBAIM-F-BADINVOCATION Top level invocation of %YDBAIM not supported; must invoke a label
+		At M source location %YDBAIM+3^%YDBAIM
+
+YDB>
+0
+---------------
+
