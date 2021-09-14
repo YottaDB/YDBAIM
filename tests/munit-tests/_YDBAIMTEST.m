@@ -81,11 +81,6 @@ TEARDOWN ; Runs after each test
 	QUIT
 	;
 assert:(boolexpr,msg) ; [private] shortcut to tf^%ut
-	; Invoking "tf^%ut" with a 1/non-zero/true value of "boolexpr" would print a dot
-	; With lots of assert() calls in a specific subtest, the output can get really cluttered.
-	; Since we don't control "tf^%ut" work around it by not invoking it in this TRUE case.
-	quit:boolexpr
-	; Now that we know "boolexpr" is FALSE, invoke "tf^%ut" so it can do the needful (display failure, break etc.).
 	if '$data(%ut) do  quit
 	. if 'boolexpr set $ecode=",U-ASSERT,"
 	;
