@@ -762,21 +762,21 @@ xrefdata:(nsubs)
 	. . . for  do:flag  set flag=1,(subary(sublvl),tmp)=$order(@gblind(sublvl)) quit:'$zlength(tmp)!(rangeflag&(tmp]]rangeend))
 	. . . . do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1)
 	; if nsubs=1 (the else command below) then cross reference those
-	; subscripts that the specification says to cross reference.  do with
-	; postconditional to cross reference "" subscripts.
+	; subscripts that the specification says to cross reference.
 	else  if constlist(sublvl) do
 	. tstart ():transactionid="batch"
-	. set nodeval=$get(@gblind(sublvl))
-	. if $zlength(sep) do
-	. . set nodelen1=$zlength(newpstr)
-	. . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
-	. . . set k=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
-	. . . do:'$data(@xrefind)
-	. . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
-	. else  do:'$data(@xrefind)
-	. . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. do:$data(@gblind(sublvl))#10
+	. . set nodeval=@gblind(sublvl)
+	. . if $zlength(sep) do
+	. . . set nodelen1=$zlength(newpstr)
+	. . . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
+	. . . . set k=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
+	. . . . do:'$data(@xrefind)
+	. . . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
+	. . . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . else  do:'$data(@xrefind)
+	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
+	. . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
 	. tcommit
 	else  do
 	. set nranges=$select(zpiece:$zlength(locxsub(sublvl),";"),1:$length(locxsub(sublvl),";"))

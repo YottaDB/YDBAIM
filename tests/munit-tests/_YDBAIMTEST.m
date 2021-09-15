@@ -312,27 +312,28 @@ tnodata2 ; @TEST indexing pieces that don't exist
 	do assert($data(@aimgbl@(17,"",3)))
 	quit
 	;
-tnodata3 ; @TEST indexing fixed nodes that don't exist
-	; Data looks like this. We will try indexing the .2 node.
-	; ^ORD(100.01,14,0)="LAPSED^laps"
-	; ^ORD(100.01,14,.1)="l"
-	; ^ORD(100.01,14,1,0)="^^3^3^3070607"
-	; ^ORD(100.01,14,1,1,0)="Orders that remain pending beyond their start date, by a site "
-	; ^ORD(100.01,14,1,2,0)="defined number of days; unreleased orders that meet this same "
-	; ^ORD(100.01,14,1,3,0)="criteria will be removed from the system."
-	; ^ORD(100.01,14,"TERMSTATUS",0)="^100.0199DA^1^1"
-	; ^ORD(100.01,14,"TERMSTATUS",1,0)="3070607.115705^1"
-	; ^ORD(100.01,14,"TERMSTATUS","B",3070607.115705,1)=""
-	; ^ORD(100.01,14,"VUID")="4501099^1"
-	new subs,aimgbl
-	set subs(1)=100.01
-	set subs(2)=":"
-	set subs(3)=.2
-	set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1)
-	; zwrite @aimgbl
-	do assert($data(@aimgbl@(1,"",1)))
-	do assert($data(@aimgbl@(1,"",2)))
-	quit
+; Disabling this test, as it is not valid till enhancement for YDBAIM#51 
+; tnodata3 ; @TEST indexing fixed nodes that don't exist
+; 	; Data looks like this. We will try indexing the .2 node.
+; 	; ^ORD(100.01,14,0)="LAPSED^laps"
+; 	; ^ORD(100.01,14,.1)="l"
+; 	; ^ORD(100.01,14,1,0)="^^3^3^3070607"
+; 	; ^ORD(100.01,14,1,1,0)="Orders that remain pending beyond their start date, by a site "
+; 	; ^ORD(100.01,14,1,2,0)="defined number of days; unreleased orders that meet this same "
+; 	; ^ORD(100.01,14,1,3,0)="criteria will be removed from the system."
+; 	; ^ORD(100.01,14,"TERMSTATUS",0)="^100.0199DA^1^1"
+; 	; ^ORD(100.01,14,"TERMSTATUS",1,0)="3070607.115705^1"
+; 	; ^ORD(100.01,14,"TERMSTATUS","B",3070607.115705,1)=""
+; 	; ^ORD(100.01,14,"VUID")="4501099^1"
+; 	new subs,aimgbl
+; 	set subs(1)=100.01
+; 	set subs(2)=":"
+; 	set subs(3)=.2
+; 	set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1)
+; 	; zwrite @aimgbl
+; 	do assert($data(@aimgbl@(1,"",1)))
+; 	do assert($data(@aimgbl@(1,"",2)))
+;	quit
 	;
 tutf8tp	; @TEST UTF-8 data; seq pieces; updates (kill, set $piece)
 	; 3rd piece = emails
