@@ -312,26 +312,32 @@ tnodata2 ; @TEST indexing pieces that don't exist
 	do assert($data(@aimgbl@(17,"",3)))
 	quit
 	;
-tnodata3 ; @NOTEST indexing fixed nodes that don't exist
-	; Data looks like this. We will try indexing the .2 node.
-	; ^ORD(100.01,14,0)="LAPSED^laps"
-	; ^ORD(100.01,14,.1)="l"
-	; ^ORD(100.01,14,1,0)="^^3^3^3070607"
-	; ^ORD(100.01,14,1,1,0)="Orders that remain pending beyond their start date, by a site "
-	; ^ORD(100.01,14,1,2,0)="defined number of days; unreleased orders that meet this same "
-	; ^ORD(100.01,14,1,3,0)="criteria will be removed from the system."
-	; ^ORD(100.01,14,"TERMSTATUS",0)="^100.0199DA^1^1"
-	; ^ORD(100.01,14,"TERMSTATUS",1,0)="3070607.115705^1"
-	; ^ORD(100.01,14,"TERMSTATUS","B",3070607.115705,1)=""
-	; ^ORD(100.01,14,"VUID")="4501099^1"
+tnodata3 ; @TEST indexing fixed nodes that don't exist
+	; Default behavior is for nodes that don't exist to not be xrefed. Verify that.
+	; Once #51 is fixed, there will be an extra parameter to specify how non-existent fixed nodes
+	; need to be handled and at that time this test case can be enhanced to additionally verify
+	; the new behavior.
+	kill ^tnodata3
+	set ^tnodata3(100,1,"const1")="a"
+	set ^tnodata3(100,2,"const1","const2")="b"
+	set ^tnodata3(100,3,"const1")="c"
+	set ^tnodata3(100,3,"const1","const2")="d"
+	set ^tnodata3(100,4,"const3")="e"
+	set ^tnodata3(100,5,"const1")="f"
+	set ^tnodata3(100,5,"const1","const4")="g"
+	set ^tnodata3(100,6,"const1","const2","const3")="h"
 	new subs,aimgbl
-	set subs(1)=100.01
+	set subs(1)=100
 	set subs(2)=":"
-	set subs(3)=.2
-	set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1)
-	; zwrite @aimgbl
-	do assert($data(@aimgbl@(1,"",1)))
-	do assert($data(@aimgbl@(1,"",2)))
+	set subs(3)="""const1"""
+	set subs(4)="""const2"""
+	do UNXREFDATA^%YDBAIM("^tnodata3",.subs)
+	set aimgbl=$$XREFDATA^%YDBAIM("^tnodata3",.subs)
+	; Verify the nodes that we expect to exist in the xref
+	do assert(""=@aimgbl@(0,"b",2)) kill @aimgbl@(0,"b",2)
+	do assert(""=@aimgbl@(0,"d",3)) kill @aimgbl@(0,"d",3)
+	; Verify that no other nodes exist in the xref
+	do assert(1=$data(@aimgbl@(0)))
 	quit
 	;
 tutf8tp	; @TEST UTF-8 data; seq pieces; updates (kill, set $piece)
