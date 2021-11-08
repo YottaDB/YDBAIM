@@ -8,45 +8,45 @@ $ZSTATUS="150379506,%YDBAIM+3^%YDBAIM,%YDBAIM-F-BADINVOCATION Top level invocati
 # Testing UNXREFDATA^%YDBAIM with tp=0
 # Testing UNXREFDATA^%YDBAIM with tp=1
 # Testing XREFDATA^%YDBAIM with tp=0
-$ZSTATUS="150379506,XREFDATA+7^%YDBAIM,%YDBAIM-F-NOTAGBL Variable """" is not a valid global variable name"
+$ZSTATUS="150379506,XREFDATA+10^%YDBAIM,%YDBAIM-F-NOTAGBL Variable """" is not a valid global variable name"
 # Testing XREFDATA^%YDBAIM with tp=1
-$ZSTATUS="150379506,XREFDATA+7^%YDBAIM,%YDBAIM-F-NOTAGBL Variable """" is not a valid global variable name"
+$ZSTATUS="150379506,XREFDATA+10^%YDBAIM,%YDBAIM-F-NOTAGBL Variable """" is not a valid global variable name"
 0
 ---------------
 
 NOSUBS write $$XREFDATA^%YDBAIM("^abcd")
-Error occurred: 150379506,XREFDATA+24^%YDBAIM,%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference; nsubs=0
+Error occurred: 150379506,XREFDATA+28^%YDBAIM,%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference default type, 2 for type=1; nsubs=0
 242
 ---------------
 
 NOTAGBL1 write $$XREFDATA^%YDBAIM
-Error occurred: 150379506,XREFDATA+7^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "" is not a valid global variable name
+Error occurred: 150379506,XREFDATA+10^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "" is not a valid global variable name
 242
 ---------------
 
 NOPIECE write $$XREFDATA^%YDBAIM("^abcd",1,"|")
-Error occurred: 150379506,XREFDATA+73^%YDBAIM,%YDBAIM-F-NOPIECE Piece separator "|" specified, but no piece numbers
+Error occurred: 150379506,XREFDATA+102^%YDBAIM,%YDBAIM-F-NOPIECE Piece separator "|" specified, but no piece numbers
 242
 ---------------
 
 CANTADDSTAT write $$XREFDATA^%YDBAIM("^abcd",1,"|",1),!,$$XREFDATA^%YDBAIM("^abcd",1,"|",1,,,,2)
 ^%ydbAIMDGB3Ey8B4z3CDDZOF7U4Y52
-Error occurred: 150379506,XREFDATA+79^%YDBAIM,%YDBAIM-F-CANTADDSTAT stat=2 and ^%ydbAIMDGB3Ey8B4z3CDDZOF7U4Y52(10)=0 - adding statistics to existing metadata not supported
+Error occurred: 150379506,XREFDATA+108^%YDBAIM,%YDBAIM-F-CANTADDSTAT stat=2 and ^%ydbAIMDGB3Ey8B4z3CDDZOF7U4Y52(10)=0 - adding statistics to existing metadata not supported
 242
 ---------------
 
 NOEXTREF write $$XREFDATA^%YDBAIM("^|""x.gld""|x")
-Error occurred: 150379506,XREFDATA+9^%YDBAIM,%YDBAIM-F-NOEXTREF Extended reference in ^|"x.gld"|x is not supported
+Error occurred: 150379506,XREFDATA+12^%YDBAIM,%YDBAIM-F-NOEXTREF Extended reference in ^|"x.gld"|x is not supported
 242
 ---------------
 
 INVPIECE set subs(1)="1:2:3" write $$XREFDATA^%YDBAIM("^x",.subs)
-Error occurred: 150379506,XREFDATA+188^%YDBAIM,%YDBAIM-F-INVPIECE Range "1:2:3" has invalid number of pieces: 3
+Error occurred: 150379506,XREFDATA+222^%YDBAIM,%YDBAIM-F-INVPIECE Range "1:2:3" has invalid number of pieces: 3
 242
 ---------------
 
 INVPNUMSEP kill ^x set ^x(1)="a1|b1",^x(2)="a2|",^x(3)="|b3",subs(1)="*" write $$XREFDATA^%YDBAIM("^x",.subs,"|","1:2:3")
-Error occurred: 150379506,XREFDATA+281^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
+Error occurred: 150379506,XREFDATA+317^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
 242
 ---------------
 
@@ -56,12 +56,12 @@ Error occurred: 150379506,UNXREFDATA+14^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "xy12
 ---------------
 
 NOTAGBL3 write $$XREFDATA^%YDBAIM("^xy123456789012345678901234567890",0)
-Error occurred: 150379506,XREFDATA+11^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+Error occurred: 150379506,XREFDATA+14^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
 NOTAGBL4 write $$XREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)
-Error occurred: 150379506,XREFDATA+11^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+Error occurred: 150379506,XREFDATA+14^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
@@ -76,12 +76,12 @@ Error occurred: 150379506,UNXREFDATA+14^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy1
 ---------------
 
 GVSUBOFLOW0 do gvsuboflow^%YDBAIMTEST(0)
-$ZSTATUS="150372986,XREFDATA+400^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
+$ZSTATUS="150372986,XREFDATA+478^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
 122
 ---------------
 
 GVSUBOFLOW1 do gvsuboflow^%YDBAIMTEST(1)
-$ZSTATUS="150372986,XREFDATA+400^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
+$ZSTATUS="150372986,XREFDATA+478^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
 122
 ---------------
 

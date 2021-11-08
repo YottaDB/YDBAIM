@@ -15,6 +15,7 @@
 	;zb err
 	;zb tinv8+5
 	;zb tinv12
+	;zb type1t1^%YDBAIMTEST
 	;s $zstep="zp @$zpos b"
 	;do en^%ut($t(+0),3,1)
 	; end debug commands
@@ -80,11 +81,16 @@ TEARDOWN ; Runs after each test
 	D UNXREFDATA^%YDBAIM
 	QUIT
 	;
+LOADDATA(lab)	; load data after label lab
+	new i,line
+	for i=1:1 set line=$piece($text(@(lab_"+"_i)),";",2) quit:'$zlength(line)  set @line
+	quit:$quit i quit
+	;
 assert:(boolexpr,msg) ; [private] shortcut to tf^%ut
 	if '$data(%ut) do  quit
 	. if 'boolexpr set $ecode=",U-ASSERT,"
 	;
-	if $get(msg)="" set msg="Error from "_$stack($stack-1,"place")
+	if $get(msg)="" set msg="Error from "_$stack($stack-1,"place")_": "_$stack($stack-1,"mcode")
 	do tf^%ut(boolexpr,$get(msg))
 	quit
 	;
@@ -232,10 +238,13 @@ tsubs1	; @TEST XREFDATA with numbers & : as subs
 	; Add data and make sure triggers works
 	set ^ORD(100.01,100,0)="JUNK STATUS^junk"
 	do assert($data(@aimgbl@(2,"junk",100)),"set trigger works")
-	; Delete data ditto
-	; TODO: Currently fails. Tracked at https://gitlab.com/YottaDB/Util/YDBAIM/-/issues/26.
-	;kill ^ORDER(100.01,99)
-	;do assert('$data(@aimgbl@(2,"none",99)),"kill trigger works")
+	; Delete data and check that kill trigger works
+	new keepme merge keepme=^ORD(100.01,99)
+	kill ^ORD(100.01,99)
+	do assert('$data(@aimgbl@(2,"none",99)),"kill trigger works")
+	; Restore data to the way it was for later tests
+	merge ^ORD(100.01,99)=keepme
+	kill ^ORD(100.01,100)
 	quit
 	;
 tsubs2	; @TEST subs w strings,subs>subs(n)/Index Octo Global
@@ -1298,3 +1307,606 @@ badinvocationhelper(entryref,tp)	;
 	trollback:tp
 	quit
 
+ttype1	; @TEST test type1 application global variables
+	new i,j,s,x,y,z
+	do UNXREFDATA^%YDBAIM
+	kill ^USPresidents
+	do assert(46=$$LOADDATA("USPresidents"))
+	do assert(3=$$LOADDATA("NotUSPresidents"))
+	set s(1)=":1900",s(2)=1841
+	; Entire node: test initial data load & triggers for no statistics
+	zkill ^USPresidents(1837,1841)
+	set x=$$XREFDATA^%YDBAIM("^USPresidents",.s,,,,,,,1)
+	do assert(x'=$$XREFDATA^%YDBAIM("^USPresidents",.s,,,1,,,,))
+	set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i),assert(46=$$LOADDATA("USPresidents"))
+	set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(22=i)
+	set y="" for i=1:1 set y=$order(@x@(0,y)) quit:""=y
+	do assert(3=i)
+	zkill ^USPresidents(1837,1841) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i)
+	set y="" for i=1:1 set y=$order(@x@(0,y)) quit:""=y
+	do assert(2=i)
+	zkill ^USPresidents(1837,-42) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i)
+	zkill ^USPresidents(1837,42) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(22=i)
+	do assert(3=$$LOADDATA("NotUSPresidents")) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i)
+	do assert(46=$$LOADDATA("USPresidents")) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(22=i)
+	set y="" for i=1:1 set y=$order(@x@(0,y)) quit:""=y
+	do assert(3=i)
+	do UNXREFDATA^%YDBAIM
+	; Entire node: test initial data load & triggers for stat=1
+	zkill ^USPresidents(1837,1841)
+	set x=$$XREFDATA^%YDBAIM("^USPresidents",.s,,,,,,1,1)
+	set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i),assert(46=$$LOADDATA("USPresidents"))
+	set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(22=i)
+	set y="" for i=1:1 set y=$order(@x@(0,y)) quit:""=y
+	do assert(3=i),assert(21=@x@("","")),assert(1=@x@("","Martin|Van|Buren")),assert(1=@x@("","William|Henry|Harrison"))
+	zkill ^USPresidents(1837,1841) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i),assert(22=@x@("","")),assert('$data(@x@("","Martin|Van|Buren"))),assert(@x@("","William|Henry|Harrison"))
+	set y="" for i=1:1 set y=$order(@x@(0,y)) quit:""=y
+	do assert(2=i)
+	zkill ^USPresidents(1837,-42) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i),assert(22=@x@("",""))
+	zkill ^USPresidents(1837,42) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(22=i),assert(21=@x@("",""))
+	do assert(3=$$LOADDATA("NotUSPresidents")) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i),assert(22=@x@("",""))
+	do assert(46=$$LOADDATA("USPresidents")) set y="" for i=1:1 set y=$order(@x@(0,y)) quit:""=y
+	do assert(3=i),assert(21=@x@("","")),assert(1=@x@("","Martin|Van|Buren")),assert(1=@x@("","William|Henry|Harrison"))
+	do UNXREFDATA^%YDBAIM
+	; Entire node: test initial data load & triggers for stat=2
+	zkill ^USPresidents(1837,1841)
+	set x=$$XREFDATA^%YDBAIM("^USPresidents",.s,,,,,,2,1)
+	set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i),assert(46=$$LOADDATA("USPresidents"))
+	set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(22=i),assert(3=@x@("")),assert(23=@x@(11))
+	set y="" for i=1:1 set y=$order(@x@(0,y)) quit:""=y
+	do assert(3=i),assert(21=@x@("","")),assert(1=@x@("","Martin|Van|Buren")),assert(1=@x@("","William|Henry|Harrison"))
+	zkill ^USPresidents(1837,1841) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i),assert(22=@x@("","")),assert('$data(@x@("","Martin|Van|Buren"))),assert(@x@("","William|Henry|Harrison"))
+	set y="" for i=1:1 set y=$order(@x@(0,y)) quit:""=y
+	do assert(2=i),assert(2=@x@("")),assert(23=@x@(11))
+	zkill ^USPresidents(1837,-42) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i),assert(22=@x@("","")),assert(2=@x@("")),assert(23=@x@(11))
+	zkill ^USPresidents(1837,42) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(22=i),assert(21=@x@("","")),assert(2=@x@("")),assert(22=@x@(11))
+	do assert(3=$$LOADDATA("NotUSPresidents")) set y="" for i=1:1 set y=$order(@x@(0,"",y)) quit:""=y
+	do assert(23=i),assert(22=@x@("","")),assert(2=@x@("")),assert(23=@x@(11))
+	do assert(46=$$LOADDATA("USPresidents")) set y="" for i=1:1 set y=$order(@x@(0,y)) quit:""=y
+	do assert(3=i),assert(21=@x@("","")),assert(1=@x@("","Martin|Van|Buren")),assert(1=@x@("","William|Henry|Harrison"))
+	do UNXREFDATA^%YDBAIM
+	; Pieces
+	zkill ^USPresidents(1837,1841)
+	set z=$$XREFDATA^%YDBAIM("^USPresidents",.s,"|",3,,,,,1)
+	do assert(z'=x)
+	do assert(z'=$$XREFDATA^%YDBAIM("^USPresidents",.s,"|",1,1,,,,))
+	set y="" for i=1:1 set y=$order(@z@(3,"",y)) quit:""=y
+	do assert(23=i),assert(46=$$LOADDATA("USPresidents"))
+	set y="" for i=1:1 set y=$order(@z@(3,"",y)) quit:""=y
+	do assert(22=i)
+	set y="" for i=1:1 set y=$order(@z@(3,"",y)) quit:""=y
+	do assert(22=i)
+	set y="" for i=1:1 set y=$order(@z@(3,y)) quit:""=y
+	do assert(3=i)
+	zkill ^USPresidents(1837,1841) set y="" for i=1:1 set y=$order(@z@(3,"",y)) quit:""=y
+	do assert(23=i)
+	set y="" for i=1:1 set y=$order(@z@(3,y)) quit:""=y
+	do assert(2=i)
+	zkill ^USPresidents(1837,-42) set y="" for i=1:1 set y=$order(@z@(3,"",y)) quit:""=y
+	do assert(23=i)
+	zkill ^USPresidents(1837,42) set y="" for i=1:1 set y=$order(@z@(3,"",y)) quit:""=y
+	do assert(22=i)
+	do assert(3=$$LOADDATA("NotUSPresidents")) set y="" for i=1:1 set y=$order(@z@(3,"",y)) quit:""=y
+	do assert(23=i)
+	do assert(46=$$LOADDATA("USPresidents")) set y="" for i=1:1 set y=$order(@z@(3,"",y)) quit:""=y
+	do assert(22=i)
+	set y="" for i=1:1 set y=$order(@z@(3,y)) quit:""=y
+	do assert(3=i)
+	do UNXREFDATA^%YDBAIM
+	; Pieces: test initial data load & triggers for stat=1
+	zkill ^USPresidents(1837,1841)
+	set z=$$XREFDATA^%YDBAIM("^USPresidents",.s,"|","1;3",,,,1,1)
+	set j=2*$random(2)+1,y="" for i=1:1 set y=$order(@z@(j,"",y)) quit:""=y
+	do assert(23=i),assert(46=$$LOADDATA("USPresidents"))
+	set j=2*$random(2)+1,y="" for i=1:1 set y=$order(@z@(j,"",y)) quit:""=y
+	do assert(22=i)
+	set j=2*$random(2)+1,y="" for i=1:1 set y=$order(@z@(j,y)) quit:""=y
+	do assert(3=i),assert(21=@z@(-2*$random(2)-1,"")),assert(1=@z@(-1,"Martin")),assert(1=@z@(-3,"Buren")),assert(1=@z@(-1,"William")),assert(1=@z@(-3,"Harrison"))
+	zkill ^USPresidents(1837,1841) set y="" for i=1:1 set y=$order(@z@(1,"",y)) quit:""=y
+	do assert(23=i),assert(22=@z@(-2*$random(2)-1,"")),assert('$data(@z@(-1,"Martin"))),assert('$data(@z@(-3,"Buren"))),assert(1=@z@(-1,"William")),assert(1=@z@(-3,"Harrison"))
+	set y="" for i=1:1 set y=$order(@z@(1,y)) quit:""=y
+	do assert(2=i)
+	zkill ^USPresidents(1837,-42) set y="" for i=1:1 set y=$order(@z@(1,"",y)) quit:""=y
+	do assert(23=i),assert(22=@z@(-2*$random(2)-1,""))
+	zkill ^USPresidents(1837,42) set y="" for i=1:1 set y=$order(@z@(1,"",y)) quit:""=y
+	do assert(22=i),assert(21=@z@(-2*$random(2)-1,""))
+	do assert(3=$$LOADDATA("NotUSPresidents")) set y="" for i=1:1 set y=$order(@z@(1,"",y)) quit:""=y
+	do assert(23=i),assert(22=@z@(-2*$random(2)-1,""))
+	do assert(46=$$LOADDATA("USPresidents")) set y="" for i=1:1 set y=$order(@z@(1,y)) quit:""=y
+	do assert(3=i),assert(21=@z@(-2*$random(2)-1,"")),assert(1=@z@(-1,"Martin")),assert(1=@z@(-3,"Buren")),assert(1=@z@(-1,"William")),assert(1=@z@(-3,"Harrison"))
+	do UNXREFDATA^%YDBAIM
+	; Pieces: test initial data load & triggers for stat=2
+	zkill ^USPresidents(1837,1841)
+	set z=$$XREFDATA^%YDBAIM("^USPresidents",.s,"|","1:3",,,,2,1)
+	set y="" for i=1:1 set y=$order(@z@(1,"",y)) quit:""=y
+	do assert(23=i),assert(2=@z@(-2)),assert(69=@z@(11)),assert(46=$$LOADDATA("USPresidents")) quit
+	set y="" for i=1:1 set y=$order(@z@(1,"",y)) quit:""=y
+	do assert(22=i),assert(3=@z@(-2)),assert(69=@z@(11))
+	set y="" for i=1:1 set y=$order(@z@(1,y)) quit:""=y
+	do assert(3=i),assert(21=@z@(-2*$random(2)-1,"")),assert(1=@z@(-1,"Martin")),assert(1=@z@(-3,"Buren")),assert(1=@z@(-1,"William")),assert(1=@z@(-3,"Harrison"))
+	zkill ^USPresidents(1837,1841) set y="" for i=1:1 set y=$order(@z@(1,"",y)) quit:""=y
+	do assert(23=i),assert(22=@z@(-2*$random(2)-1,"")),assert('$data(@z@(-1,"Martin"))),assert('$data(@z@(-2,"Van"))),assert('$data(@z@(-3,"Buren"))),assert(1=@z@(-1,"William")),assert(1=@z@(-3,"Harrison"))
+	set y="" for i=1:1 set y=$order(@z@(1,y)) quit:""=y
+	do assert(2=i),assert(22=@z@(-2*$random(2)-1,"")),assert(69=@z@(11))
+	zkill ^USPresidents(1837,-42) set y="" for i=1:1 set y=$order(@z@(1,"",y)) quit:""=y
+	do assert(23=i),assert(22=@z@(-2*$random(2)-1,"")),assert(2=@z@(-2)),assert(69=@z@(11))
+	zkill ^USPresidents(1837,42) set y="" for i=1:1 set y=$order(@z@(1,"",y)) quit:""=y
+	do assert(22=i),assert(21=@z@(-2*$random(2)-1,"")),assert(2=@z@(-1)),assert(66=@z@(11))
+	do assert(3=$$LOADDATA("NotUSPresidents")) set y="" for i=1:1 set y=$order(@z@(1,"",y)) quit:""=y
+	do assert(23=i),assert(22=@z@(-2*$random(2)-1,"")),assert(2=@z@(-2)),assert(69=@z@(11))
+	do assert(46=$$LOADDATA("USPresidents")) set y="" for i=1:1 set y=$order(@z@(1,y)) quit:""=y
+	do assert(3=i),assert(21=@z@(-2*$random(2)-1,"")),assert(1=@z@(-1,"Martin")),assert(1=@z@(-3,"Buren")),assert(1=@z@(-1,"William")),assert(1=@z@(-3,"Harrison"))
+	do UNXREFDATA^%YDBAIM
+	quit
+
+USPresidents	; former US Presidents with first and last years in office
+	;^USPresidents(1789,1797)="George||Washington"
+	;^USPresidents(1797,1801)="John||Adams"
+	;^USPresidents(1801,1809)="Thomas||Jefferson"
+	;^USPresidents(1809,1817)="James||Madison"
+	;^USPresidents(1817,1825)="James||Monroe"
+	;^USPresidents(1825,1829)="John|Quincy|Adams"
+	;^USPresidents(1829,1837)="Andrew||Jackson"
+	;^USPresidents(1837,1841)="Martin|Van|Buren"
+	;^USPresidents(1841,1841)="William|Henry|Harrison"
+	;^USPresidents(1841,1845)="John||Tyler"
+	;^USPresidents(1845,1849)="James|K.|Polk"
+	;^USPresidents(1849,1850)="Zachary||Taylor"
+	;^USPresidents(1850,1853)="Millard||Fillmore"
+	;^USPresidents(1853,1857)="Franklin||Pierce"
+	;^USPresidents(1857,1861)="James||Buchanan"
+	;^USPresidents(1861,1865)="Abraham||Lincoln"
+	;^USPresidents(1865,1869)="Andrew||Johnson"
+	;^USPresidents(1869,1877)="Ulysses|S.|Grant"
+	;^USPresidents(1877,1881)="Rutherford|B.|Hayes"
+	;^USPresidents(1881,1881)="James|A.|Garfield"
+	;^USPresidents(1881,1885)="Chester|A.|Arthur"
+	;^USPresidents(1885,1889)="Grover||Cleveland"
+	;^USPresidents(1889,1893)="Benjamin||Harrison"
+	;^USPresidents(1893,1897)="Grover||Cleveland"
+	;^USPresidents(1897,1901)="William||McKinley"
+	;^USPresidents(1901,1909)="Theodore||Roosevelt"
+	;^USPresidents(1909,1913)="William|Howard|Taft"
+	;^USPresidents(1913,1921)="Woodrow||Wilson"
+	;^USPresidents(1921,1923)="Warren|G.|Harding"
+	;^USPresidents(1923,1929)="Calvin||Coolidge"
+	;^USPresidents(1929,1933)="Herbert||Hoover"
+	;^USPresidents(1933,1945)="Franklin|D.|Roosevelt"
+	;^USPresidents(1945,1953)="Harry|S.|Truman"
+	;^USPresidents(1953,1961)="Dwight|D.|Eisenhower"
+	;^USPresidents(1961,1963)="John|F.|Kennedy"
+	;^USPresidents(1963,1969)="Lyndon|B.|Johnson"
+	;^USPresidents(1969,1974)="Richard||Nixon"
+	;^USPresidents(1974,1977)="Gerald||Ford"
+	;^USPresidents(1977,1981)="Jimmy||Carter"
+	;^USPresidents(1981,1989)="Ronald||Reagan"
+	;^USPresidents(1989,1993)="George|H.W.|Bush"
+	;^USPresidents(1993,2001)="Bill||Clinton"
+	;^USPresidents(2001,2009)="George|W.|Bush"
+	;^USPresidents(2009,2017)="Barack||Obama"
+	;^USPresidents(2017,2021)="Donald||Trump"
+
+NotUSPresidents	; fake data to test type 1 subscripts
+	;^USPresidents(1837,42)="Zaphod||Beeblebrox"
+	;^USPresidents(1837,-42)="Ford||Prefect"
+
+v1type1 ; @TEST VistA type1 - Test triggers
+	; Index data in ^ORD(100.01,:,.1) first ^ piece
+	; ^ORD(100.01,0)="ORDER STATUS^100.01I^99^16"
+	; ^ORD(100.01,1,0)="DISCONTINUED^dc"
+	; ^ORD(100.01,1,.1)="dc"
+	; ^ORD(100.01,1,1,0)="^^1^1^3070625^^^^"
+	; ^ORD(100.01,1,1,1,0)="Orders that have been explicitly stopped."
+	; ^ORD(100.01,1,"TERMSTATUS",0)="^100.0199DA^1^1"
+	; ^ORD(100.01,1,"TERMSTATUS",1,0)="3070607.115705^1"
+	; ^ORD(100.01,1,"TERMSTATUS","B",3070607.115705,1)=""
+	; ^ORD(100.01,1,"VUID")="4500704^1"
+	; ^ORD(100.01,2,0)="COMPLETE^comp"
+	; ^ORD(100.01,2,.1)="c"
+	; ^ORD(100.01,2,1,0)="^^3^3^3070607"
+	; ^ORD(100.01,2,1,1,0)="Orders that require no further action by the ancillary service. "
+	; ^ORD(100.01,2,1,2,0)=" e.g., Lab orders are completed when results are available, "
+	; ^ORD(100.01,2,1,3,0)="Radiology orders are complete when results are available."
+	; ^ORD(100.01,2,"TERMSTATUS",0)="^100.0199DA^1^1"
+	; ^ORD(100.01,2,"TERMSTATUS",1,0)="3070607.115705^1"
+	; ^ORD(100.01,2,"TERMSTATUS","B",3070607.115705,1)=""
+	; ^ORD(100.01,2,"VUID")="4501088^1"
+	; ...
+	new stat for stat=0:1:2 do
+	. ; write !,"stat: ",stat	; Uncomment for debugging
+	. new subs set subs(1)=100.01,subs(2)=":"" """,subs(3)=.1
+	. ;
+	. ; gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type
+	. ; Get AIM global with name only
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,1,0,1,stat,1)
+	. ; Unxref the data
+	. do UNXREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
+	. ; Assert that the data doesn't exist (first time (stat=0) it won't, so the previous UNXREF will be a no-op)
+	. do assert('$data(@aimgbl))
+	. ; Xref data now
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
+	. ;
+	. ; Count non-null entries. Expect 16
+	. ; Expect zero nulls
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,"dc",1)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,"dc")=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	. ;
+	. ; Add data and make sure triggers works
+	. ; Now set one of the .1 nodes to be non-existent on a new entry
+	. set ^ORD(100.01,100,0)="JUNK STATUS^junk"
+	. ; There should be now 17 entries, but 1 null entry
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=1)
+	. do assert($data(@aimgbl@(1,"",100)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,"")=1)
+	.. ; Another extra entry to test statistics
+	.. set ^ORD(100.01,101,0)="JUNK STATUS2^junk2"
+	.. do assert(@aimgbl@(-1,"")=2)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=18) ; Total entries
+	.. kill ^ORD(100.01,101,0)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
+	.. do assert(@aimgbl@(-1,"")=1)
+	. ;
+	. ; Set the .1 node to some data on entry 100
+	. set ^ORD(100.01,100,.1)="ju"
+	. ; There should be now 17 entries, but 0 null entry
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,"ju",100)))
+	. do assert('$data(@aimgbl@(1,"",100)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"")))
+	.. do assert(@aimgbl@(-1,"ju")=1)
+	. ;
+	. ; Restore data to original
+	. kill ^ORD(100.01,100)
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert('$data(@aimgbl@(1,"ju",100)))
+	. do assert('$data(@aimgbl@(1,"",100)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"ju")))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	. ;
+	. ; Kill the parent entry node by node
+	. new %1,%2 set (%1,%2)=$name(^ORD(100.01,1))
+	. new keepme merge keepme=@%2
+	. do assert($data(^ORD(100.01,1)))
+	. for  set %1=$query(@%1) quit:$name(@%2,$qlength(%2))'=$name(@%1,$qlength(%2))  kill @%1
+	. do assert('$data(^ORD(100.01,1)))
+	. do assert('$data(@aimgbl@(1,"dc",1)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"dc")))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=15) ; Distinct entries
+	... do assert(@aimgbl@(11)=15) ; Total entries
+	. merge @%2=keepme
+	. do assert($data(^ORD(100.01,1)))
+	. do assert($data(@aimgbl@(1,"dc",1)))
+	. if stat=2 do
+	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
+	.. do assert(@aimgbl@(11)=16) ; Total entries
+	. ;
+	. ; Kill parent entry all at once
+	. new keepme merge keepme=^ORD(100.01,1)
+	. kill ^ORD(100.01,1)
+	. do assert('$data(^ORD(100.01,1)))
+	. do assert('$data(@aimgbl@(1,"dc")))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"dc")))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=15) ; Distinct entries
+	... do assert(@aimgbl@(11)=15) ; Total entries
+	. merge ^ORD(100.01,1)=keepme
+	. do assert($data(^ORD(100.01,1)))
+	. do assert($data(@aimgbl@(1,"dc")))
+	. if stat=2 do
+	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
+	.. do assert(@aimgbl@(11)=16) ; Total entries
+	.
+	. ; Remove all data in ^ORD(101.01)
+	. new keepme merge keepme=^ORD(100.01)
+	. kill ^ORD(100.01)
+	. do assert($data(@aimgbl@(1))=1)
+	. if stat do
+	.. do assert($data(@aimgbl@(-1))[0)
+	.. if stat=2 do
+	... do assert('$data(@aimgbl@(-1))) ; Distinct entries
+	... do assert('$data(@aimgbl@(11))) ; Total entries
+	. merge ^ORD(100.01)=keepme
+	. ;
+	. ; Remove an existing sub entry. Should have same number of entries, but 1 null
+	. new keepme merge keepme=^ORD(100.01,2,.1)
+	. kill ^ORD(100.01,2,.1)
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=1)
+	. do assert($data(@aimgbl@(1,"",2)))
+	. do assert('$data(@aimgbl@(1,"c",2)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"c")))
+	.. do assert(@aimgbl@(-1,"")=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	. ; Put back
+	. merge ^ORD(100.01,2,.1)=keepme
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,"c",2)))
+	. do assert('$data(@aimgbl@(1,"",2)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,"c")=1)
+	.. do assert('$data(@aimgbl@(-1,"")))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	quit
+	;
+v2type1 ; @TEST VistA type1 - Initial data partly empty
+	; Remove an existing entry. Should have same number of entries, but 1 null
+	new stat for stat=0:1:2 do
+	. ; write !,"stat: ",stat	; Uncomment for debugging
+	. new keepme merge keepme=^ORD(100.01,2,.1)
+	. kill ^ORD(100.01,2,.1)
+	. ; gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type
+	. ; Get AIM global with name only
+	. new subs set subs(1)=100.01,subs(2)=":"" """,subs(3)=.1
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,1,0,1,stat,1)
+	. ; Unxref the data
+	. do UNXREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
+	. ; Assert that the data doesn't exist
+	. do assert('$data(@aimgbl))
+	. ; Initial index
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=1)
+	. if stat do
+	.. do assert(@aimgbl@(-1,"dc")=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	. ; Check that null entry exists
+	. do assert($data(@aimgbl@(1,"",2)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,"")=1)
+	. ; Put back
+	. merge ^ORD(100.01,2,.1)=keepme
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,"c",2)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,"c")=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	quit
+
+v1type0 ; @TEST Repeat VistA type 1 tests as type ""
+	; Index data in ^ORD(100.01,:,.1) first ^ piece
+	new stat for stat=0:1:2 do
+	. ; write !,"stat: ",stat	; Uncomment for debugging
+	. new subs set subs(1)=100.01,subs(2)=":"" """,subs(3)=.1
+	. ;
+	. ; gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type
+	. ; Get AIM global with name only
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,1,0,1,stat,"")
+	. ; Unxref the data
+	. do UNXREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,"")
+	. ; Assert that the data doesn't exist (first time (stat=0) it won't, so the previous UNXREF will be a no-op)
+	. do assert('$data(@aimgbl))
+	. ; Xref data now
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,"")
+	. ;
+	. ; Count non-null entries. Expect 16
+	. ; Expect zero nulls
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,"dc",1)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,"dc")=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	. ;
+	. ; Add data and make sure triggers works
+	. ; Now set one of the .1 nodes to be non-existent on a new entry
+	. set ^ORD(100.01,100,0)="JUNK STATUS^junk"
+	. ; There should be now 16 entries, as the non-existent entry won't get indexed
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert('$data(@aimgbl@(1,"",100)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"")))
+	.. ; Another extra entry to test statistics
+	.. set ^ORD(100.01,101,0)="JUNK STATUS2^junk2"
+	.. do assert('$data(@aimgbl@(-1,"")))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	.. kill ^ORD(100.01,101,0)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	.. do assert('$data(@aimgbl@(-1,"")))
+	. ;
+	. ; Set the .1 node to some data on entry 100
+	. set ^ORD(100.01,100,.1)="ju"
+	. ; There should be now 17 entries, but 0 null entry
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,"ju",100)))
+	. do assert('$data(@aimgbl@(1,"",100)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"")))
+	.. do assert(@aimgbl@(-1,"ju")=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
+	. ;
+	. ; Restore data to original
+	. kill ^ORD(100.01,100)
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert('$data(@aimgbl@(1,"ju",100)))
+	. do assert('$data(@aimgbl@(1,"",100)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"ju")))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	. ;
+	. ; Kill the parent entry node by node
+	. new %1,%2 set (%1,%2)=$name(^ORD(100.01,1))
+	. new keepme merge keepme=@%2
+	. do assert($data(^ORD(100.01,1)))
+	. for  set %1=$query(@%1) quit:$name(@%2,$qlength(%2))'=$name(@%1,$qlength(%2))  kill @%1
+	. do assert('$data(^ORD(100.01,1)))
+	. do assert('$data(@aimgbl@(1,"dc")))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"dc")))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=15) ; Distinct entries
+	... do assert(@aimgbl@(11)=15) ; Total entries
+	. merge @%2=keepme
+	. do assert($data(^ORD(100.01,1)))
+	. do assert($data(@aimgbl@(1,"dc")))
+	. if stat=2 do
+	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
+	.. do assert(@aimgbl@(11)=16) ; Total entries
+	. ;
+	. ; Kill parent entry all at once
+	. new keepme merge keepme=^ORD(100.01,1)
+	. kill ^ORD(100.01,1)
+	. do assert('$data(^ORD(100.01,1)))
+	. do assert('$data(@aimgbl@(1,"dc")))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"dc")))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=15) ; Distinct entries
+	... do assert(@aimgbl@(11)=15) ; Total entries
+	. merge ^ORD(100.01,1)=keepme
+	. do assert($data(^ORD(100.01,1)))
+	. do assert($data(@aimgbl@(1,"dc")))
+	. if stat=2 do
+	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
+	.. do assert(@aimgbl@(11)=16) ; Total entries
+	.
+	. ; Remove all data in ^ORD(101.01)
+	. new keepme merge keepme=^ORD(100.01)
+	. kill ^ORD(100.01)
+	. do assert($data(@aimgbl@(1))=1)
+	. if stat do
+	.. do assert($data(@aimgbl@(-1))[0)
+	.. if stat=2 do
+	... do assert('$data(@aimgbl@(-1))) ; Distinct entries
+	... do assert('$data(@aimgbl@(11))) ; Total entries
+	. merge ^ORD(100.01)=keepme
+	. ;
+	. ; Remove an existing sub entry. Should have 1 less entry.
+	. new keepme merge keepme=^ORD(100.01,2,.1)
+	. kill ^ORD(100.01,2,.1)
+	. do assert($$type1cd(aimgbl)=15)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert('$data(@aimgbl@(1,"",2)))
+	. do assert('$data(@aimgbl@(1,"c",2)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"c")))
+	.. do assert('$data(@aimgbl@(-1,"")))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=15) ; Distinct entries
+	... do assert(@aimgbl@(11)=15) ; Total entries
+	. ; Put back
+	. merge ^ORD(100.01,2,.1)=keepme
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,"c",2)))
+	. do assert('$data(@aimgbl@(1,"",2)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,"c")=1)
+	.. do assert('$data(@aimgbl@(-1,"")))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	quit
+	;
+v2type0 ; @TEST VistA type "" - Initial data partly empty
+	; Remove an existing entry. Should have same number of entries, but 1 null
+	new stat for stat=0:1:2 do
+	. ; write !,"stat: ",stat	; Uncomment for debugging
+	. new keepme merge keepme=^ORD(100.01,2,.1)
+	. kill ^ORD(100.01,2,.1)
+	. ; gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type
+	. ; Get AIM global with name only
+	. new subs set subs(1)=100.01,subs(2)=":"" """,subs(3)=.1
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,1,0,1,stat,"")
+	. ; Unxref the data
+	. do UNXREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,"")
+	. ; Assert that the data doesn't exist
+	. do assert('$data(@aimgbl))
+	. ; Initial index
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,"")
+	. do assert($$type1cd(aimgbl)=15)
+	. do assert($$type1cn(aimgbl)=0)
+	. if stat do
+	.. do assert(@aimgbl@(-1,"dc")=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=15) ; Distinct entries
+	... do assert(@aimgbl@(11)=15) ; Total entries
+	. ; Check that null entry doesn't exist
+	. do assert('$data(@aimgbl@(1,"",2)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"")))
+	. ; Put back
+	. merge ^ORD(100.01,2,.1)=keepme
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,"c",2)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,"c")=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	quit
+	;
+type1cd(aimgbl) ; [type1t1, $$] Count data (including nulls)
+	new count set count=0
+	new i set i=""
+	for  set i=$order(@aimgbl@(1,"",i)) quit:i=""  if $increment(count)
+	for  set i=$order(@aimgbl@(1,i)) quit:i=""  if $increment(count)
+	quit count
+type1cn(aimgbl) ; [type1t1, $$] Count null
+	new count set count=0
+	new i set i=""
+	for  set i=$order(@aimgbl@(1,"",i)) quit:i=""  if $increment(count)
+	quit count
