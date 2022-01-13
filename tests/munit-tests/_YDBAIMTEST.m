@@ -1,6 +1,6 @@
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;								;
-	; Copyright (c) 2021 YottaDB LLC and/or its subsidiaries.	;
+	; Copyright (c) 2021-2022 YottaDB LLC and/or its subsidiaries.	;
 	; All rights reserved.						;
 	;								;
 	;	This source code contains the intellectual property	;
@@ -1910,3 +1910,41 @@ type1cn(aimgbl) ; [type1t1, $$] Count null
 	new i set i=""
 	for  set i=$order(@aimgbl@(1,"",i)) quit:i=""  if $increment(count)
 	quit count
+	;
+rupdate	; @TEST Range Update Works properly (uses Type 1 index)
+	; This tests that if we index a range, updating the range works properly
+	; Updating data outside the range does not.
+	; ^ORD(100.01,0)="ORDER STATUS^100.01I^99^16"
+	; ^ORD(100.01,1,0)="DISCONTINUED^dc"
+	; ^ORD(100.01,1,.1)="dc"
+	; ...
+	; ^ORD(100.01,2,0)="COMPLETE^comp"
+	; ^ORD(100.01,2,.1)="c"
+	; ...
+	; ^ORD(100.01,3,0)="HOLD^hold"
+	; ^ORD(100.01,3,.1)="h"
+	; ...
+	; Index data in ^ORD(100.01,:,.1) first ^ piece
+	; Range here is 0:2
+	new subs set subs(1)=100.01,subs(2)="0:2",subs(3)=.1
+	;
+	; gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,2,1)
+	;
+	; Assert that data in 1,2 exists, not 3
+	do assert($data(@aimgbl@(1,"c",2)))
+	do assert($data(@aimgbl@(1,"dc",1)))
+	do assert('$data(@aimgbl@(1,"h",3)))
+	;
+	; Add data in 1.5, and see that it gets into the index
+	set ^ORD(100.01,1.5,.1)="fake"
+	do assert($data(@aimgbl@(1,"fake",1.5)))
+	; kill it (a node higher just for testing)
+	kill ^ORD(100.01,1.5)
+	do assert('$data(@aimgbl@(1,"fake",1.5)))
+	;
+	; Add data in 88, and see that it DOES NOT get into the index
+	set ^ORD(100.01,88,.1)="fake2"
+	do assert('$data(@aimgbl@(1,"fake2",88)))
+	kill ^ORD(100.01,88)
+	quit
