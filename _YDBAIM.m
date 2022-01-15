@@ -1,6 +1,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;								;
-; Copyright (c) 2021 YottaDB LLC and/or its subsidiaries.	;
+; Copyright (c) 2021-2022 YottaDB LLC and/or its subsidiaries.	;
 ; All rights reserved.						;
 ;								;
 ;	This source code contains the intellectual property	;
@@ -462,9 +462,9 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	new $etrap do etrap
 	new altlastsub,altsub,asciisep,constlist,currlck,fullsub,fullsubprnt
-	new fulltrigsub,gblind,i,j,killtrg,lastfullsub,lastsub,lastsubind
-	new lastvarsub,locxsub,modflag,name,nameind,newpnum,newpstr,pieces
-	new nsubs,nullsub,omitflag,oldpstr,sub,subary,suffix,tlevel,tmp
+	new fulltrigsub,gblind,gblindtype1,i,j,killtrg,lastfullsub,lastsub
+	new lastsubind,lastvarsub,locxsub,modflag,name,nameind,newpnum,newpstr
+	new pieces,nsubs,nullsub,omitflag,oldpstr,sub,subary,suffix,tlevel,tmp
 	new totcntind,trigdel,trigdelx,type1last,trigprefix,trigset,trigsub
 	new ttprfx,valcntind,xrefind,xrefindtype1,z,zlsep,ztout
 	set tlevel=$tlevel	; required by error trap to rollback/unwind
@@ -504,7 +504,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	. set name=name_locxsub(i)
 	. set lastfullsub="sub"_i,trigsub=trigsub_lastfullsub_"=",fulltrigsub=fulltrigsub_lastfullsub_","
 	. if constlist(i)&(1=type) do
-	. . set fullsub=fullsub_$zwrite(locxsub(i))_","
+	. . set fullsub=fullsub_locxsub(i)_","
 	. . set trigsub=trigsub_$select(i=nsubs:"*",1:locxsub(i))_","
 	. else  do
 	. . set fullsub=fullsub_lastfullsub_","
@@ -602,6 +602,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	. set oldpstr=$get(@name@(3),"#"),modflag=0
 	. for i=2:1:$zlength(newpstr) if +$zextract(newpstr,i)&'+$zextract(oldpstr,i) set modflag=1 quit
 	. do:modflag
+	. . set:1=type tmp=$order(constlist(""),-1),constlist(tmp)=1,locxsub(tmp)=$zwrite(type1last,1)
 	. . do xrefdata(nsubs)
 	. . ; Update metadata to indicate completion
 	. . tstart ():transactionid="batch"
@@ -639,7 +640,9 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	. . set ^%ydbAIMDxref(gbl,name)=""
 	. tcommit
 	. view "ztrigger_output":ztout
-	. set newpstr="" do xrefdata(nsubs)
+	. set newpstr=""
+	. set:1=type tmp=$order(constlist(""),-1),constlist(tmp)=1,locxsub(tmp)=$zwrite(type1last,1)
+	. do xrefdata(nsubs)
 	. ; Add metadata to indicate completion
 	. tstart ():transactionid="batch"
 	. set @name@(0)=$zut_" "_$job_" "_$zyrelease_" "_$zpiece($text(%YDBAIM),";",2),^(1)=nsubs,(^(2),^(3),^(4),^(5))=""
@@ -718,8 +721,8 @@ lsxrefdata:(lvn,xref)
 
 ; Create indirection strings to be used by xrefdata()
 ; Uses or references local variables passed to or defined in XREFDATA():
-;   constlist, gbl, name, lastvarsub, nameind, nsubs, omitflags, sep, subary,
-;   totcntind, type, valcntind, xrefind, xrefindtype1
+;   constlist, gbl, gblind, gblindtype1, name, lastvarsub, nameind, nsubs,
+;   omitflags, sep, subary, totcntind, type, valcntind, xrefind, xrefindtype1
 mkindxrefdata:
 	new i,tmp
 	set gblind(1)=gbl_"("_$select(constlist(1):locxsub(1),1:"subary(1)")
@@ -731,7 +734,10 @@ mkindxrefdata:
 	. . if 'omitfix set cflag=1,lastvarsub=i,lastsubind=locxsub(i),xrefind=xrefind_","_lastsubind
 	. else  set lastvarsub=i,lastsubind="subary("_i_")",xrefind=xrefind_","_lastsubind
 	set xrefind=xrefind_")"
-	set:1=type xrefindtype1=$select(omitfix:xrefind,1:$zpiece(xrefind,",",1,$zlength(xrefind,",")-1)_","""")")
+	if 1=type do
+	. set xrefindtype1=$select(omitfix:xrefind,1:$zpiece(xrefind,",",1,$zlength(xrefind,",")-1)_","""")")
+	. set gblindtype1=gblind(nsubs)
+	. set $zpiece(gblindtype1,",",$zlength(gblindtype1,","))=type1last_")"
 	if $zlength(sep) set nameind=name_"(-k,pieceval)",valcntind=name_"(-k)"
 	else  set nameind=name_"("""",nodeval)",valcntind=name_"("""")"
 	set totcntind=name_"(11)"
@@ -829,12 +835,13 @@ unxrefdata:(xrefgbl)
 ; a different ordering of tests for the various code paths. Fortunately, this
 ; code is executed only for the initial creation of a cross reference, and not
 ; in the triggers that maintain cross references as globals are updated.
-; Uses or references variables defined in XREFDATA():
-;   constlist, gbl, lastvarsub, locxsub, name, nameind, newpstr, nullsub,
-;   omitfix, stat, totcntind, type1last, valcntind, xref, zpiece
+; References variables defined in or passed to XREFDATA():
+;   constlist, gbl, gblind, gblindtype1, lastsubind, lastvarsub, locxsub, name,
+;   nameind, newpstr, nullsub, omitfix, stat, subary, totcntind, type,
+;   type1last, valcntind, xref, xrefind, xrefindtype1, zpiece
 xrefdata:(nsubs)
-	new flag,i,j,k,nodelen1,nodeval,nranges,piece1,piece2,pieceval,rangeend
-	new rangeflag,sublvl,thisrange,tmp
+	new flag,i,j,k,nodelen1,nodeval,nranges,piece1,piece2,pieceval,quitflag
+	new rangeend,rangeflag,sublvl,thisrange,tmp
 	; If nsubs>1 it means call the function recursively for the next
 	; subscript level.
 	set flag=nullsub
@@ -858,8 +865,40 @@ xrefdata:(nsubs)
 	. . . set rangeend=$select($zlength(piece2):$zwrite(piece2,1),1:""),rangeflag=$zlength(rangeend)
 	. . . for  do:flag  set flag=1,(subary(sublvl),tmp)=$order(@gblind(sublvl)) quit:'$zlength(tmp)!(rangeflag&(tmp]]rangeend))
 	. . . . do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1)
-	; if nsubs=1 (the else command below) then cross reference those
-	; subscripts that the specification says to cross reference.
+	; if nsubs=1 (the rest of the code below) the traversal has reached the
+	; subscript level at which globals are to have metadata
+	; computed. Compute metadata per subscript and metadata type
+	; specification.
+	; Note that the code for type=1 comes before the code for
+	; constlist(sublvl) because constlist(sublvl)=1 for type=1 but the
+	; type=1 has precedence over constlist(sublvl)=1
+	else  if 1=type do	; for type=1 create metadata (based on peers if node does not exist)
+	. tstart ():transactionid="batch"
+	. if $data(@gblindtype1)#10 do
+	. . set nodeval=@gblindtype1
+	. . if $zlength(sep) do
+	. . . set nodelen1=$zlength(newpstr)
+	. . . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
+	. . . . set k=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
+	. . . . do:'($data(@xrefind)#10)
+	. . . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
+	. . . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . else  do:'$data(@xrefind)
+	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
+	. . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. else  do	; node doesn't exist but peers or peer subtrees do
+	. . set nodeval=""
+	. . if $zlength(sep) do
+	. . . set nodelen1=$zlength(newpstr)
+	. . . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
+	. . . . set k=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
+	. . . . do:'($data(@xrefindtype1)#10)
+	. . . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
+	. . . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . else  do:'$data(@xrefindtype1)
+	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
+	. . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. tcommit
 	else  if constlist(sublvl) do
 	. tstart ():transactionid="batch"
 	. if $data(@gblind(sublvl))#10 do
@@ -875,45 +914,7 @@ xrefdata:(nsubs)
 	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
 	. . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
 	. tcommit
-	. ; for type=1 application globals, create the alternate nodes with
-	. ; empty string subscripts. locxsub() for this level is previously
-	. ; checked as being "*", and null subscripts are not permitted.
-	else  if 1=type do
-	. set (piece1,piece2)=""
-	. for  set (subary(sublvl),tmp)=$order(@gblind(sublvl)) quit:'$zlength(tmp)  do
-	. . tstart ():transactionid="batch"
-	. . ; Caution: tricky code here. There is a naked reference in the ELSE
-	. . ; clause in order to avoid an indirect reference that is potentially
-	. . ; frequently executed. In turn, that requires the $DATA() to be
-	. . ; executed in the IF statement, which in turn requires it to be
-	. . ; specified first so that short-circuited expression evaluation
-	. . ; doesn't cause it to be skipped.
-	. . if $data(@gblind(sublvl))#10,tmp=type1last do
-	. . . set nodeval=@gblind(sublvl)
-	. . . if $zlength(sep) do
-	. . . . set nodelen1=$zlength(newpstr)
-	. . . . for i=1:1:nodelen1 do:+$zextract(newpstr,i)
-	. . . . . set k=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
-	. . . . . do:'($data(@xrefind)#10)
-	. . . . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
-	. . . else  do:'($data(@xrefind)#10)
-	. . . . set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
-	. . ; refer to comment with IF command regarding this tricky use of
-	. . ; a naked reference here, which works since the ELSE is the first
-	. . ; statement executed when the IF is false, but sets $REFERENCE.
-	. . else  do:'($data(^(type1last))#10)
-	. . . set nodeval=""
-	. . . if $zlength(sep) do
-	. . . . set nodelen1=$zlength(newpstr),pieceval=""
-	. . . . for i=1:1:nodelen1 do:+$zextract(newpstr,i)
-	. . . . . set k=i-1
-	. . . . . do:'($data(@xrefindtype1)#10)
-	. . . . . . set @$reference="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
-	. . . else  do:'($data(@xrefindtype1)#10)
-	. . . . set @$reference="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
-	. . tcommit
-	else  do
+	else  do	; not type=1 or a constant subscript specification
 	. set nranges=$select(zpiece:$zlength(locxsub(sublvl),";"),1:$length(locxsub(sublvl),";"))
 	. for i=1:1:nranges do
 	. . if "*"=locxsub(sublvl) do

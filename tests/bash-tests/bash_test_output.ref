@@ -41,12 +41,12 @@ Error occurred: 150379506,XREFDATA+12^%YDBAIM,%YDBAIM-F-NOEXTREF Extended refere
 ---------------
 
 INVPIECE set subs(1)="1:2:3" write $$XREFDATA^%YDBAIM("^x",.subs)
-Error occurred: 150379506,XREFDATA+222^%YDBAIM,%YDBAIM-F-INVPIECE Range "1:2:3" has invalid number of pieces: 3
+Error occurred: 150379506,XREFDATA+225^%YDBAIM,%YDBAIM-F-INVPIECE Range "1:2:3" has invalid number of pieces: 3
 242
 ---------------
 
 INVPNUMSEP kill ^x set ^x(1)="a1|b1",^x(2)="a2|",^x(3)="|b3",subs(1)="*" write $$XREFDATA^%YDBAIM("^x",.subs,"|","1:2:3")
-Error occurred: 150379506,XREFDATA+317^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
+Error occurred: 150379506,XREFDATA+323^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
 242
 ---------------
 
@@ -76,12 +76,12 @@ Error occurred: 150379506,UNXREFDATA+14^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy1
 ---------------
 
 GVSUBOFLOW0 do gvsuboflow^%YDBAIMTEST(0)
-$ZSTATUS="150372986,XREFDATA+478^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
+$ZSTATUS="150372986,XREFDATA+479^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
 122
 ---------------
 
 GVSUBOFLOW1 do gvsuboflow^%YDBAIMTEST(1)
-$ZSTATUS="150372986,XREFDATA+478^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
+$ZSTATUS="150372986,XREFDATA+479^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
 122
 ---------------
 
