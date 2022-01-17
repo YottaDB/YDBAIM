@@ -1898,6 +1898,211 @@ v2type0 ; @TEST VistA type "" - Initial data partly empty
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
 	... do assert(@aimgbl@(11)=16) ; Total entries
 	quit
+
+v1type1s ; !TEST VistA type1 - Test triggers with string subscripts in xsub
+	; https://gitlab.com/YottaDB/Util/YDBAIM/-/issues/58
+	; Index data in ^ORD(100.01,:,.1) first ^ piece
+	; ^ORD(100.01,0)="ORDER STATUS^100.01I^99^16"
+	; ^ORD(100.01,1,0)="DISCONTINUED^dc"
+	; ^ORD(100.01,1,.1)="dc"
+	; ^ORD(100.01,1,1,0)="^^1^1^3070625^^^^"
+	; ^ORD(100.01,1,1,1,0)="Orders that have been explicitly stopped."
+	; ^ORD(100.01,1,"TERMSTATUS",0)="^100.0199DA^1^1"
+	; ^ORD(100.01,1,"TERMSTATUS",1,0)="3070607.115705^1"
+	; ^ORD(100.01,1,"TERMSTATUS","B",3070607.115705,1)=""
+	; ^ORD(100.01,1,"VUID")="4500704^1"
+	; ^ORD(100.01,2,0)="COMPLETE^comp"
+	; ^ORD(100.01,2,.1)="c"
+	; ^ORD(100.01,2,1,0)="^^3^3^3070607"
+	; ^ORD(100.01,2,1,1,0)="Orders that require no further action by the ancillary service. "
+	; ^ORD(100.01,2,1,2,0)=" e.g., Lab orders are completed when results are available, "
+	; ^ORD(100.01,2,1,3,0)="Radiology orders are complete when results are available."
+	; ^ORD(100.01,2,"TERMSTATUS",0)="^100.0199DA^1^1"
+	; ^ORD(100.01,2,"TERMSTATUS",1,0)="3070607.115705^1"
+	; ^ORD(100.01,2,"TERMSTATUS","B",3070607.115705,1)=""
+	; ^ORD(100.01,2,"VUID")="4501088^1"
+	; ...
+	new stat for stat=0:1:2 do
+	. ; write !,"stat: ",stat	; Uncomment for debugging
+	. new subs set subs(1)=100.01,subs(2)=$ZWRITE(0)_":"_$ZWRITE($CHAR(0)),subs(3)="""VUID"""
+	. ;
+	. ; gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type
+	. ; Get AIM global with name only
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,1,0,1,stat,1)
+	. ; Unxref the data
+	. do UNXREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
+	. ; Assert that the data doesn't exist (first time (stat=0) it won't, so the previous UNXREF will be a no-op)
+	. do assert('$data(@aimgbl))
+	. ; Xref data now
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
+	. ;
+	. ; Count non-null entries. Expect 16
+	. ; Expect zero nulls
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,4500704,1)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,4500704)=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	. ;
+	. ; Add data and make sure triggers works
+	. ; Now set one of the .1 nodes to be non-existent on a new entry
+	. set ^ORD(100.01,100,0)="JUNK STATUS^junk"
+	. ; There should be now 17 entries, but 1 null entry
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=1)
+	. do assert($data(@aimgbl@(1,"",100)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,"")=1)
+	.. ; Another extra entry to test statistics
+	.. set ^ORD(100.01,101,0)="JUNK STATUS2^junk2"
+	.. do assert(@aimgbl@(-1,"")=2)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=18) ; Total entries
+	.. kill ^ORD(100.01,101,0)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
+	.. do assert(@aimgbl@(-1,"")=1)
+	. ;
+	. ; Set the VUID node to some data on entry 100
+	. set ^ORD(100.01,100,"VUID")="9999999^1"
+	. ; There should be now 17 entries, but 0 null entry
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,9999999,100)))
+	. do assert('$data(@aimgbl@(1,"",100)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,"")))
+	.. do assert(@aimgbl@(-1,9999999)=1)
+	. ;
+	. ; Restore data to original
+	. kill ^ORD(100.01,100)
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert('$data(@aimgbl@(1,9999999,100)))
+	. do assert('$data(@aimgbl@(1,"",100)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,9999999)))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	. ;
+	. ; Kill the parent entry node by node
+	. new %1,%2 set (%1,%2)=$name(^ORD(100.01,1))
+	. new keepme merge keepme=@%2
+	. do assert($data(^ORD(100.01,1)))
+	. for  set %1=$query(@%1) quit:$name(@%2,$qlength(%2))'=$name(@%1,$qlength(%2))  kill @%1
+	. do assert('$data(^ORD(100.01,1)))
+	. do assert('$data(@aimgbl@(1,4500704,1)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,4500704)))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=15) ; Distinct entries
+	... do assert(@aimgbl@(11)=15) ; Total entries
+	. merge @%2=keepme
+	. do assert($data(^ORD(100.01,1)))
+	. do assert($data(@aimgbl@(1,4500704,1)))
+	. if stat=2 do
+	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
+	.. do assert(@aimgbl@(11)=16) ; Total entries
+	. ;
+	. ; Kill parent entry all at once
+	. new keepme merge keepme=^ORD(100.01,1)
+	. kill ^ORD(100.01,1)
+	. do assert('$data(^ORD(100.01,1)))
+	. do assert('$data(@aimgbl@(1,4500704)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,4500704)))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=15) ; Distinct entries
+	... do assert(@aimgbl@(11)=15) ; Total entries
+	. merge ^ORD(100.01,1)=keepme
+	. do assert($data(^ORD(100.01,1)))
+	. do assert($data(@aimgbl@(1,4500704)))
+	. if stat=2 do
+	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
+	.. do assert(@aimgbl@(11)=16) ; Total entries
+	.
+	. ; Remove all data in ^ORD(101.01)
+	. new keepme merge keepme=^ORD(100.01)
+	. kill ^ORD(100.01)
+	. do assert($data(@aimgbl@(1))=1)
+	. if stat do
+	.. do assert($data(@aimgbl@(-1))[0)
+	.. if stat=2 do
+	... do assert('$data(@aimgbl@(-1))) ; Distinct entries
+	... do assert('$data(@aimgbl@(11))) ; Total entries
+	. merge ^ORD(100.01)=keepme
+	. ;
+	. ; Remove an existing sub entry. Should have same number of entries, but 1 null
+	. new keepme merge keepme=^ORD(100.01,2,"VUID")
+	. kill ^ORD(100.01,2,"VUID")
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=1)
+	. do assert($data(@aimgbl@(1,"",2)))
+	. do assert('$data(@aimgbl@(1,4501088,2)))
+	. if stat do
+	.. do assert('$data(@aimgbl@(-1,4501088)))
+	.. do assert(@aimgbl@(-1,"")=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	. ; Put back
+	. merge ^ORD(100.01,2,"VUID")=keepme
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,4501088,2)))
+	. do assert('$data(@aimgbl@(1,"",2)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,4501088)=1)
+	.. do assert('$data(@aimgbl@(-1,"")))
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	quit
+	;
+v2type1s ; @TEST VistA type1 - Initial data partly empty
+	; Remove an existing entry. Should have same number of entries, but 1 null
+	new stat for stat=0:1:2 do
+	. ; write !,"stat: ",stat	; Uncomment for debugging
+	. new keepme merge keepme=^ORD(100.01,2,.1)
+	. kill ^ORD(100.01,2,.1)
+	. ; gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type
+	. ; Get AIM global with name only
+	. new subs set subs(1)=100.01,subs(2)=":"" """,subs(3)=.1
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,1,0,1,stat,1)
+	. ; Unxref the data
+	. do UNXREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
+	. ; Assert that the data doesn't exist
+	. do assert('$data(@aimgbl))
+	. ; Initial index
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=1)
+	. if stat do
+	.. do assert(@aimgbl@(-1,"dc")=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	. ; Check that null entry exists
+	. do assert($data(@aimgbl@(1,"",2)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,"")=1)
+	. ; Put back
+	. merge ^ORD(100.01,2,.1)=keepme
+	. do assert($$type1cd(aimgbl)=16)
+	. do assert($$type1cn(aimgbl)=0)
+	. do assert($data(@aimgbl@(1,"c",2)))
+	. if stat do
+	.. do assert(@aimgbl@(-1,"c")=1)
+	.. if stat=2 do
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
+	quit
 	;
 type1cd(aimgbl) ; [type1t1, $$] Count data (including nulls)
 	new count set count=0
