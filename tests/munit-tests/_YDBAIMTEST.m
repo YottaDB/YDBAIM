@@ -1860,7 +1860,7 @@ v1type0 ; @TEST Repeat VistA type 1 tests as type ""
 	... do assert(@aimgbl@(11)=16) ; Total entries
 	quit
 	;
-v2type0 ; @TEST VistA type "" - Initial data partly empty
+v2type0 ; @TEST VistA type 0 - Initial data partly empty
 	; Remove an existing entry. Should have same number of entries, but 1 null
 	new stat for stat=0:1:2 do
 	. ; write !,"stat: ",stat	; Uncomment for debugging
@@ -1869,13 +1869,13 @@ v2type0 ; @TEST VistA type "" - Initial data partly empty
 	. ; gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type
 	. ; Get AIM global with name only
 	. new subs set subs(1)=100.01,subs(2)=":"" """,subs(3)=.1
-	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,1,0,1,stat,"")
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,1,0,1,stat,0)
 	. ; Unxref the data
 	. do UNXREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,"")
 	. ; Assert that the data doesn't exist
 	. do assert('$data(@aimgbl))
 	. ; Initial index
-	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,"")
+	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,0)
 	. do assert($$type1cd(aimgbl)=15)
 	. do assert($$type1cn(aimgbl)=0)
 	. if stat do
@@ -1899,7 +1899,7 @@ v2type0 ; @TEST VistA type "" - Initial data partly empty
 	... do assert(@aimgbl@(11)=16) ; Total entries
 	quit
 
-v1type1s ; !TEST VistA type1 - Test triggers with string subscripts in xsub
+v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	; https://gitlab.com/YottaDB/Util/YDBAIM/-/issues/58
 	; Index data in ^ORD(100.01,:,.1) first ^ piece
 	; ^ORD(100.01,0)="ORDER STATUS^100.01I^99^16"

@@ -308,6 +308,8 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	new $etrap do etrap
 	new currlck,i,nsubs,tlevel,xrefvar
 	set tlevel=$tlevel
+	; Ensure type has a value and convert 0 to "" for backward compatibility
+	if '$data(type)!(0=type) set type=""
 	do snaplck(.currlck)
 	set gbl=$get(gbl)
 	if gbl?1"^%ydbAIMD".22AN,$data(@gbl) set xrefvar=gbl,gbl=@xrefvar do unxrefdata(xrefvar)
@@ -333,7 +335,7 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	. . lock +^%ydbAIMD(gbl)
 	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do unxrefdata(xrefvar)
 	. . lock -^%ydbAIMD(gbl)
-	. else  do unxrefdata($$XREFDATA(gbl,.xsub,$get(sep),,1,$get(zpiece),$get(omitfix,1),$get(stat,0),$get(type)))
+	. else  do unxrefdata($$XREFDATA(gbl,.xsub,$get(sep),,1,$get(zpiece),$get(omitfix,1),$get(stat,0),type))
 	quit:$quit "" quit
 
 ; Create triggers to maintain cross references and compute cross references
@@ -476,7 +478,8 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	set:gbl'?1"^"1(1"%",1AN).AN!(32<$zlength(gbl)) $ecode=",U252,"
 	set:gbl?1"^%ydbAIMD".AN $ecode=",U243,"
 	set nsubs=$get(xsub,0)	; Ensure Number of subcripts has a value
-	set type=$get(type,"")	; Ensure type has a value
+	; Ensure type has a value and convert 0 to "" for backward compatibility
+	if '$data(type)!(0=type) set type=""
 	set:$zlength(type)&(1'=type) $ecode=",U237,"
 	; If constraints specified for subscripts, ensure all refer to
 	; subscripts that are integers in the range 1 through 31
