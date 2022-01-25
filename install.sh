@@ -1,7 +1,7 @@
 #!/bin/bash
 #################################################################
 #                                                               #
-# Copyright (c) 2021 YottaDB LLC and/or its subsidiaries        #
+# Copyright (c) 2021-2022 YottaDB LLC and/or its subsidiaries   #
 # All rights reserved.                                          #
 #                                                               #
 #   This source code contains the intellectual property         #
@@ -20,10 +20,13 @@ fi
 cd "$(dirname "$(readlink -f "$0")")"
 rm -rf build
 mkdir build && cd build
+echo "Installing M Mode Shared Library"
 $cmakeCommand -DM_UTF8_MODE=0 ..
 make && make install
 cd ..
 if ([ -d "$ydb_dist/utf8" ] || ( [ -z ${ydb_dist} ] && [ -d "$(pkg-config --variable=prefix yottadb)/utf8" ] )) ; then
+	echo ""
+	echo "Installing UTF-8 Mode Shared Library"
 	rm -rf build
 	mkdir build && cd build
 	$cmakeCommand -DM_UTF8_MODE=1 ..
