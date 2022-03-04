@@ -1,6 +1,6 @@
 #################################################################
 #								#
-# Copyright (c) 2021 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2021-2022 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -42,6 +42,6 @@ make-ubuntu:
     - export DEBIAN_FRONTEND=noninteractive
     - ln -fs /usr/share/zoneinfo/US/Eastern /etc/localtime
     - apt-get update -qq
-    - apt-get install -y -qq build-essential cmake git curl
+    - apt-get install -y -qq build-essential cmake git curl pkg-config libicu-dev
     - ./install.sh
     - ./tests/test.sh
