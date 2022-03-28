@@ -1,7 +1,7 @@
 #!/bin/bash
 #################################################################
 #								#
-# Copyright (c) 2021 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2021-2022 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -26,6 +26,12 @@ popd () {
 
 # Bash needs to quit if a command fails.
 set -e
+
+# If run in the pipeline, enable verbose mode as we want to know exactly what step failed (if there is a failure)
+if [[ -v CI_PIPELINE_ID ]]; then
+	set -x
+fi
+
 
 # Remove existing environment set-up as that screws up ydb_env_set
 for e in `env | grep -E '^(ydb|gtm)' | cut -d= -f1`; do unset $e; done
@@ -87,7 +93,7 @@ END
 	# Load test data.
 	# 5200 rows of VistA Data (50.6+VA GENERIC)
 	# A small VistA file (vista-mini.zwr)
-	# Sample Octo Postgres Tables data (octo-seed.zwr default_user.zwr)
+	# Sample Octo Postgres Tables data (octo-seed.zwr)
 	#
 	# Also download M Unit
 	mkdir -p $script_dir/downloads
@@ -98,7 +104,6 @@ END
 	 -LO https://raw.githubusercontent.com/WorldVistA/VistA-M/master/Packages/National%20Drug%20File/Globals/50.6%2BVA%20GENERIC.zwr \
 	 -LO https://gitlab.com/YottaDB/DBMS/YDBOcto/-/raw/master/tests/fixtures/vista-mini.zwr \
 	 -LO https://gitlab.com/YottaDB/DBMS/YDBOcto/-/raw/master/tests/fixtures/octo-seed.zwr \
-	 -LO https://gitlab.com/YottaDB/DBMS/YDBOcto/-/raw/master/tests/fixtures/default_user.zwr \
 	 -LO https://raw.githubusercontent.com/ChristopherEdwards/M-Unit/master/Routines/_ut.m \
 	 -LO https://raw.githubusercontent.com/ChristopherEdwards/M-Unit/master/Routines/_ut1.m
 	popd
@@ -108,7 +113,6 @@ END
 	$ydb_dist/mupip load -ignorechset 50.6%2BVA%20GENERIC.zwr &> /dev/null
 	$ydb_dist/mupip load -ignorechset vista-mini.zwr &> /dev/null
 	$ydb_dist/mupip load -ignorechset octo-seed.zwr &> /dev/null
-	$ydb_dist/mupip load -ignorechset default_user.zwr &> /dev/null
 	popd
 
 	# Get and Compile M Unit routines
