@@ -46,12 +46,12 @@ Error occurred: 150379506,XREFDATA+226^%YDBAIM,%YDBAIM-F-INVPIECE Range "1:2:3" 
 ---------------
 
 INVPNUMSEP kill ^x set ^x(1)="a1|b1",^x(2)="a2|",^x(3)="|b3",subs(1)="*" write $$XREFDATA^%YDBAIM("^x",.subs,"|","1:2:3")
-Error occurred: 150379506,XREFDATA+324^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
+Error occurred: 150379506,XREFDATA+326^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
 242
 ---------------
 
 NOTAGBL2 write $$UNXREFDATA^%YDBAIM("xy123456789012345678901234567890",1)
-Error occurred: 150379506,UNXREFDATA+16^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "xy123456789012345678901234567890" is not a valid global variable name
+Error occurred: 150379506,UNXREFDATA+19^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
@@ -66,22 +66,22 @@ Error occurred: 150379506,XREFDATA+14^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123
 ---------------
 
 NOTAGBL5 write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",0)
-Error occurred: 150379506,UNXREFDATA+16^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+Error occurred: 150379506,UNXREFDATA+19^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
 NOTAGBL6 write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)
-Error occurred: 150379506,UNXREFDATA+16^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+Error occurred: 150379506,UNXREFDATA+19^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
 GVSUBOFLOW0 do gvsuboflow^%YDBAIMTEST(0)
-$ZSTATUS="150372986,XREFDATA+480^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
+$ZSTATUS="150372986,XREFDATA+499^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
 122
 ---------------
 
 GVSUBOFLOW1 do gvsuboflow^%YDBAIMTEST(1)
-$ZSTATUS="150372986,XREFDATA+480^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
+$ZSTATUS="150372986,XREFDATA+499^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, "_$C(9,9)_"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*"
 122
 ---------------
 

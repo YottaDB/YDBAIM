@@ -1544,60 +1544,63 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	. ; Xref data now
 	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
 	. ;
-	. ; Count non-null entries. Expect 16
-	. ; Expect zero nulls
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=0)
+	. ; Count entries. There are 16 entries, and no entry for zero, which comes out as NULL
+	. ; So we expect a total of 17 entries in the index, and 1 NULL.
+	. ; The reason we have a NULL for the zero node is a change done for this issue:
+	. ; - https://gitlab.com/YottaDB/Util/YDBAIM/-/issues/60
+	. ; WE NEED to capture null entries, as they can be significant for non-Fileman-compatible data in VistA
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=1)
 	. do assert($data(@aimgbl@(1,"dc",1)))
 	. if stat do
 	.. do assert(@aimgbl@(-1,"dc")=1)
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Add data and make sure triggers works
 	. ; Now set one of the .1 nodes to be non-existent on a new entry
 	. set ^ORD(100.01,100,0)="JUNK STATUS^junk"
-	. ; There should be now 17 entries, but 1 null entry
-	. do assert($$type1cd(aimgbl)=17)
-	. do assert($$type1cn(aimgbl)=1)
+	. ; There should be now 18 entries, but 2 null entries
+	. do assert($$type1cd(aimgbl)=18)
+	. do assert($$type1cn(aimgbl)=2)
 	. do assert($data(@aimgbl@(1,"",100)))
 	. if stat do
-	.. do assert(@aimgbl@(-1,"")=1)
+	.. do assert(@aimgbl@(-1,"")=2)
 	.. ; Another extra entry to test statistics
 	.. set ^ORD(100.01,101,0)="JUNK STATUS2^junk2"
-	.. do assert(@aimgbl@(-1,"")=2)
+	.. do assert(@aimgbl@(-1,"")=3)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=18) ; Total entries
+	... do assert(@aimgbl@(11)=19) ; Total entries
 	.. kill ^ORD(100.01,101,0)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
-	.. do assert(@aimgbl@(-1,"")=1)
+	... do assert(@aimgbl@(11)=18) ; Total entries
+	.. do assert(@aimgbl@(-1,"")=2)
 	. ;
 	. ; Set the .1 node to some data on entry 100
 	. set ^ORD(100.01,100,.1)="ju"
-	. ; There should be now 17 entries, but 0 null entry
-	. do assert($$type1cd(aimgbl)=17)
-	. do assert($$type1cn(aimgbl)=0)
+	. ; There should be now 18 entries, but 1 null entry
+	. do assert($$type1cd(aimgbl)=18)
+	. do assert($$type1cn(aimgbl)=1)
 	. do assert($data(@aimgbl@(1,"ju",100)))
 	. do assert('$data(@aimgbl@(1,"",100)))
 	. if stat do
-	.. do assert('$data(@aimgbl@(-1,"")))
+	.. do assert(1=@aimgbl@(-1,""))
 	.. do assert(@aimgbl@(-1,"ju")=1)
 	. ;
 	. ; Restore data to original
 	. kill ^ORD(100.01,100)
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=0)
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=1)
 	. do assert('$data(@aimgbl@(1,"ju",100)))
 	. do assert('$data(@aimgbl@(1,"",100)))
 	. if stat do
 	.. do assert('$data(@aimgbl@(-1,"ju")))
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill the parent entry node by node
 	. new %1,%2 set (%1,%2)=$name(^ORD(100.01,1))
@@ -1609,14 +1612,14 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	. if stat do
 	.. do assert('$data(@aimgbl@(-1,"dc")))
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=15) ; Distinct entries
-	... do assert(@aimgbl@(11)=15) ; Total entries
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge @%2=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,"dc",1)))
 	. if stat=2 do
-	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
-	.. do assert(@aimgbl@(11)=16) ; Total entries
+	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
+	.. do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill parent entry all at once
 	. new keepme merge keepme=^ORD(100.01,1)
@@ -1626,14 +1629,14 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	. if stat do
 	.. do assert('$data(@aimgbl@(-1,"dc")))
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=15) ; Distinct entries
-	... do assert(@aimgbl@(11)=15) ; Total entries
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge ^ORD(100.01,1)=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,"dc")))
 	. if stat=2 do
-	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
-	.. do assert(@aimgbl@(11)=16) ; Total entries
+	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
+	.. do assert(@aimgbl@(11)=17) ; Total entries
 	.
 	. ; Remove all data in ^ORD(101.01)
 	. new keepme merge keepme=^ORD(100.01)
@@ -1646,35 +1649,35 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	... do assert('$data(@aimgbl@(11))) ; Total entries
 	. merge ^ORD(100.01)=keepme
 	. ;
-	. ; Remove an existing sub entry. Should have same number of entries, but 1 null
+	. ; Remove an existing sub entry. Should have same number of entries, but 2 null
 	. new keepme merge keepme=^ORD(100.01,2,.1)
 	. kill ^ORD(100.01,2,.1)
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=1)
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=2)
 	. do assert($data(@aimgbl@(1,"",2)))
 	. do assert('$data(@aimgbl@(1,"c",2)))
 	. if stat do
 	.. do assert('$data(@aimgbl@(-1,"c")))
-	.. do assert(@aimgbl@(-1,"")=1)
+	.. do assert(@aimgbl@(-1,"")=2)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ; Put back
 	. merge ^ORD(100.01,2,.1)=keepme
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=0)
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=1)
 	. do assert($data(@aimgbl@(1,"c",2)))
 	. do assert('$data(@aimgbl@(1,"",2)))
 	. if stat do
 	.. do assert(@aimgbl@(-1,"c")=1)
-	.. do assert('$data(@aimgbl@(-1,"")))
+	.. do assert(@aimgbl@(-1,"")=1)
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
-	;
+
 v2type1 ; @TEST VistA type1 - Initial data partly empty
-	; Remove an existing entry. Should have same number of entries, but 1 null
+	; Remove an existing entry. Should have same number of entries, but 2 null
 	new stat for stat=0:1:2 do
 	. ; write !,"stat: ",stat	; Uncomment for debugging
 	. new keepme merge keepme=^ORD(100.01,2,.1)
@@ -1689,27 +1692,27 @@ v2type1 ; @TEST VistA type1 - Initial data partly empty
 	. do assert('$data(@aimgbl))
 	. ; Initial index
 	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=1)
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=2)
 	. if stat do
 	.. do assert(@aimgbl@(-1,"dc")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
-	. ; Check that null entry exists
+	... do assert(@aimgbl@(11)=17) ; Total entries
+	. ; Check that two null entry exists
 	. do assert($data(@aimgbl@(1,"",2)))
 	. if stat do
-	.. do assert(@aimgbl@(-1,"")=1)
+	.. do assert(@aimgbl@(-1,"")=2)
 	. ; Put back
 	. merge ^ORD(100.01,2,.1)=keepme
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=0)
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=1)
 	. do assert($data(@aimgbl@(1,"c",2)))
 	. if stat do
 	.. do assert(@aimgbl@(-1,"c")=1)
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
 
 v1type0 ; @TEST Repeat VistA type 1 tests as type ""
@@ -1936,60 +1939,63 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	. ; Xref data now
 	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
 	. ;
-	. ; Count non-null entries. Expect 16
-	. ; Expect zero nulls
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=0)
+	. ; Count entries. There are 16 entries, and no entry for zero, which comes out as NULL
+	. ; So we expect a total of 17 entries in the index, and 1 NULL.
+	. ; The reason we have a NULL for the zero node is a change done for this issue:
+	. ; - https://gitlab.com/YottaDB/Util/YDBAIM/-/issues/60
+	. ; WE NEED to capture null entries, as they can be significant for non-Fileman-compatible data in VistA
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=1)
 	. do assert($data(@aimgbl@(1,4500704,1)))
 	. if stat do
 	.. do assert(@aimgbl@(-1,4500704)=1)
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Add data and make sure triggers works
 	. ; Now set one of the .1 nodes to be non-existent on a new entry
 	. set ^ORD(100.01,100,0)="JUNK STATUS^junk"
-	. ; There should be now 17 entries, but 1 null entry
-	. do assert($$type1cd(aimgbl)=17)
-	. do assert($$type1cn(aimgbl)=1)
+	. ; There should be now 18 entries, and 2 null entries
+	. do assert($$type1cd(aimgbl)=18)
+	. do assert($$type1cn(aimgbl)=2)
 	. do assert($data(@aimgbl@(1,"",100)))
 	. if stat do
-	.. do assert(@aimgbl@(-1,"")=1)
+	.. do assert(@aimgbl@(-1,"")=2)
 	.. ; Another extra entry to test statistics
 	.. set ^ORD(100.01,101,0)="JUNK STATUS2^junk2"
-	.. do assert(@aimgbl@(-1,"")=2)
+	.. do assert(@aimgbl@(-1,"")=3)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=18) ; Total entries
+	... do assert(@aimgbl@(11)=19) ; Total entries
 	.. kill ^ORD(100.01,101,0)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
-	.. do assert(@aimgbl@(-1,"")=1)
+	... do assert(@aimgbl@(11)=18) ; Total entries
+	.. do assert(@aimgbl@(-1,"")=2)
 	. ;
 	. ; Set the VUID node to some data on entry 100
 	. set ^ORD(100.01,100,"VUID")="9999999^1"
-	. ; There should be now 17 entries, but 0 null entry
-	. do assert($$type1cd(aimgbl)=17)
-	. do assert($$type1cn(aimgbl)=0)
+	. ; There should be now 18 entries, and 1  null entry
+	. do assert($$type1cd(aimgbl)=18)
+	. do assert($$type1cn(aimgbl)=1)
 	. do assert($data(@aimgbl@(1,9999999,100)))
 	. do assert('$data(@aimgbl@(1,"",100)))
 	. if stat do
-	.. do assert('$data(@aimgbl@(-1,"")))
+	.. do assert(1=@aimgbl@(-1,""))
 	.. do assert(@aimgbl@(-1,9999999)=1)
 	. ;
 	. ; Restore data to original
 	. kill ^ORD(100.01,100)
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=0)
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=1)
 	. do assert('$data(@aimgbl@(1,9999999,100)))
 	. do assert('$data(@aimgbl@(1,"",100)))
 	. if stat do
 	.. do assert('$data(@aimgbl@(-1,9999999)))
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill the parent entry node by node
 	. new %1,%2 set (%1,%2)=$name(^ORD(100.01,1))
@@ -2001,14 +2007,14 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	. if stat do
 	.. do assert('$data(@aimgbl@(-1,4500704)))
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=15) ; Distinct entries
-	... do assert(@aimgbl@(11)=15) ; Total entries
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge @%2=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,4500704,1)))
 	. if stat=2 do
-	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
-	.. do assert(@aimgbl@(11)=16) ; Total entries
+	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
+	.. do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill parent entry all at once
 	. new keepme merge keepme=^ORD(100.01,1)
@@ -2018,14 +2024,14 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	. if stat do
 	.. do assert('$data(@aimgbl@(-1,4500704)))
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=15) ; Distinct entries
-	... do assert(@aimgbl@(11)=15) ; Total entries
+	... do assert(@aimgbl@(-1)=16) ; Distinct entries
+	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge ^ORD(100.01,1)=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,4500704)))
 	. if stat=2 do
-	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
-	.. do assert(@aimgbl@(11)=16) ; Total entries
+	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
+	.. do assert(@aimgbl@(11)=17) ; Total entries
 	.
 	. ; Remove all data in ^ORD(101.01)
 	. new keepme merge keepme=^ORD(100.01)
@@ -2041,28 +2047,28 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	. ; Remove an existing sub entry. Should have same number of entries, but 1 null
 	. new keepme merge keepme=^ORD(100.01,2,"VUID")
 	. kill ^ORD(100.01,2,"VUID")
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=1)
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=2)
 	. do assert($data(@aimgbl@(1,"",2)))
 	. do assert('$data(@aimgbl@(1,4501088,2)))
 	. if stat do
 	.. do assert('$data(@aimgbl@(-1,4501088)))
-	.. do assert(@aimgbl@(-1,"")=1)
+	.. do assert(@aimgbl@(-1,"")=2)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ; Put back
 	. merge ^ORD(100.01,2,"VUID")=keepme
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=0)
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=1)
 	. do assert($data(@aimgbl@(1,4501088,2)))
 	. do assert('$data(@aimgbl@(1,"",2)))
 	. if stat do
 	.. do assert(@aimgbl@(-1,4501088)=1)
-	.. do assert('$data(@aimgbl@(-1,"")))
+	.. do assert(@aimgbl@(-1,"")=1)
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
 	;
 v2type1s ; @TEST VistA type1 - Initial data partly empty
@@ -2081,27 +2087,27 @@ v2type1s ; @TEST VistA type1 - Initial data partly empty
 	. do assert('$data(@aimgbl))
 	. ; Initial index
 	. new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",1,0,0,1,stat,1)
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=1)
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=2)
 	. if stat do
 	.. do assert(@aimgbl@(-1,"dc")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ; Check that null entry exists
 	. do assert($data(@aimgbl@(1,"",2)))
 	. if stat do
-	.. do assert(@aimgbl@(-1,"")=1)
+	.. do assert(@aimgbl@(-1,"")=2)
 	. ; Put back
 	. merge ^ORD(100.01,2,.1)=keepme
-	. do assert($$type1cd(aimgbl)=16)
-	. do assert($$type1cn(aimgbl)=0)
+	. do assert($$type1cd(aimgbl)=17)
+	. do assert($$type1cn(aimgbl)=1)
 	. do assert($data(@aimgbl@(1,"c",2)))
 	. if stat do
 	.. do assert(@aimgbl@(-1,"c")=1)
 	.. if stat=2 do
-	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
+	... do assert(@aimgbl@(-1)=17) ; Distinct entries
+	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
 	;
 type1cd(aimgbl) ; [type1t1, $$] Count data (including nulls)
@@ -2152,4 +2158,29 @@ rupdate	; @TEST Range Update Works properly (uses Type 1 index)
 	set ^ORD(100.01,88,.1)="fake2"
 	do assert('$data(@aimgbl@(1,"fake2",88)))
 	kill ^ORD(100.01,88)
+	quit
+	;
+aim60a	; @TEST For type=1 a non-existent node has metadata created
+	; There was an error/omission in the specification for #51 (closed),
+	; where non-Fileman compatible data was stored and where NULLs in indexes
+	; (represented as an empty string) did not show up in the AIM index,
+	; resulting in the IS NULL query returning invalid data.
+	kill ^x
+	set ^x(1,"const",1)="a",^x(2,"const")="b"
+	;
+	new subs
+	set subs(1)=":"
+	set subs(2)="""const"":""constz"""
+	set subs(3)=1
+	;                                         g  , s   , s ,p,n,z,o,s,t
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^x",.subs,"|",1,0,0,1,0,1)
+	do assert($data(@aimgbl@(1,"",2,"const")))
+	do assert($data(@aimgbl@(1,"a",1,"const")))
+	quit
+	;
+aim60b	; @TEST Metadata was incorrectly calculated unselected pieces
+	; We index the 2 node; we should not see 1 node data present
+	new subs set subs(1)=100.01,subs(2)=":"" """,subs(3)=0
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2,0,0,1,2,1)
+	do assert('$data(@aimgbl@(-1)))
 	quit
