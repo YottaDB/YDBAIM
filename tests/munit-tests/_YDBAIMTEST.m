@@ -110,6 +110,11 @@ aimgbls:(array) ; [private] output all AIM globals
 	for  set %=$order(@%) quit:%=""  quit:%'[%1  if %'="^%ydbAIMDxref" set:$increment(array) array(%)=""
 	quit
 	;
+aimdxref:(array) ; [private] count globals in ^%ydbAIMDxref
+	new % set %=""
+	for  set %=$order(^%ydbAIMDxref(%)) quit:%=""  set:$increment(array) array(%)=""
+	quit
+	;
 tinv1	; @TEST Invalid Input: Global without ^
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
@@ -454,12 +459,16 @@ trmindex2 ; @TEST Remove indexs on a specific entire global
 	if $$XREFDATA^%YDBAIM("^customers",1,"§",7)
 	new trigs do trigout(.trigs)
 	new aims  do aimgbls(.aims)
+	new aimx  do aimdxref(.aimx)
 	do assert(aims=2)
+	do assert(aimx=2)
 	do assert(trigs(3)["=3,7")
 	do UNXREFDATA^%YDBAIM("^customers",1,"§")
 	kill trigs do trigout(.trigs)
 	kill aims  do aimgbls(.aims)
+	kill aimx  do aimdxref(.aimx)
 	do assert(aims=1)
+	do assert(aimx=1)
 	do assert(trigs(3)'["=3,7")
 	quit
 	;
@@ -469,13 +478,17 @@ trmindex3 ; @TEST Remove all indexes
 	if $$XREFDATA^%YDBAIM("^customers",1,"§",7)
 	new trigs do trigout(.trigs)
 	new aims  do aimgbls(.aims)
+	new aimx  do aimdxref(.aimx)
 	do assert(aims=2)
 	do assert(trigs(3)["=3,7")
+	do assert(aimx=2)
 	do UNXREFDATA^%YDBAIM
 	kill trigs do trigout(.trigs)
 	kill aims  do aimgbls(.aims)
+	kill aimx  do aimdxref(.aimx)
 	do assert('$data(trigs))
 	do assert('$data(aims))
+	do assert('$data(aimx))
 	quit
 	;
 trmindex4 ; @TEST Remove index on subscripts parts of same global
@@ -484,15 +497,21 @@ trmindex4 ; @TEST Remove index on subscripts parts of same global
 	new subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_namespace""",subs(4)="*"
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",2)
 	new aims do aimgbls(.aims)
+	new aimx do aimdxref(.aimx)
 	do assert(aims=2)
+	do assert(aimx=1) ; single global
 	kill subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_type""",subs(4)="*"
 	do UNXREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",1)
 	kill aims do aimgbls(.aims)
+	kill aimx do aimdxref(.aimx)
 	do assert(aims=1)
+	do assert(aimx=1)
 	kill subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_namespace""",subs(4)="*"
 	do UNXREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",2)
 	kill aims do aimgbls(.aims)
+	kill aimx do aimdxref(.aimx)
 	do assert('$data(aims))
+	do assert('$data(aimx))
 	quit
 	;
 trmindex5 ; @TEST Remove indexes by %ydbAIMD global name
@@ -500,13 +519,19 @@ trmindex5 ; @TEST Remove indexes by %ydbAIMD global name
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^customers",1,"§",3)
 	new aimgbl3 set aimgbl3=$$XREFDATA^%YDBAIM("^customers",1,"§",7)
 	new aims do aimgbls(.aims)
+	new aimx  do aimdxref(.aimx)
 	do assert(aims=2)
+	do assert(aimx=2)
 	do UNXREFDATA^%YDBAIM(aimgbl1)
 	kill aims do aimgbls(.aims)
+	kill aimx do aimdxref(.aimx)
 	do assert(aims=1)
+	do assert(aimx=1)
 	do UNXREFDATA^%YDBAIM(aimgbl2)
 	kill aims do aimgbls(.aims)
+	kill aimx do aimdxref(.aimx)
 	do assert('$data(aims))
+	do assert('$data(aimx))
 	quit
 	;
 tresume ; @TEST Resuming an interrupted cross-reference

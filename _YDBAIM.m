@@ -312,10 +312,10 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	if '$data(type)!(0=type) set type=""
 	do snaplck(.currlck)
 	set gbl=$get(gbl)
-	if gbl?1"^%ydbAIMD".22AN,$data(@gbl) do
-	. lock +%ydbAIMD(@gbl)
+	if gbl?1"^%ydbAIMD".22AN do
+	. tstart (gbl,xrefvar):transactionid="batch"
 	. if $data(@gbl) set xrefvar=gbl,gbl=@xrefvar do unxrefdata(xrefvar)
-	. lock -^%ydbAIMD(gbl)
+	. tcommit
 	else  if '$zlength(gbl) do			; remove all xrefs
 	. lock +^%ydbAIMD
 	. set gbl="" for  set gbl=$order(^%ydbAIMDxref(gbl)) quit:'$zlength(gbl)  do
