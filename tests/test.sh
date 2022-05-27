@@ -33,7 +33,6 @@ if [[ -v CI_PIPELINE_ID ]]; then
 fi
 
 
-# Remove existing environment set-up as that screws up ydb_env_set
 for e in `env | grep -E '^(ydb|gtm)' | cut -d= -f1`; do unset $e; done
 
 # Create db into db directory

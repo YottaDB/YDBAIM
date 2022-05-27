@@ -52,29 +52,25 @@ STARTUP	; Runs once to create test data
 	set ^diffset(1,"")="test1"
 	set ^diffset("a","a")="test2"
 	;
-	new numrows set numrows=1000
-	for i=1:4:numrows set ^names(i)="A|B"
-	for i=2:4:numrows set ^names(i)="C|B"
-	for i=3:4:numrows set ^names(i)="A|C"
-	for i=4:4:numrows set ^names(i)="B|A"
-	;
 	; The below global variable nodes are needed by the speed test
-	kill ^names,^names2,^composite
-	new numrows set numrows=1000
+	kill ^names,^names3,^composite
+	new numrows set numrows=1E6
 	for i=1:4:numrows set ^names(i)="A|B"
 	for i=2:4:numrows set ^names(i)="C|B"
 	for i=3:4:numrows set ^names(i)="A|C"
 	for i=4:4:numrows set ^names(i)="B|A"
 	;
-	for i=1:4:numrows set ^names2("fix",i,0)="A|B"
-	for i=2:4:numrows set ^names2("fix",i,0)="C|B"
-	for i=3:4:numrows set ^names2("fix",i,0)="A|C"
-	for i=4:4:numrows set ^names2("fix",i,0)="B|A"
+	for i=1:4:numrows set ^names3("fix",i,0)="A|B"
+	for i=2:4:numrows set ^names3("fix",i,0)="C|B"
+	for i=3:4:numrows set ^names3("fix",i,0)="A|C"
+	for i=4:4:numrows set ^names3("fix",i,0)="B|A"
 	;
 	for i=1:4:numrows set ^composite(1,2,3,4,5,6,7,i)="A|B"
 	for i=2:4:numrows set ^composite(1,2,3,4,5,6,7,i)="C|B"
 	for i=3:4:numrows set ^composite(1,2,3,4,5,6,7,i)="A|C"
 	for i=4:4:numrows set ^composite(1,2,3,4,5,6,7,i)="B|A"
+	;
+	for i=6000:1:1E6 set ^PSNDF(50.6,i,"VUID")=$select(i#2:"A^B",1:"B^A")
 	quit
 	;
 TEARDOWN ; Runs after each test
@@ -538,12 +534,9 @@ tresume ; @TEST Resuming an interrupted cross-reference
 	; Start job, wait, and interrupt
 	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1,1) ; nmonly
-	kill ^tresumejobdone
-	job tresumejob:passcurlvn
-	for  quit:$get(^tresumejobdone)  hang .0001 ; marker to ensure job started
-	kill ^tresumejobdone ; don't need anymore
-	hang .01 ; Wait a tiny bit to make sure AIM does something
-	if $ZSIGPROC($zjob,"SIGUSR1") ; stop the job (job does zgoto 0 in $zint which stops it)
+	new jobpid job tresumejob:passcurlvn set jobpid=$zjob
+	for  quit:$data(^%ydbAIMtmp("%YDBAIM",jobpid,0))  hang .01
+	if $ZSIGPROC(jobpid,"SIGUSR1") ; stop the job (job does zgoto 0 in $zint which stops it)
 	;
 	; Ensure that AIM did not certify this index complete (3 node)
 	do assert('$data(@aimgbl@(3)))
@@ -565,7 +558,6 @@ tresume ; @TEST Resuming an interrupted cross-reference
 	;
 tresumejob ; [job target - tresume target]
 	set $zinterrupt="if $zjobexam() zgoto 0"
-	set ^tresumejobdone=1
 	if $$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1)
 	quit
 	;
@@ -576,8 +568,8 @@ tresumecountdata:() ; [$$: # of data items in ^PSNDF(50.6)]
 	;
 tresumecountindex:() ; [$$: # of index items in AIM global for ^PSNDF(50.6)]
 	new indexcount set indexcount=0
-	new i for i=0:0 set i=$order(@aimgbl@(1,i)) quit:'i  do
-	. new j for j=0:0 set j=$order(@aimgbl@(1,i,j)) quit:'j  if $increment(indexcount)
+	new i,j set i="" for  set i=$order(@aimgbl@(1,i)) quit:'$zlength(i)  do
+	. set j="" for  set j=$order(@aimgbl@(1,i,j)) quit:'$zlength(j)  if $increment(indexcount)
 	quit indexcount
 	;
 trange1 ; @TEST Numeric Subscript Range
@@ -691,8 +683,14 @@ tomitfix2 ; @TEST Omitfix crash [#35]
 	quit
 	;
 tnmonly	; @TEST Name only paramater aka nmonly
+	; D UNXREFDATA^%YDBAIM
+	; write "printing aims:",!
+	; new aims  do aimgbls(.aims)
+	; zwrite aims
+	; write "----------",!
 	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1,1) ; nmonly
+	; zwrite @aimgbl@(*)
 	do assert('$data(@aimgbl),"Shouldn't have been created yet")
 	quit
 	;
@@ -856,6 +854,7 @@ tstat2assertstat1(xref,message)
 	;
 tstat2assertstat2(xref,message)
 	new aims  do aimgbls(.aims)
+	; zwrite aims
 	do assert(aims=1)
 	do assert(@xref@(-1)=3,message)
 	do assert(@xref@(11)=4,message)
@@ -898,23 +897,44 @@ randgblname()	;
 	set gblnamelen=$random(31)
 	for i=1:1:gblnamelen set gblname=gblname_$extract(alphanumeric,1+$random(alphanumericlen))
 	quit gblname
-
-tspeed1	; @TEST Index 1000 rows of ^names(:)="A|B"
-	if $$XREFDATA^%YDBAIM("^names",1,"|",2)
+;
+tspeed1	; @TEST Index 1E6 rows of ^names(:)="A|B"
+	;new reccount,indexcount set (reccount,indexcount)=0
+	;new i for i=0:0 set i=$order(^names(i)) quit:'i  if $increment(reccount)
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^names",1,"|",2)
+	;new i set i="" for  set i=$order(@aimgbl@(2,i)) quit:i=""  do
+	;. new j set j="" for  set j=$order(@aimgbl@(2,i,j)) quit:j=""  if $increment(indexcount)
+	;do assert(reccount=indexcount)
 	quit
 	;
-tspeed2	; @TEST Index 1000 rows of ^names2("fix",:,0)="A|B"
+tspeed2	; @TEST Index 1E6 rows of ^names3("fix",:,0)="A|B"
+	;new reccount,indexcount set (reccount,indexcount)=0
+	;new i for i=0:0 set i=$order(^names3("fix",i)) quit:'i  if $data(^(i,0)),$increment(reccount)
 	new subs set subs(1)="""fix""",subs(2)=":",subs(3)=0
-	if $$XREFDATA^%YDBAIM("^names2",.subs,"|",2)
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^names3",.subs,"|",2)
+	;new i set i="" for  set i=$order(@aimgbl@(2,i)) quit:i=""  do
+	;. new j set j="" for  set j=$order(@aimgbl@(2,i,j)) quit:j=""  if $increment(indexcount)
+	;do assert(reccount=indexcount)
 	quit
 	;
-tspeed3	; @TEST Index 1000 rows of ^composite(1,2,3,4,5,6,7,:)="A|B"
-	if $$XREFDATA^%YDBAIM("^composite",8)
+tspeed3	; @TEST Index 1E6 rows of ^composite(1,2,3,4,5,6,7,:)="A|B"
+	;new reccount,indexcount set (reccount,indexcount)=0
+	;new i set i=$name(^composite)
+	;for  set i=$query(@i) quit:i=""  if $increment(reccount)
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^composite",8)
+	;new i,start set (i,start)=$name(@aimgbl@(0))
+	;for  set i=$query(@i) quit:$name(@i,1)'=start  if $increment(indexcount)
+	;do assert(reccount=indexcount)
 	quit
 	;
-tspeed4	; @TEST Index ~5000 dispersed rows in ^PSNDF(50.6,:,"VUID")
-	set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
-	if $$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1)
+tspeed4	; @TEST Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
+	;new reccount,indexcount set (reccount,indexcount)=0
+	;new i for i=0:0 set i=$order(^PSNDF(50.6,i)) quit:'i  if $data(^(i,"VUID")) if $increment(reccount)
+	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1)
+	;new i set i="" for  set i=$order(@aimgbl@(1,i)) quit:i=""  do
+	;. new j set j="" for  set j=$order(@aimgbl@(1,i,j)) quit:j=""  if $increment(indexcount)
+	;do assert(reccount=indexcount)
 	quit
 	;
 tcon1	; @TEST Concurrent do/undo of the same global
@@ -1058,36 +1078,36 @@ tcon4	; @TEST Concurrent xref of the same global
 	; Verify stats work properly
 	; For stats, we should have these nodes (we have 500 A, 250 of each B and C; total of 1000):
 	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1)=3
-	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"A")=500
-	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"B")=250
-	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"C")=250
-	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(11)=1000
+	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"A")=500000
+	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"B")=250000
+	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"C")=250000
+	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(11)=1000000
 	do assert(@aimgbl@(-1)=3)
-	do assert(@aimgbl@(-1,"A")=500)
-	do assert(@aimgbl@(-1,"B")=250)
-	do assert(@aimgbl@(-1,"C")=250)
-	do assert(@aimgbl@(11)=1000)
+	do assert(@aimgbl@(-1,"A")=500000)
+	do assert(@aimgbl@(-1,"B")=250000)
+	do assert(@aimgbl@(-1,"C")=250000)
+	do assert(@aimgbl@(11)=1000000)
 	;
-	set ^names(1001)="A|Q"
-	set ^names(1002)="Z|F"
+	set ^names(1000001)="A|Q"
+	set ^names(1000002)="Z|F"
 	;
 	do assert(@aimgbl@(-1)=4)
-	do assert(@aimgbl@(-1,"A")=501)
-	do assert(@aimgbl@(-1,"B")=250)
-	do assert(@aimgbl@(-1,"C")=250)
+	do assert(@aimgbl@(-1,"A")=500001)
+	do assert(@aimgbl@(-1,"B")=250000)
+	do assert(@aimgbl@(-1,"C")=250000)
 	do assert(@aimgbl@(-1,"Z")=1)
-	do assert(@aimgbl@(11)=1002)
+	do assert(@aimgbl@(11)=1000002)
 	;
 	; ^names(1)="A|B"
 	; ^names(2)="C|B"
 	kill ^names(1),^names(2)
 	;
 	do assert(@aimgbl@(-1)=4)
-	do assert(@aimgbl@(-1,"A")=500)
-	do assert(@aimgbl@(-1,"B")=250)
-	do assert(@aimgbl@(-1,"C")=249)
+	do assert(@aimgbl@(-1,"A")=500000)
+	do assert(@aimgbl@(-1,"B")=250000)
+	do assert(@aimgbl@(-1,"C")=249999)
 	do assert(@aimgbl@(-1,"Z")=1)
-	do assert(@aimgbl@(11)=1000)
+	do assert(@aimgbl@(11)=1000000)
 	quit
 	;
 tcon4job1 ; [Job target] Concurrent xref of the same global
@@ -1671,7 +1691,7 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	.. do assert($data(@aimgbl@(-1))[0)
 	.. if stat=2 do
 	... do assert('$data(@aimgbl@(-1))) ; Distinct entries
-	... do assert('$data(@aimgbl@(11))) ; Total entries
+	... do assert('@aimgbl@(11)) ; Total entries
 	. merge ^ORD(100.01)=keepme
 	. ;
 	. ; Remove an existing sub entry. Should have same number of entries, but 2 null
@@ -1858,7 +1878,7 @@ v1type0 ; @TEST Repeat VistA type 1 tests as type ""
 	.. do assert($data(@aimgbl@(-1))[0)
 	.. if stat=2 do
 	... do assert('$data(@aimgbl@(-1))) ; Distinct entries
-	... do assert('$data(@aimgbl@(11))) ; Total entries
+	... do assert('@aimgbl@(11)) ; Total entries
 	. merge ^ORD(100.01)=keepme
 	. ;
 	. ; Remove an existing sub entry. Should have 1 less entry.
@@ -2066,7 +2086,7 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	.. do assert($data(@aimgbl@(-1))[0)
 	.. if stat=2 do
 	... do assert('$data(@aimgbl@(-1))) ; Distinct entries
-	... do assert('$data(@aimgbl@(11))) ; Total entries
+	... do assert('@aimgbl@(11)) ; Total entries
 	. merge ^ORD(100.01)=keepme
 	. ;
 	. ; Remove an existing sub entry. Should have same number of entries, but 1 null
@@ -2208,4 +2228,10 @@ aim60b	; @TEST Metadata was incorrectly calculated unselected pieces
 	new subs set subs(1)=100.01,subs(2)=":"" """,subs(3)=0
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2,0,0,1,2,1)
 	do assert('$data(@aimgbl@(-1)))
+	quit
+	;
+TW27p3	; @TEST Range to empty string doesn't work with AIM#42 changes
+	new subs set subs(1)=100.01,subs(2)="0:",subs(3)=0
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2,0,0,1,0,0)
+	do assert($data(@aimgbl@(2,"dc",1)))
 	quit

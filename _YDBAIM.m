@@ -201,6 +201,9 @@ err	; Primary Error Handler
 	view:$data(ztout) "ztrigger_output":ztout
 	; Release locks obtained inside AIM
 	do unsnaplck(.currlck)
+	; Terminate any JOB'd xrefdata() processes
+	if $data(xrefproc(1)),'$zsigproc(xrefproc(1),"term") zkill xrefproc(1)
+	if $data(xrefproc(-1)),'$zsigproc(xrefproc(-1),"term") zkill xrefproc(-1)
 	; Now that primary error handling is done, switch to different handler to rethrow error in caller AIM frames.
 	; The rethrow will cause a different $etrap to be invoked in the first non-AIM caller frame (because AIM
 	; did a "new $etrap" at entry).
@@ -428,8 +431,15 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 ; region with NULL_SUBSCRIPTS set to EXISTING or ALWAYS.
 ; Just as cross references are metadata for application global variables,
 ; metadata for the cross reference global variables are stored in the cross
-; reference global variables as follows:
-; - the root node is the application global variable name; subscripted nodes are:
+; reference global variables as described below.
+; - Since the first subscript of any cross reference node is a non-negative
+;   integer, 0 for a cross reference of an entire node, or a piece number.
+;   - Nodes where the first subscript is negative integer are used for
+;     statistics.
+;   - Nodes where the first subscript is a non-numeric string are reserved
+;     for use by %YDBAIM. For example, they are used by parallel JOBs that scan
+;     globals for initial metadata computation.
+; - The root node is the application global variable name; subscripted nodes are:
 ; - (0) space separated $zut, $job, $zyrelease, metadata format version number
 ; - (1) number of subscripts of the application global variable xref'd
 ; - (2) piece separator, "" for an xref of entire nodes
@@ -460,20 +470,20 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 ;   potentially merged with the ZKILL trigger in (8).
 ; - subscripts above those record type-specific triggers
 ;
-; Since the cross references themselves must have at least two subscripts, any
-; node with one subscript is metadata for the cross reference.
 ;
 ; Nodes of ^%ydbAIMDxref(gbl,aimgbl) are metadata on metadata, where gbl is an
 ; application global and aimgbl is the AIM global.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	new $etrap do etrap
 	new altlastsub,altsub,asciisep,constlist,currlck,fullsub,fullsubprnt
-	new fulltrigsub,gblind,gblindtype1,i,j,killtrg,lastfullsub,lastsub
-	new lastsubind,lastvarsub,locxsub,modflag,name,nameind,newpnum,newpstr
-	new pieces,nsubs,nullsub,omitflag,oldpstr,sub,subary,suffix,tlevel,tmp
-	new totcntind,trigdel,trigdelx,type1last,trigprefix,trigset,trigsub
-	new ttprfx,valcntind,xrefind,xrefindtype1,z,zlsep,ztout
+	new fulltrigsub,gblind,gblindtype1,i,j,killtrg,lastfullsub
+	new lastsub,lastsubind,lastvarsub,locxsub,modflag,name,nameind,newpnum
+	new newpstr,pieces,nsubs,nullsub,omitflag,oldpstr,stacklvl1,sub,subary
+	new suffix,tlevel,tmp,trigdel,trigdelx,type1last,trigprefix
+	new trigset,trigsub,ttprfx,valcntind,xrefind,xrefindtype1,z,zintrptsav,zlsep,ztout
+	set stacklvl1=$stack	; required by premature termination
 	set tlevel=$tlevel	; required by error trap to rollback/unwind
+	set zintrptsav=$zinterrupt
 	do snaplck(.currlck)
 	set:'$data(gbl) $ecode=",U252,"
 	; Extended references are not supported
@@ -598,6 +608,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl(ttprfx_"ZKp2")
 	. . else  set $ecode=",U241,"
 	. . set @name=gbl,@name@(4)=newpstr,^(5)=z,^(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
+	. . set:2=stat ^(11)=0
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. . do xtratrig		; set additional triggers for higher levels in the tree
 	. . set ^%ydbAIMDxref(gbl,name)=""
@@ -610,7 +621,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	. for i=2:1:$zlength(newpstr) if +$zextract(newpstr,i)&'+$zextract(oldpstr,i) set modflag=1 quit
 	. do:modflag
 	. . set:1=type tmp=$order(constlist(""),-1),constlist(tmp)=1,locxsub(tmp)=$zwrite(type1last,1)
-	. . do xrefdata(nsubs)
+	. . do xrefdatajobs(nsubs)
 	. . ; Update metadata to indicate completion
 	. . tstart ():transactionid="batch"
 	. . set @name=gbl,@name@(0)=$zut_" "_$job_" "_$zyrelease_" "_$zpiece($text(%YDBAIM),";",2),^(1)=nsubs,^(2)=sep
@@ -642,6 +653,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl(ttprfx_"ZKe2")
 	. . else  set $ecode=",U241,"
 	. . set @name=gbl,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
+	. . set:2=stat ^(11)=0
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. . do:$zlength(type) xtratrig		; set type specific additional triggers
 	. . set ^%ydbAIMDxref(gbl,name)=""
@@ -649,11 +661,13 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	. view "ztrigger_output":ztout
 	. set newpstr=""
 	. set:1=type tmp=$order(constlist(""),-1),constlist(tmp)=1,locxsub(tmp)=$zwrite(type1last,1)
-	. do xrefdata(nsubs)
+	. do xrefdatajobs(nsubs)
 	. ; Add metadata to indicate completion
 	. tstart ():transactionid="batch"
 	. set @name@(0)=$zut_" "_$job_" "_$zyrelease_" "_$zpiece($text(%YDBAIM),";",2),^(1)=nsubs,(^(2),^(3),^(4),^(5))=""
 	. tcommit
+	; label to which premature termination of xrefdatajobs() does ZGOTO
+XREFDATAQUIT
 	; Release locks that block UNXREFDATA()
 	lock -(^%ydbAIMD($job),^%ydbAIMD(gbl,$job),@name@($job))
 	quit:$quit name quit
@@ -730,8 +744,8 @@ lsxrefdata:(lvn,xref)
 
 ; Create indirection strings to be used by xrefdata()
 ; Uses or references local variables passed to or defined in XREFDATA():
-;   constlist, gbl, gblind, gblindtype1, name, lastvarsub, nameind, nsubs,
-;   omitflags, sep, subary, totcntind, type, valcntind, xrefind, xrefindtype1
+;   constlist, gbl, gblind, gblindtype1, lastvarsub, name, nameind, nsubs,
+;   omitflags, sep, subary, type, valcntind, xrefind, xrefindtype1
 mkindxrefdata:
 	new i,tmp
 	set gblind(1)=gbl_"("_$select(constlist(1):locxsub(1),1:"subary(1)")
@@ -749,7 +763,6 @@ mkindxrefdata:
 	. set $zpiece(gblindtype1,",",$zlength(gblindtype1,","))=type1last_")"
 	if $zlength(sep) set nameind=name_"(-k,pieceval)",valcntind=name_"(-k)"
 	else  set nameind=name_"("""",nodeval)",valcntind=name_"("""")"
-	set totcntind=name_"(11)"
 	quit
 
 ; ravel() takes a bit-map like piece number string, e.g., "#0010100111", and
@@ -844,54 +857,61 @@ unxrefdata:(xrefgbl)
 ; a different ordering of tests for the various code paths. Fortunately, this
 ; code is executed only for the initial creation of a cross reference, and not
 ; in the triggers that maintain cross references as globals are updated.
-; References variables defined in or passed to XREFDATA():
+; References variables defined in parent or passed through from  XREFDATA():
 ;   constlist, gbl, gblind, gblindtype1, lastsubind, lastvarsub, locxsub, name,
-;   nameind, newpstr, nullsub, omitfix, stat, subary, totcntind, type,
-;   type1last, valcntind, xref, xrefind, xrefindtype1, zpiece
-xrefdata:(nsubs)
+;   nameind, newpstr, nullsub, omitfix, stacklvl1, stacklvl2, stat, subary, tick,
+;   type, type1last, valcntind, xrefind, xrefindtype1, zpiece
+xrefdata(nsubsxref,dir,ppid)
 	new flag,i,j,k,nodelen1,nodeval,nranges,piece1,piece2,pieceval,quitflag
-	new rangeend,rangeflag,sublvl,thisrange,tmp
-	; If nsubs>1 it means call the function recursively for the next
+	new rangebegin,rangeend,rangefirst,rangeflag,rangelast,sublvl,thisrange,tmp2,tmp2
+	; If nsubsxref>1 it means call the function recursively for the next
 	; subscript level.
 	set flag=nullsub
-	set sublvl=$order(locxsub(""),-1)-nsubs+1
+	set sublvl=$order(locxsub(""),-1)-nsubsxref+1
 	set subary(sublvl)=""
-	if nsubs>1 do
-	. if "*"=locxsub(sublvl) for  do:flag  set flag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:'$zlength(subary(sublvl))
-	. . do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1)
-	. else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))\10 xrefdata(nsubs-1) quit	; quit is performance optimization
-	. else  do  quit	; quit is performance optimization
+	if nsubsxref>1 do
+	. if "*"=locxsub(sublvl) for  do:flag  set flag=1,subary(sublvl)=$order(@gblind(sublvl),dir) quit:'$zlength(subary(sublvl))
+	. . do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,dir,ppid)
+	. else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,dir,ppid) quit	; quit is performance optimization
+	. else  do  quit										; quit is performance optimization
 	. . set nranges=$select(zpiece:$zlength(locxsub(sublvl),";"),1:$length(locxsub(sublvl),";"))
-	. . for i=1:1:nranges do
+	. . if 1=dir set rangefirst=1,rangelast=nranges
+	. . else  set rangefirst=nranges,rangelast=1
+	. . for i=rangefirst:dir:rangelast do
 	. . . if zpiece do
 	. . . . set thisrange=$zpiece(locxsub(sublvl),";",i)
 	. . . . set piece1=$zpiece(thisrange,":",1),piece2=$zpiece(thisrange,":",$zlength(thisrange,":"))
 	. . . else  do
 	. . . . set thisrange=$piece(locxsub(sublvl),";",i)
 	. . . . set piece1=$piece(thisrange,":",1),piece2=$piece(thisrange,":",$length(thisrange,":"))
-	. . . if $zlength(piece1) set subary(sublvl)=$zwrite(piece1,1),flag=1
-	. . . else  set subary(sublvl)="",flag=nullsub
-	. . . set rangeend=$select($zlength(piece2):$zwrite(piece2,1),1:""),rangeflag=$zlength(rangeend)
-	. . . for  do:flag  set flag=1,(subary(sublvl),tmp)=$order(@gblind(sublvl)) quit:'$zlength(tmp)!(rangeflag&(tmp]]rangeend))
-	. . . . if $data(@gblind(sublvl))\10 do xrefdata(nsubs-1)
-	. . . . else  do:(1=type)&(2=nsubs)
+	. . . set rangeflag=0
+	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1),rangeflag=1
+	. . . else  set rangebegin=""
+	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1),rangeflag=1
+	. . . else  set rangeend=""
+	. . . set flag=$select(1=dir:$select($zlength(piece1):1,1:nullsub),1:$select($zlength(piece2):1,1:0))
+	. . . set subary(sublvl)=$select(1=dir:rangebegin,1:rangeend)
+	. . . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl),dir) quit:'$zlength(tmp2)!(rangeflag&$select(1=dir:$select($zlength(piece2):tmp2]]rangeend,1:0),1:rangebegin]]tmp2))
+	. . . . if (1=type)&(2=nsubsxref) do
 	. . . . . tstart ():transactionid="batch"
-	. . . . . ; Need to recheck for subtree inside transaction to avoid race condition
-	. . . . . if $data(@gblind(sublvl))\10 do xrefdata(nsubs-1)
-	. . . . . else  do
+	. . . . . set tmp1=$data(@gblind(sublvl))
+	. . . . . if tmp1\10 do xrefdata(nsubsxref-1,dir,ppid)
+	. . . . . else  do:tmp1#10
 	. . . . . . set nodeval=""
 	. . . . . . if $zlength(sep) do
 	. . . . . . . set nodelen1=$zlength(newpstr),pieceval=""
-	. . . . . . . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
-	. . . . . . . . set k=i-1
+	. . . . . . . for j=2:1:nodelen1 do:+$zextract(newpstr,j)
+	. . . . . . . . set k=j-1
 	. . . . . . . . do:'($data(@xrefindtype1)#10)
 	. . . . . . . . . set ^(@lastsubind)=""
-	. . . . . . . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . . . . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . . . . . else  do:'($data(@xrefindtype1)#10)
 	. . . . . . . set ^(@lastsubind)=""
-	. . . . . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . . . . tcommit
-	; if nsubs=1 (the rest of the code below) the traversal has reached the
+	. . . . . if $increment(tick)\1E3 do xrefdatajobsrec set tick=0
+	. . . . else  do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,dir,ppid)
+	; if nsubsxref=1 (the rest of the code below) the traversal has reached the
 	; subscript level at which globals are to have metadata
 	; computed. Compute metadata per subscript and metadata type
 	; specification.
@@ -908,10 +928,10 @@ xrefdata:(nsubs)
 	. . . . set k=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
 	. . . . do:'($data(@xrefind)#10)
 	. . . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . else  do:'$data(@xrefind)
 	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. else  do	; node doesn't exist but peers or peer subtrees do
 	. . set nodeval=""
 	. . if $zlength(sep) do
@@ -920,11 +940,12 @@ xrefdata:(nsubs)
 	. . . . set k=i-1
 	. . . . do:'($data(@xrefindtype1)#10)
 	. . . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . else  do:'$data(@xrefindtype1)
 	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. tcommit
+	. if $increment(tick)\1E3 do xrefdatajobsrec set tick=0
 	else  if constlist(sublvl) do  quit	; quit is performance optimization
 	. tstart ():transactionid="batch"
 	. if $data(@gblind(sublvl))#10 do
@@ -935,16 +956,19 @@ xrefdata:(nsubs)
 	. . . . set k=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
 	. . . . do:'($data(@xrefind)#10)
 	. . . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . else  do:'$data(@xrefind)
 	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. tcommit
+	. if $increment(tick)\1E3 do xrefdatajobsrec set tick=0
 	else  do	; not type=1 or a constant subscript specification
 	. set nranges=$select(zpiece:$zlength(locxsub(sublvl),";"),1:$length(locxsub(sublvl),";"))
-	. for i=1:1:nranges do
+	. if 1=dir set rangefirst=1,rangelast=nranges
+	. else  set rangefirst=nranges,rangelast=1
+	. for i=rangefirst:dir:rangelast do
 	. . if "*"=locxsub(sublvl) do
-	. . . set (piece1,piece2)="",flag=nullsub
+	. . . set (rangebegin,rangeend,subary(sublvl))="",flag=nullsub,rangeflag=0
 	. . else  do
 	. . . if zpiece do
 	. . . . set thisrange=$zpiece(locxsub(sublvl),";",i)
@@ -952,10 +976,13 @@ xrefdata:(nsubs)
 	. . . else  do
 	. . . . set thisrange=$piece(locxsub(sublvl),";",i)
 	. . . . set piece1=$piece(thisrange,":",1),piece2=$piece(thisrange,":",$length(thisrange,":"))
-	. . . if $zlength(piece1) set subary(sublvl)=$zwrite(piece1,1),flag=1
-	. . . else  set subary(sublvl)="",flag=nullsub
-	. . set rangeend=$select($zlength(piece2):$zwrite(piece2,1),1:""),rangeflag=$zlength(rangeend)
-	. . for  do:flag  set flag=1,(subary(sublvl),tmp)=$order(@gblind(sublvl)) quit:'$zlength(tmp)!(rangeflag&(tmp]]rangeend))
+	. . . set rangeflag=0
+	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1),(flag,rangeflag)=1
+	. . . else  set rangebegin="",flag=nullsub
+	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1),rangeflag=1
+	. . . else  set rangeend="",flag=1
+	. . . set subary(sublvl)=$select(1=dir:rangebegin,1:rangeend)
+	. . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl),dir) quit:'$zlength(tmp2)!(rangeflag&$select(1=dir:tmp2]]rangeend,1:rangebegin]]tmp2))
 	. . . tstart ():transactionid="batch"
 	. . . do:$data(@gblind(sublvl))#10
 	. . . . set nodeval=@gblind(sublvl)
@@ -963,10 +990,103 @@ xrefdata:(nsubs)
 	. . . . . set nodelen1=$zlength(newpstr)
 	. . . . . for j=2:1:nodelen1 do:+$zextract(newpstr,j)
 	. . . . . . set k=j-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
-	. . . . . . if '($data(@xrefind)#10) set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
-	. . . . else  if '($data(@xrefind)#10) set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),$increment(@totcntind),1=@nameind,$increment(@valcntind)
+	. . . . . . if '($data(@xrefind)#10) set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
+	. . . . else  if '($data(@xrefind)#10) set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . . tcommit
+	. . . if $increment(tick)\1E3 do xrefdatajobsrec set tick=0
 	quit
+
+; JOB two processes for xrefdata(); one to scan the global subscripts in the
+; forward direction, and one to scan in the reverse direction. The scan can be
+; terminated when either of the followiing conditions are met:
+; - Either process terminates: Since either process completing means that the
+;   the metadata computation is complete, the other process can be terminated.
+; - For all non-constant subscript specifications in nsubs-1 subscripts, the
+;   process scanning in the forward direction is scanning subscripts that
+;   collate after subscripts the other process is scanning. In other words,
+;   since they are both scanning data that has already been scanned, they can
+;   both be terminated.
+; xrefdatajobs() cleans up stdout and stderr files of the JOB'd processes.
+; Comments preceding xrefdata() list local variables passed through
+xrefdatajobs(nsubs)
+	new cmd,doneflag,err,i,io,j,k,line,out,prefix,stacklvl2,tick,totcnt,val,xrefproc
+	set io=$io
+	set prefix="/tmp/xrefdata^"_$text(+0)_"_"_$job_"_"
+	set stacklvl2=$stack	; required by premature termination
+	set tick=0
+	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear any prior subprocess metadata
+	set $zinterrupt="zgoto stacklvl2:xrefdatajobsterm"
+	for i=1,-1 do
+	. set err(i)=prefix_i_".err"
+	. set out(i)=prefix_i_".out"
+	. set cmd="xrefdata(nsubs,i,$job):(passcurlvn:error="""_err(i)_""":output="""_out(i)_""")"
+	. job @cmd
+	. if $zjob set xrefproc(i)=$zjob set $zpiece(^%ydbAIMtmp($text(+0),$job,0),",",$select(1=i:1,1:2))=$zjob
+	. else  set $ecode=",U234,"
+	; check for completion and exit if done
+	; - check whether processes have crossed, if processes have crossed, terminate one process
+	; - if one process has terminated, because it was terminated or completed the scan, terminate the other process
+	for  do  quit:'$data(xrefproc)  hang .01
+	. if $$xrefdatajobsckdone set i=$order(xrefproc("")) kill:$zlength(i)&('$zsigproc(xrefproc(i),"term")) xrefproc(i)
+	. set i="" for  set i=$order(xrefproc(i)) quit:'$zlength(i)  do:'$zgetjpi(xrefproc(i),"isprocalive")  quit:'$data(xrefproc)
+	. . if $data(xrefproc(-i)),$zsigproc(xrefproc(-i),"term")
+	. . kill xrefproc
+	; If stat=2, compute the total count in a single process to minimize transaction restarts
+	do:2=stat
+	. set totcnt=0
+	. if $zlength(sep) do
+	. . tstart ():transactionid="batch"
+	. . set k="" for  set k=$order(@name@(k)) quit:-1<k  do
+	. . . if $data(^(k,""))#10,$increment(totcnt,^(""))
+	. . . set val="" for  set val=$order(^(val)) quit:'$zlength(val)  if $increment(totcnt,^(val))
+	. . set @name@(11)=totcnt
+	. . tcommit
+	. else  do
+	. . tstart ():transactionid="batch"
+	. . if $data(@name@("",""))#10,$increment(totcnt,^(""))
+	. . set val="" for  set val=$order(^(val)) quit:'$zlength(val)  if $increment(totcnt,^(val))
+	. . set @name@(11)=totcnt
+	. . tcommit
+	; quit		; uncomment for debugging
+	for i=1,-1 do
+	. set out(i)=$zsearch(out(i)_"*") open out(i) use out(i)
+	. for j=1:1 read line quit:$zeof  use io write line,! use out(i)
+	. use io close out(i):delete
+	. set err(i)=$zsearch(err(i)_"*") open err(i) use err(i)
+	. for j=1:1 read line quit:$zeof  set:$zlength(line)&'$zfind(line,"FORCEDHALT") $ecode=",U233,"
+	. close err(i):delete
+	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear subprocess metadata on clean exit
+	quit
+
+; In JOB'd process, record the state of the current scanning process
+; Uses local variables from caller: constlist, dir, nsubsxref, ppid, subary
+xrefdatajobsrec:
+	new i
+	tstart ():transactionid="batch"
+	for i=1:1:nsubsxref set:'constlist(i) ^%ydbAIMtmp("%YDBAIM",ppid,dir*i)=subary(i)
+	tcommit
+	quit
+
+; Check whether concurrent JOBs indexing existing data can be terminated because
+; the process scanning in the reverse direction is at subscripts in the global
+; variable tree that precede subscripts being scanned by the process scanning
+; in the forward direction.
+; Uses local variables from caller: constlist, nsubs, stacklvl1, stacklvl2
+xrefdatajobsckdone:()
+	new chk,flag,i
+	set (chk,flag)=0
+	for i=1:1:nsubs do:'constlist(i)  quit:flag
+	. if $data(^%ydbAIMtmp($text(+0),$job,i)),$data(^(-i)),$increment(chk) set:^(-i)]]^(i) flag=1
+	quit $select(flag!'chk:0,1:1)
+
+; Kill child processes and handle an interrrupt
+; Uses local variables from caller: stacklvl, stacklvl2, xrefproc, zintrptsav
+xrefdatajobsterm
+	new i,proc
+	for i=1:1:2 set proc=+$zpiece(^%ydbAIMtmp($text(+0),$job,0),",",i) if proc,$zsigproc(proc,"TERM")
+	set $zinterrupt=zintrptsav
+	xecute $zinterrupt		; execute original interrupt handler
+	zgoto stacklvl1:XREFDATAQUIT	; terminate, if previous line does not
 
 ; Set additional triggers as needed. Triggers are set for nodes that are above
 ; the nodes for which XREFDATA() is being called, since XREFDATA() will set
@@ -1091,10 +1211,14 @@ ttSe1	; if $data(@name(0,$ztoldval,@sub))#10 zkill ^(@lastsub) zkill:1>$incremen
 
 ttZKe1	;if $data(@name(0,$ztoldval,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",$ztoldval),-1) ^($ztoldval)
 
-ttSe2	; if $data(@name(0,$ztoldval,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name("",$ztoldval),-1) zkill ^($ztoldval) zkill:1>$increment(@name(""),-1) ^("")
-	; if '$data(@name(0,$ztvalue,@sub)) set ^(@lastsub)="" if $increment(@name(11)),(1=$increment(@name("",$ztvalue))),$increment(@name(""))
+ttSe2	; set inccnt=0
+	; if $data(@name(0,$ztoldval,@sub))#10 zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name("",$ztoldval),-1) zkill ^($ztoldval) zkill:1>$increment(@name(""),-1) ^("")
+	; if '$data(@name(0,$ztvalue,@sub)) set ^(@lastsub)="" set inccnt=inccnt+1 if (1=$increment(@name("",$ztvalue))),$increment(@name(""))
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
-ttZKe2	;if $data(@name(0,$ztoldval,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name("",$ztoldval),-1) zkill ^($ztoldval) if 1>$increment(@name(""),-1) zkill ^("")
+ttZKe2	; set inccnt=0
+	; if $data(@name(0,$ztoldval,@sub))#10 zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name("",$ztoldval),-1) zkill ^($ztoldval) if 1>$increment(@name(""),-1) zkill ^("")
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
 ttSp0	; for i=@pieces set p=$@zpiece($ztoldval,@sep,i),q=$@zpiece($ztvalue,@sep,i) do
 	; . if p'=q zkill @name(i,p,@sub) set @name(i,q,@sub)=""
@@ -1110,13 +1234,17 @@ ttSp1	; for i=@pieces set p=$@zpiece($ztoldval,@sep,i),q=$@zpiece($ztvalue,@sep,
 
 ttZKp1	;for i=@pieces set j=-i,p=$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
 
-ttSp2	; for i=@pieces set p=$@zpiece($ztoldval,@sep,i),q=$@zpiece($ztvalue,@sep,i),j=-i do
+ttSp2	; set inccnt=0
+	; for i=@pieces set p=$@zpiece($ztoldval,@sep,i),q=$@zpiece($ztvalue,@sep,i),j=-i do
 	; . if p'=q do
-	; . . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(j,p),-1) zkill ^(p) if 1>$increment(@name(j),-1) zkill ^(j)
-	; . . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" if $increment(@name(11)),(1=$increment(@name(j,q))),$increment(@name(j))
-	; . else  if '$zlength(q),'($data(@name(i,"",@sub))#10) set ^(@lastsub)="" if $increment(@name(11)),(1=$increment(@name(j,""))),$increment(@name(j))
+	; . . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,p),-1) zkill ^(p) if 1>$increment(@name(j),-1) zkill ^(j)
+	; . . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" set inccnt=inccnt+1 if (1=$increment(@name(j,q))),$increment(@name(j))
+	; . else  if '$zlength(q),'($data(@name(i,"",@sub))#10) set ^(@lastsub)="" set inccnt=inccnt+1 if (1=$increment(@name(j,""))),$increment(@name(j))
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
-ttZKp2	;for i=@pieces set j=-i,p=$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
+ttZKp2	; set inccnt=0
+	; for i=@pieces set j=-i,p=$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
 tt1Se0	; if @type1last=@lastfullsub zkill @name(0,"",@altsub),@name(0,$ztoldval,@sub) set @name(0,$ztvalue,@sub)=""
 	; else  set:'($data(@gbl(@fullsub))#10) @name(0,"",@altsub)=""
@@ -1135,16 +1263,20 @@ tt1ZKe1	; if @type1last=@lastfullsub do
 	; . if ($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)),$increment(@name("","")) set @name(0,"",@altsub)=""
 	; else  if '($data(@gbl(@fullsubprnt))#10),'$data(@gbl(@fullsub))#10,('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))),$data(@name(0,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name("",""),-1) ^("")
 
-tt1Se2	; if @type1last=@lastfullsub do
-	; . if $data(@name(0,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name("",""),-1) zkill ^("") if 1>$increment(@name(""),-1) zkill ^("")
-	; . if $data(@name(0,$ztoldval,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name("",$ztoldval),-1) zkill ^($ztoldval) if 1>$increment(@name(""),-1) zkill ^("")
-	; . if '$data(@name(0,$ztvalue,@sub)) set ^(@lastsub)="" if $increment(@name(11)),1=$increment(@name("",$ztvalue)),$increment(@name(""))
-	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'$data(@name(0,"",@altsub)) set ^(@altlastsub)="" if $increment(@name(11)),1=$increment(@name("","")),$increment(@name(""))
+tt1Se2	; set inccnt=0
+	; if @type1last=@lastfullsub do
+	; . if $data(@name(0,"",@altsub)) zkill ^(@altlastsub) set inccnt=inccnt-1 if 1>$increment(@name("",""),-1) zkill ^("") if 1>$increment(@name(""),-1) zkill ^("")
+	; . if $data(@name(0,$ztoldval,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name("",$ztoldval),-1) zkill ^($ztoldval) if 1>$increment(@name(""),-1) zkill ^("")
+	; . if '$data(@name(0,$ztvalue,@sub)) set ^(@lastsub)="" set inccnt=inccnt+1 if 1=$increment(@name("",$ztvalue)),$increment(@name(""))
+	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'$data(@name(0,"",@altsub)) set ^(@altlastsub)="" set inccnt=inccnt+1 if 1=$increment(@name("","")),$increment(@name(""))
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
-tt1ZKe2	; if @type1last=@lastfullsub do
-	; . if $data(@name(0,$ztoldval,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name("",$ztoldval),-1) zkill ^($ztoldval) if 1>$increment(@name(""),-1) zkill ^("")
-	; . if ($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)),$increment(@name(11)) set @name(0,"",@altsub)="" if 1=$increment(@name("","")),$increment(@name(""))
-	; else  if '($data(@gbl(@fullsubprnt))#10),'$data(@gbl(@fullsub)),('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))),$data(@name(0,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name("",""),-1) zkill ^("") if 1>$increment(@name(""),-1) zkill ^("")
+tt1ZKe2	; set inccnt=0
+	; if @type1last=@lastfullsub do
+	; . if $data(@name(0,$ztoldval,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name("",$ztoldval),-1) zkill ^($ztoldval) if 1>$increment(@name(""),-1) zkill ^("")
+	; . if ($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) set inccnt=inccnt+1,@name(0,"",@altsub)="" if 1=$increment(@name("","")),$increment(@name(""))
+	; else  if '($data(@gbl(@fullsubprnt))#10),'$data(@gbl(@fullsub)),('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))),$data(@name(0,"",@altsub)) zkill ^(@altlastsub) set inccnt=inccnt-1 if 1>$increment(@name("",""),-1) zkill ^("") if 1>$increment(@name(""),-1) zkill ^("")
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
 tt1Sp0	; if @type1last=@lastfullsub do
 	; . for i=@pieces set p=$@zpiece($ztoldval,@sep,i),q=$@zpiece($ztvalue,@sep,i) zkill @name(i,"",@altsub),@name(i,p,@sub) set @name(i,q,@sub)=""
@@ -1169,19 +1301,23 @@ tt1ZKp1	; if @type1last=@lastfullsub do
 	; . else  for i=@pieces set p=$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(-i,p),-1) ^(p)
 	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces if $data(@name(i,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(-i,""),-1) ^("")
 
-tt1Sp2	; if @type1last=@lastfullsub do
+tt1Sp2	; set inccnt=0
+	; if @type1last=@lastfullsub do
 	; . for i=@pieces set j=-i,p=$@zpiece($ztoldval,@sep,i),q=$@zpiece($ztvalue,@sep,i) do
-	; . . if $data(@name(i,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(j,""),-1) zkill ^("") zkill:1>$increment(@name(j),-1) ^(j)
-	; . . else  if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
-	; . . if '$data(@name(i,q,@sub)) set ^(@lastsub)="" if $increment(@name(11)),1=$increment(@name(j,q)),$increment(@name(j))
-	; else  if '($data(@gbl(@fullsub))#10) for i=@pieces set j=-i if '$data(@name(i,"",@altsub)) set ^(@altlastsub)="" if $increment(@name(11)),1=$increment(@name(j,"")),$increment(@name(j))
+	; . . if $data(@name(i,"",@altsub)) zkill ^(@altlastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,""),-1) zkill ^("") zkill:1>$increment(@name(j),-1) ^(j)
+	; . . else  if $data(@name(i,p,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
+	; . . if '$data(@name(i,q,@sub)) set ^(@lastsub)="" set inccnt=inccnt+1 if 1=$increment(@name(j,q)),$increment(@name(j))
+	; else  if '($data(@gbl(@fullsub))#10) for i=@pieces set j=-i if '$data(@name(i,"",@altsub)) set ^(@altlastsub)="" set inccnt=inccnt+1 if 1=$increment(@name(j,"")),$increment(@name(j))
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
-tt1ZKp2	; if @type1last=@lastfullsub do
+tt1ZKp2	; set inccnt=0
+	; if @type1last=@lastfullsub do
 	; . if $data(@gbl(@fullsubprnt))#10!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) for i=@pieces set j=-i,p=$@zpiece($ztoldval,@sep,i) do
-	; . . if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
-	; . . if '$data(@name(i,"",@altsub)) set ^(@altlastsub)="" if $increment(@name(11)),1=$increment(@name(j,"")),$increment(@name(j))
-	; . else  for i=@pieces set j=-i,p=$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
-	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces if $data(@name(i,"",@altsub)) set j=-i zkill ^(@altlastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(j,""),-1) zkill ^("") zkill:1>$increment(@name(j),-1) ^(j)
+	; . . if $data(@name(i,p,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
+	; . . if '$data(@name(i,"",@altsub)) set ^(@altlastsub)="" set inccnt=inccnt+1 if 1=$increment(@name(j,"")),$increment(@name(j))
+	; . else  for i=@pieces set j=-i,p=$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
+	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces if $data(@name(i,"",@altsub)) set j=-i zkill ^(@altlastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,""),-1) zkill ^("") zkill:1>$increment(@name(j),-1) ^(j)
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
 tt1pSe0	;set:'($data(@gbl(@fullsub))#10) @name(0,"",@altsub)=""
 
@@ -1191,9 +1327,13 @@ tt1pSe1	;if '($data(@gbl(@fullsub))#10),'$data(@name(0,"",@altsub)) set ^(@altla
 
 tt1pZKe1;if '($ZTDATA\10),$data(@name(0,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name("",""),-1) ^("")
 
-tt1pSe2	;if '($data(@gbl(@fullsub))#10),'$data(@name(0,"",@altsub)) set ^(@altlastsub)="" if $increment(@name(11)),1=$increment(@name("","")),$increment(@name(""))
+tt1pSe2	; set inccnt=0
+	; if '($data(@gbl(@fullsub))#10),'$data(@name(0,"",@altsub)) set ^(@altlastsub)="" set inccnt=inccnt+1 if 1=$increment(@name("","")),$increment(@name(""))
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
-tt1pZKe2;if '($ZTDATA\10),$data(@name(0,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name("",""),-1) zkill ^("") if 1>$increment(@name(""),-1) zkill ^("")
+tt1pZKe2; set inccnt=0
+	; if '($ZTDATA\10),$data(@name(0,"",@altsub)) zkill ^(@altlastsub) set inccnt=inccnt-1 if 1>$increment(@name("",""),-1) zkill ^("") if 1>$increment(@name(""),-1) zkill ^("")
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
 tt1pSp0	;if '($data(@gbl(@fullsub))#10) for i=@pieces set @name(i,"",@altsub)=""
 
@@ -1203,11 +1343,17 @@ tt1pSp1	;if '($data(@gbl(@fullsub))#10) for i=@pieces if '$data(@name(i,"",@alts
 
 tt1pZKp1;if '($ZTDATA\10) for i=@pieces if $data(@name(i,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(-i,""),-1) ^("")
 
-tt1pSp2	;if '($data(@gbl(@fullsub))#10) for i=@pieces set j=-i if '$data(@name(i,"",@altsub)) set ^(@altlastsub)="" if $increment(@name(11)),1=$increment(@name(j,"")),$increment(@name(j))
+tt1pSp2	; set inccnt=0
+	; if '($data(@gbl(@fullsub))#10) for i=@pieces set j=-i if '$data(@name(i,"",@altsub)) set ^(@altlastsub)="" set inccnt=inccnt+1 if 1=$increment(@name(j,"")),$increment(@name(j))
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
-tt1pZKp2;if '($ZTDATA\10) for i=@pieces if $data(@name(i,"",@altsub)) set j=-i zkill ^(@altlastsub) zkill:1>$increment(@name(11),-1) ^(11) if 1>$increment(@name(j,""),-1) zkill ^("") zkill:1>$increment(@name(j),-1) ^(j)
+tt1pZKp2; set inccnt=0
+	; if '($ZTDATA\10) for i=@pieces if $data(@name(i,"",@altsub)) set j=-i zkill ^(@altlastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,""),-1) zkill ^("") zkill:1>$increment(@name(j),-1) ^(j)
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
 ;	Error message texts
+U233	;"-F-JOBERR Error(s) reported by JOB'd process in "_err(i)
+U234	;"-F-JOBFAIL Failed to JOB process for xrefdata("_nsubs_","_i_")"
 U235	;"-F-NULL1 Null subscripts are not permitted for type=1 global variables"
 U236	;"-F-SUBERR1 Subscript specification does not match type=1 requirements"
 U237	;"-F-BADTYPE Schema type="_type_" not recognized"
