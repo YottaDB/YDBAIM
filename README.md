@@ -7,6 +7,8 @@ available in a standard schema.
 Since this is a plug-in for [YottaDB](https://gitlab.com/YottaDB/DB/YDB),
 YottaDB must be installed first.
 
+YDBAIM requires YottaDB r1.32 or higher.
+
 To install, you need `cmake`, `make`, `cc`, and `ld` commands. After
 downloading this repository, you can install as follows:
 
