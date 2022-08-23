@@ -13,15 +13,8 @@
 stages:
   - build
 
-.make:
-  stage: build
-  artifacts:
-    paths:
-      - build/
-      - db/
-      - tests/
-    expire_in: 1 month
-    when: always
+services:
+  - docker:dind
 
 commit-verify:
   image: ubuntu:20.04
@@ -34,14 +27,9 @@ commit-verify:
     - chmod +x commit_verify.sh
     - ./commit_verify.sh tests/needs_copyright.sh https://gitlab.com/YottaDB/Util/YDBAIM
 
-make-ubuntu:
-  image: yottadb/yottadb-base:latest-master
-  extends:
-    - .make
+ydbaim-test:
+  image: docker:latest
+  stage: build
   script:
-    - export DEBIAN_FRONTEND=noninteractive
-    - ln -fs /usr/share/zoneinfo/US/Eastern /etc/localtime
-    - apt-get update -qq
-    - apt-get install -y -qq build-essential cmake git curl pkg-config libicu-dev
-    - ./install.sh
-    - ./tests/test.sh
+    - docker build -t test .
+    - docker run test

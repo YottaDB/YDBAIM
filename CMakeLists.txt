@@ -1,38 +1,37 @@
 #################################################################
-#                               #
-# Copyright (c) 2021 YottaDB LLC and/or its subsidiaries.  #
-# All rights reserved.                      #
-#                               #
-#   This source code contains the intellectual property #
-#   of its copyright holder(s), and is made available   #
-#   under a license.  If you do not know the terms of   #
-#   the license, please stop and do not read further.   #
-#                               #
+#								#
+# Copyright (c) 2021-2022 YottaDB LLC and/or its subsidiaries.	#
+# All rights reserved.						#
+#								#
+#	This source code contains the intellectual property	#
+#	of its copyright holder(s), and is made available	#
+#	under a license.  If you do not know the terms of	#
+#	the license, please stop and do not read further.	#
+#								#
 #################################################################
-
 # Prelim
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/ydbcmake/")
-project(YDBAIM C M) # C needed for ld
-cmake_minimum_required(VERSION 3.0.0)
+cmake_minimum_required(VERSION 3.14)
+include(FetchContent)
+FetchContent_Declare(YDBCMake
+	GIT_REPOSITORY	https://gitlab.com/YottaDB/Tools/YDBCMake.git
+	GIT_TAG		ec3ed1781a8a9ebeee67cd524029da5176183e8b
+)
+FetchContent_MakeAvailable(YDBCMake)
+message(STATUS "YDBCMake Source Directory: ${ydbcmake_SOURCE_DIR}")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ydbcmake_SOURCE_DIR}/ydbcmake/")
 
-# Find YottaDB and set Install Destination
+project(YDBAIM M)
+
+# Find YottaDB and print Install Destination
 find_package(YOTTADB REQUIRED)
-include_directories("${YOTTADB_INCLUDE_DIRS}")
-set(CMAKE_INSTALL_PREFIX ${YOTTADB_PLUGIN_DIR})
-message(STATUS "Install Location: ${YOTTADB_PLUGIN_DIR}")
+message(STATUS "Install Location: ${YOTTADB_PLUGIN_PREFIX}")
 
-# CMake Build Type (req b/c it's C code (we need ld from the C toolkit))
-if(NOT CMAKE_BUILD_TYPE)
-	set(CMAKE_BUILD_TYPE Release)
-endif()
-message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+# Add library
+add_ydb_library(_ydbaim SOURCES _YDBAIM.m)
 
-# Sources
-set(source_files _YDBAIM.m)
+# Install library
+install_ydb_library(_ydbaim)
 
-# .so file for plugin
-add_library(_ydbaim SHARED ${source_files})
-SET_TARGET_PROPERTIES(_ydbaim PROPERTIES PREFIX "")
-
-# Install shared library
-install(TARGETS _ydbaim DESTINATION ${CMAKE_INSTALL_PREFIX})
+# Install Sources
+install(FILES _YDBAIM.m
+	DESTINATION ${YOTTADB_PLUGIN_PREFIX}/r/)
