@@ -14,7 +14,7 @@ cmake_minimum_required(VERSION 3.14)
 include(FetchContent)
 FetchContent_Declare(YDBCMake
 	GIT_REPOSITORY	https://gitlab.com/YottaDB/Tools/YDBCMake.git
-	GIT_TAG		ec3ed1781a8a9ebeee67cd524029da5176183e8b
+	GIT_TAG		50e7f4a2484b1a8649d6ef1c4a17e626806c886b
 )
 FetchContent_MakeAvailable(YDBCMake)
 message(STATUS "YDBCMake Source Directory: ${ydbcmake_SOURCE_DIR}")
