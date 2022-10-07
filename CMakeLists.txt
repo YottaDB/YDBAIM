@@ -12,9 +12,12 @@
 # Prelim
 cmake_minimum_required(VERSION 3.14)
 include(FetchContent)
+# The GIT_TAG is, at the time of this writing, the latest commit in YDBCMake.
+# It is fixed at that point to ensure reproducible builds.
+# Keep this periodically up to date with future YDBCMake commits.
 FetchContent_Declare(YDBCMake
 	GIT_REPOSITORY	https://gitlab.com/YottaDB/Tools/YDBCMake.git
-	GIT_TAG		50e7f4a2484b1a8649d6ef1c4a17e626806c886b
+	GIT_TAG		9ce1b476013e753b5c92ce510258a4ef8d04f0c5
 )
 FetchContent_MakeAvailable(YDBCMake)
 message(STATUS "YDBCMake Source Directory: ${ydbcmake_SOURCE_DIR}")
