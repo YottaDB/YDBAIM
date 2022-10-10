@@ -17,7 +17,7 @@ include(FetchContent)
 # Keep this periodically up to date with future YDBCMake commits.
 FetchContent_Declare(YDBCMake
 	GIT_REPOSITORY	https://gitlab.com/YottaDB/Tools/YDBCMake.git
-	GIT_TAG		9ce1b476013e753b5c92ce510258a4ef8d04f0c5
+	GIT_TAG		c0458d5bd2b672b12c4b73cc47e2221146a40502
 )
 FetchContent_MakeAvailable(YDBCMake)
 message(STATUS "YDBCMake Source Directory: ${ydbcmake_SOURCE_DIR}")
