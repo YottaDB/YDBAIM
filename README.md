@@ -44,7 +44,7 @@ Install the project...
 ```
 
 # Testing
-To run tests, run `./test.sh` after installation.
+To run tests, run `./test.sh` in the `tests` subdirectory after installation.
 
 ## Contributing
 To contribute or help with further development, [fork the repository](https://docs.gitlab.com/ee/gitlab-basics/fork-project.html), clone your fork to a local copy and begin contributing!

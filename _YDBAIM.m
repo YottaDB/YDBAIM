@@ -1035,14 +1035,14 @@ xrefdatajobs(nsubs)
 	do:2=stat
 	. set totcnt=0
 	. if $zlength(sep) do
-	. . tstart ():transactionid="batch"
+	. . tstart (totcnt):transactionid="batch"
 	. . set k="" for  set k=$order(@name@(k)) quit:-1<k  do
 	. . . if $data(^(k,""))#10,$increment(totcnt,^(""))
 	. . . set val="" for  set val=$order(^(val)) quit:'$zlength(val)  if $increment(totcnt,^(val))
 	. . set @name@(11)=totcnt
 	. . tcommit
 	. else  do
-	. . tstart ():transactionid="batch"
+	. . tstart (totcnt):transactionid="batch"
 	. . if $data(@name@("",""))#10,$increment(totcnt,^(""))
 	. . set val="" for  set val=$order(^(val)) quit:'$zlength(val)  if $increment(totcnt,^(val))
 	. . set @name@(11)=totcnt
