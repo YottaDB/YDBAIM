@@ -1009,8 +1009,10 @@ xrefdata(nsubsxref,dir,ppid)
 ; xrefdatajobs() cleans up stdout and stderr files of the JOB'd processes.
 ; Comments preceding xrefdata() list local variables passed through
 xrefdatajobs(nsubs)
-	new cmd,doneflag,err,i,io,j,k,line,out,prefix,stacklvl2,tick,totcnt,val,xrefproc
+	new cmd,doneflag,err,i,io,j,k,line,msgprefix,out,prefix,stacklvl2,tick,totcnt,val,xrefproc
 	set io=$io
+	set msgprefix=$ztrnlnm("ydb_msgprefix")
+	set:'$zlength(msgprefix) msgprefix="YDB"
 	set prefix="/tmp/xrefdata^"_$text(+0)_"_"_$job_"_"
 	set stacklvl2=$stack	; required by premature termination
 	set tick=0
@@ -1052,8 +1054,9 @@ xrefdatajobs(nsubs)
 	. set out(i)=$zsearch(out(i)_"*") open out(i) use out(i)
 	. for j=1:1 read line quit:$zeof  use io write line,! use out(i)
 	. use io close out(i):delete
+	. ; Raise error if there is any non-information (-I-), non-success (S) message other than FORCEDHALT.
 	. set err(i)=$zsearch(err(i)_"*") open err(i) use err(i)
-	. for j=1:1 read line quit:$zeof  set:$zlength(line)&'$zfind(line,"FORCEDHALT") $ecode=",U233,"
+	. for j=1:1 read line quit:$zeof  set:$zlength(line)&'($zfind(line,"FORCEDHALT")!(line?@((".E1"""_msgprefix_"""1""-""1(1""I"",1""S"")1""-"".E")))) $ecode=",U233,"
 	. close err(i):delete
 	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear subprocess metadata on clean exit
 	quit
