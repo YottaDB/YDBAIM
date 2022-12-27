@@ -1,7 +1,7 @@
 #!/bin/bash
 #################################################################
 #								#
-# Copyright (c) 2021 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2021-2022 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -15,8 +15,8 @@ function run_test() {
 	local test_name=$1
 	local test_to_run=$2
 	echo $test_name $test_to_run
-	yottadb -run %XCMD $test_to_run
-	echo $?
+	yottadb -run %XCMD $test_to_run | uniq
+	echo ${PIPESTATUS[0]}
 	echo "---------------"
 	echo
 }
