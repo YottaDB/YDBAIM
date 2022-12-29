@@ -1,6 +1,6 @@
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;								;
-	; Copyright (c) 2021-2022 YottaDB LLC and/or its subsidiaries.	;
+	; Copyright (c) 2021-2023 YottaDB LLC and/or its subsidiaries.	;
 	; All rights reserved.						;
 	;								;
 	;	This source code contains the intellectual property	;
@@ -2234,4 +2234,169 @@ TW27p3	; @TEST Range to empty string doesn't work with AIM#42 changes
 	new subs set subs(1)=100.01,subs(2)="0:",subs(3)=0
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2,0,0,1,0,0)
 	do assert($data(@aimgbl@(2,"dc",1)))
+	quit
+	;
+tsigusr1 ; @TEST Interrupt using SIGUSR1
+	; This is supposed to only do a job exam, and resume
+	; $ZYINTRSIG is supposed to be SIGUSR1
+	; Set interrupt code
+	view "setenv":"ydb_zinterrupt":"do sigusrint^"_$text(+0)
+	;
+	; delete old data generated from interrupt (in case of re-runs)
+	zsy "rm -f tsigusr1.jobexam"
+	kill ^tsigusr
+	;
+	; Get AIM index name for later use
+	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1,1) ; nmonly
+	;
+	; Job off AIM jobs that will be signaled
+	new jobpid job jobsigusr:passcurlvn set jobpid=$zjob
+	;
+	; Wait till the parallel process children show up
+	for  quit:$data(^%ydbAIMtmp("%YDBAIM",jobpid,0))  hang .01
+	;
+	; give it some time to index
+	for  quit:$data(@aimgbl@(1,"A"))  hang .0001
+	;
+	; Interrupt with USR1
+	if $ZSIGPROC(jobpid,"SIGUSR1")
+	;
+	; Wait till interrupt is processed
+	for  quit:$zsearch("tsigusr1.jobexam")'=""  hang .01
+	;
+	; Count data six times. Each count should be greater than the previous one.
+	do sigusrcount(1,aimgbl) h .001
+	do sigusrcount(2,aimgbl) h .001
+	do sigusrcount(3,aimgbl) h .001
+	do sigusrcount(4,aimgbl) h .001
+	do sigusrcount(5,aimgbl) h .001
+	do sigusrcount(6,aimgbl)
+	; ^tsigusr(1,"count","A")=388
+	; ^tsigusr(1,"count","B")=410
+	; ^tsigusr(2,"count","A")=545
+	; ^tsigusr(2,"count","B")=562
+	; ^tsigusr(3,"count","A")=693
+	; ^tsigusr(3,"count","B")=713
+	; ^tsigusr(4,"count","A")=847
+	; ^tsigusr(4,"count","B")=873
+	; ^tsigusr(5,"count","A")=1014
+	; ^tsigusr(5,"count","B")=1047
+	; ^tsigusr(6,"count","A")=1192
+	; ^tsigusr(6,"count","B")=1225
+	;
+	; Assert that the signal is USR1
+	do assert(^tsigusr="SIGUSR1")
+	;
+	; Check that all the counts kept going up
+	new i for i=0:0 set i=$order(^tsigusr(i)) quit:'i  quit:'$data(^tsigusr(i+1))  do
+	. do assert(^tsigusr(i,"count","A")<^tsigusr(i+1,"count","A"))
+	. do assert(^tsigusr(i,"count","B")<^tsigusr(i+1,"count","B"))
+	;
+	; Reset envionment
+	view "unsetenv":"ydb_zinterrupt"
+	quit
+	;
+tsigusr2 ; @TEST Interrupt using SIGUSR2
+	; This is supposed to only do a job exam, and stop the indexing
+	; $ZYINTRSIG is supposed to be SIGUSR2
+	; SIGUSR2 processing is only activated when we set ydb_treat_sigusr2_like_sigusr1
+	view "setenv":"ydb_treat_sigusr2_like_sigusr1":"1"
+	view "setenv":"ydb_zinterrupt":"do sigusrint^"_$text(+0)
+	;
+	; delete old data generated from interrupt (in case of re-runs)
+	zsy "rm -f tsigusr2.jobexam"
+	kill ^tsigusr
+	;
+	; Get AIM index name for later use
+	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
+	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1,1) ; nmonly
+	;
+	; Job off AIM jobs that will be signaled
+	new jobpid job jobsigusr:passcurlvn set jobpid=$zjob
+	;
+	; Wait till the parallel process children show up
+	for  quit:$data(^%ydbAIMtmp("%YDBAIM",jobpid,0))  hang .01
+	;
+	; give it some time to index
+	for  quit:$data(@aimgbl@(1,"A"))  hang .0001
+	;
+	; Interrupt with USR2
+	if $ZSIGPROC(jobpid,"SIGUSR2")
+	;
+	; Wait till interrupt is processed
+	for  quit:$zsearch("tsigusr2.jobexam")'=""  hang .01
+	;
+	; Count data six times. The counts should all the same, as we stopped indexing.
+	do sigusrcount(1,aimgbl) h .001
+	do sigusrcount(2,aimgbl) h .001
+	do sigusrcount(3,aimgbl) h .001
+	do sigusrcount(4,aimgbl) h .001
+	do sigusrcount(5,aimgbl) h .001
+	do sigusrcount(6,aimgbl)
+	;
+	; Assert that the signal is USR2
+	do assert(^tsigusr="SIGUSR2")
+	;
+	; Assert that the zgoto in the interrupt handler actually executed
+	do assert($data(^tsigusr("finish")))
+	;
+	; Check that the count is identical
+	do assert(^tsigusr(5,"count","A")=^tsigusr(6,"count","A"))
+	do assert(^tsigusr(5,"count","B")=^tsigusr(6,"count","B"))
+	;
+	; Reset environment
+	view "unsetenv":"ydb_zinterrupt"
+	view "unsetenv":"ydb_treat_sigusr2_like_sigusr1"
+	quit
+	;
+jobsigusr ; [job for tsigusr1 and tsigusr2]
+	if $$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1)
+	quit
+	;
+sigusrint ; [interrupt for tsigusr1 and tsigusr2]
+	set ^tsigusr=$ZYINTRSIG
+	if $ZYINTRSIG="SIGUSR1",$zlength($zjobexam("tsigusr1.jobexam")) quit
+	if $ZYINTRSIG="SIGUSR2",$zlength($zjobexam("tsigusr2.jobexam")) goto sigusrjobcancel
+	quit
+	;
+sigusrjobcancel ;
+	zgoto 1:sigusr2finish
+	;;;
+sigusrcount(n,aimgbl) ;
+	do sigusrcountA(n,aimgbl)
+	do sigusrcountB(n,aimgbl)
+	quit
+	;
+sigusrcountA(n,aimgbl) ;
+	new count,i set count=0,i=""
+	for  set i=$order(@aimgbl@(1,"A",i)) quit:'i  if $increment(count)
+	set ^tsigusr(n,"count","A")=count
+	quit
+	;
+sigusrcountB(n,aimgbl) ;
+	new count,i set count=0,i=""
+	for  set i=$order(@aimgbl@(1,"B",i)) quit:'i  if $increment(count)
+	set ^tsigusr(n,"count","B")=count
+	quit
+	;
+sigusr2finish ;
+	set ^tsigusr("finish")=$ZUT
+	quit
+	;
+tintrestore ; @TEST Test that the AIM restores the original interrupt
+	kill ^tintrestore
+	view "setenv":"ydb_zinterrupt":"do intintrestore^"_$text(+0)
+	job jobintrestore
+	new myJob set myJob=$zjob
+	for  quit:$data(^tintrestore("after"))  hang 0.001
+	do assert(^tintrestore("before")=^tintrestore("after"))
+	quit
+	;
+jobintrestore ; [job target for tintrestore]
+	set ^tintrestore("before")=$zinterrupt
+	if $$XREFDATA^%YDBAIM("^customers",1,"§",3)
+	set ^tintrestore("after")=$zinterrupt
+	quit
+intintrestore ; [no op interrupt; not a typo]
 	quit

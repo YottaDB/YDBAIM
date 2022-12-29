@@ -1,6 +1,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;								;
-; Copyright (c) 2021-2022 YottaDB LLC and/or its subsidiaries.	;
+; Copyright (c) 2021-2023 YottaDB LLC and/or its subsidiaries.	;
 ; All rights reserved.						;
 ;								;
 ;	This source code contains the intellectual property	;
@@ -480,7 +480,8 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	new lastsub,lastsubind,lastvarsub,locxsub,modflag,name,nameind,newpnum
 	new newpstr,pieces,nsubs,nullsub,omitflag,oldpstr,stacklvl1,sub,subary
 	new suffix,tlevel,tmp,trigdel,trigdelx,type1last,trigprefix
-	new trigset,trigsub,ttprfx,valcntind,xrefind,xrefindtype1,z,zintrptsav,zlsep,ztout
+	new trigset,trigsub,ttprfx,valcntind,xrefind,xrefindtype1,z,zintrptsav
+	new zlsep,ztout,zyintrsig
 	set stacklvl1=$stack	; required by premature termination
 	set tlevel=$tlevel	; required by error trap to rollback/unwind
 	set zintrptsav=$zinterrupt
@@ -669,7 +670,10 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type)
 	; label to which premature termination of xrefdatajobs() does ZGOTO
 XREFDATAQUIT
 	; Release locks that block UNXREFDATA()
-	lock -(^%ydbAIMD($job),^%ydbAIMD(gbl,$job),@name@($job))
+	lock:$data(name) -@name@($job)
+	lock:$data(gbl) -^%ydbAIMD(gbl,$job)
+	lock -^%ydbAIMD($job)
+	set $zinterrupt=zintrptsav
 	quit:$quit name quit
 
 ; The functions below are intended only to be called internally. Therefore,
@@ -864,6 +868,13 @@ unxrefdata:(xrefgbl)
 xrefdata(nsubsxref,dir,ppid)
 	new flag,i,j,k,nodelen1,nodeval,nranges,piece1,piece2,pieceval,quitflag
 	new rangebegin,rangeend,rangefirst,rangeflag,rangelast,sublvl,thisrange,tmp2,tmp2
+	; As noted in xrefdatajobs() there is a small window during which if an
+	; interrupt is received before the pid of the child process is captured
+	; the child process pid may not be captured, resulting in an interrupt
+	; not terminating a child process. By having the child process record
+	; its pid, the window is made even smaller, although it cannot be
+	; eliminated entirely.
+	set $zpiece(^%ydbAIMtmp($text(+0),ppid,0),",",$select(1=dir:1,1:2))=$job
 	; If nsubsxref>1 it means call the function recursively for the next
 	; subscript level.
 	set flag=nullsub
@@ -1017,7 +1028,14 @@ xrefdatajobs(nsubs)
 	set stacklvl2=$stack	; required by premature termination
 	set tick=0
 	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear any prior subprocess metadata
-	set $zinterrupt="zgoto stacklvl2:xrefdatajobsterm"
+	; Set interrupt handler to terminate JOB'd processes and %YDBAIM
+	set $zinterrupt="set zyintrsig=$zyintrsig zgoto:""SIGUSR2""=$zyintrsig stacklvl2:xrefdatajobsterm xecute zintrptsav"
+	; Job the two processes and record their pids so that they can be
+	; subsequently identified, e.g., to terminate them. Since JOB'd
+	; processes sever all ties with the parent process, if a terminating
+	; interrupt is received after a JOB command executes, but before the
+	; pid is captured from $ZJOB, there is potentially a JOB'd process
+	; that is not reflected in ^%ydbAIMtmp($text(+0),$job,0).
 	for i=1,-1 do
 	. set err(i)=prefix_i_".err"
 	. set out(i)=prefix_i_".out"
@@ -1025,7 +1043,6 @@ xrefdatajobs(nsubs)
 	. job @cmd
 	. if $zjob set xrefproc(i)=$zjob set $zpiece(^%ydbAIMtmp($text(+0),$job,0),",",$select(1=i:1,1:2))=$zjob
 	. else  set $ecode=",U234,"
-	; check for completion and exit if done
 	; - check whether processes have crossed, if processes have crossed, terminate one process
 	; - if one process has terminated, because it was terminated or completed the scan, terminate the other process
 	for  do  quit:'$data(xrefproc)  hang .01
@@ -1079,7 +1096,9 @@ xrefdatajobsckdone:()
 	new chk,flag,i
 	set (chk,flag)=0
 	for i=1:1:nsubs do:'constlist(i)  quit:flag
-	. if $data(^%ydbAIMtmp($text(+0),$job,i)),$data(^(-i)),$increment(chk) set:^(-i)]]^(i) flag=1
+	. tstart (chk,flag,i):transactionid="batch"
+	. if $data(^%ydbAIMtmp($text(+0),$job,i)),$data(^(-i)),$increment(chk) set:^(i)']]^(-i) flag=1
+	. tcommit
 	quit $select(flag!'chk:0,1:1)
 
 ; Kill child processes and handle an interrrupt
@@ -1087,9 +1106,22 @@ xrefdatajobsckdone:()
 xrefdatajobsterm
 	new i,proc
 	for i=1:1:2 set proc=+$zpiece(^%ydbAIMtmp($text(+0),$job,0),",",i) if proc,$zsigproc(proc,"TERM")
+	; As noted in xrefdatajobs, there is the potential for a child process
+	; to exist whose pid is not captured in ^%ydbAIMtmp($text(+0),$job,0).
+	; As this pid will be captured in $zjob, terminate that process if it
+	; exists. This has the infinitesimally small probability that if the
+	; pid is reused by a different process after the $zsigproc() above,
+	; and that different process has the same uid, then that different
+	; process will be inadvertently terminated.
+	if $zjob,$zsigproc($zjob,"TERM")
+	do XREFDATAQUIT			; release M locks
+	; Restore the original interrupt handler, and re-throw the interrupt,
+	; an asynchronous operation.
 	set $zinterrupt=zintrptsav
-	xecute $zinterrupt		; execute original interrupt handler
-	zgoto stacklvl1:XREFDATAQUIT	; terminate, if previous line does not
+	if $zsigproc($job,$select("SIGUSR2"=zyintrsig:"USR2",1:"USR1"))
+	hang 1E46		; wait for interrupt
+	set $ecode=",U232,"	; error - caller's $ZINTERRUPT returned control
+	zhalt 1			; should never get here
 
 ; Set additional triggers as needed. Triggers are set for nodes that are above
 ; the nodes for which XREFDATA() is being called, since XREFDATA() will set
@@ -1355,6 +1387,7 @@ tt1pZKp2; set inccnt=0
 	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
 ;	Error message texts
+U232	;"-F-BADZINTERRUPT Caller's $ZINTERRUPT handler returned control to %YDBAIM"
 U233	;"-F-JOBERR Error(s) reported by JOB'd process in "_err(i)
 U234	;"-F-JOBFAIL Failed to JOB process for xrefdata("_nsubs_","_i_")"
 U235	;"-F-NULL1 Null subscripts are not permitted for type=1 global variables"
