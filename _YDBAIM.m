@@ -1024,7 +1024,7 @@ xrefdatajobs(nsubs)
 	set io=$io
 	set msgprefix=$ztrnlnm("ydb_msgprefix")
 	set:'$zlength(msgprefix) msgprefix="YDB"
-	set prefix="/tmp/xrefdata^"_$text(+0)_"_"_$job_"_"
+	set prefix="/tmp/xrefdata^"_$text(+0)_"_"_$job_"_"_($zut\1E6)_"_"
 	set stacklvl2=$stack	; required by premature termination
 	set tick=0
 	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear any prior subprocess metadata
