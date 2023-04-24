@@ -2272,6 +2272,19 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	do sigusrcount(4,aimgbl) h .001
 	do sigusrcount(5,aimgbl) h .001
 	do sigusrcount(6,aimgbl)
+	;
+	; Assert that the signal is USR1
+	do assert(^tsigusr="SIGUSR1")
+	;
+	; Wait for AIM job to die (this takes a while as we are still indexing)
+	for  quit:'$zgetjpi(jobpid,"ISPROCALIVE")  hang 0.01
+	;
+	; Reset envionment
+	view "unsetenv":"ydb_zinterrupt"
+	;
+	; Final count
+	do sigusrcount(7,aimgbl)
+	;
 	; ^tsigusr(1,"count","A")=388
 	; ^tsigusr(1,"count","B")=410
 	; ^tsigusr(2,"count","A")=545
@@ -2284,17 +2297,21 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	; ^tsigusr(5,"count","B")=1047
 	; ^tsigusr(6,"count","A")=1192
 	; ^tsigusr(6,"count","B")=1225
+	; ...
+	; ^tsigusr(7,"count","A")=497000
+	; ^tsigusr(7,"count","B")=497001
 	;
-	; Assert that the signal is USR1
-	do assert(^tsigusr="SIGUSR1")
+	; Final count should be the full count
+	do assert(^tsigusr(7,"count","A")=497000)
+	do assert(^tsigusr(7,"count","B")=497001)
 	;
-	; Check that all the counts kept going up
-	new i for i=0:0 set i=$order(^tsigusr(i)) quit:'i  quit:'$data(^tsigusr(i+1))  do
-	. do assert(^tsigusr(i,"count","A")<^tsigusr(i+1,"count","A"))
-	. do assert(^tsigusr(i,"count","B")<^tsigusr(i+1,"count","B"))
+	; Previous count should not be zero.
+	do assert(^tsigusr(6,"count","A"))
+	do assert(^tsigusr(6,"count","B"))
 	;
-	; Reset envionment
-	view "unsetenv":"ydb_zinterrupt"
+	; The previous count should be much less. Assert that.
+	do assert(^tsigusr(6,"count","A")<^tsigusr(7,"count","A"))
+	do assert(^tsigusr(6,"count","B")<^tsigusr(7,"count","B"))
 	quit
 	;
 tsigusr2 ; @TEST Interrupt using SIGUSR2
@@ -2348,6 +2365,9 @@ tsigusr2 ; @TEST Interrupt using SIGUSR2
 	; Reset environment
 	view "unsetenv":"ydb_zinterrupt"
 	view "unsetenv":"ydb_treat_sigusr2_like_sigusr1"
+	;
+	; Wait for AIM job to die (this is fast as indexing is done)
+	for  quit:'$zgetjpi(jobpid,"ISPROCALIVE")  hang 0.001
 	quit
 	;
 jobsigusr ; [job for tsigusr1 and tsigusr2]
