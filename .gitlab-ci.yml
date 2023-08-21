@@ -17,7 +17,7 @@ services:
   - docker:dind
 
 commit-verify:
-  image: ubuntu:20.04
+  image: ubuntu:22.04
   stage: build
   before_script:
     - apt-get update -qq && apt-get install -y -qq git wget gnupg
