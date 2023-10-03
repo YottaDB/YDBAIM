@@ -979,7 +979,7 @@ xrefdata(nsubsxref,dir,ppid)
 	. else  set rangefirst=nranges,rangelast=1
 	. for i=rangefirst:dir:rangelast do
 	. . if "*"=locxsub(sublvl) do
-	. . . set (rangebegin,rangeend,subary(sublvl))="",flag=nullsub,rangeflag=0
+	. . . set (piece2,rangebegin,rangeend,subary(sublvl))="",flag=nullsub,rangeflag=0
 	. . else  do
 	. . . if zpiece do
 	. . . . set thisrange=$zpiece(locxsub(sublvl),";",i)
@@ -993,7 +993,7 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1),rangeflag=1
 	. . . else  set rangeend="",flag=1
 	. . . set subary(sublvl)=$select(1=dir:rangebegin,1:rangeend)
-	. . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl),dir) quit:'$zlength(tmp2)!(rangeflag&$select(1=dir:tmp2]]rangeend,1:rangebegin]]tmp2))
+	. . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl),dir) quit:'$zlength(tmp2)!(rangeflag&$select(1=dir:$select($zlength(piece2):tmp2]]rangeend,1:0),1:rangebegin]]tmp2))
 	. . . tstart ():transactionid="batch"
 	. . . do:$data(@gblind(sublvl))#10
 	. . . . set nodeval=@gblind(sublvl)

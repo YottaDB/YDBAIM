@@ -111,6 +111,19 @@ aimdxref:(array) ; [private] count globals in ^%ydbAIMDxref
 	for  set %=$order(^%ydbAIMDxref(%)) quit:%=""  set:$increment(array) array(%)=""
 	quit
 	;
+aim72	; @TEST Regression test for YDBAIM#72
+	new i,j,s,x
+	do assert('$data(^x))
+	set s(1)="2:"
+	for i=1:1:5 set ^x(i)="abcd|efgh"
+	set x=$$XREFDATA^%YDBAIM("^x",.s,"|",1)
+	set j="#"
+	for i=1:1:5 set j=j_$data(@x@(1,"abcd",i))
+	do assert("#01111"=j)
+	set x=$$UNXREFDATA^%YDBAIM("^x",.s,"|",1)
+	kill ^x
+	quit
+	;
 tinv1	; @TEST Invalid Input: Global without ^
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
