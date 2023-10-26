@@ -15,7 +15,7 @@ $ZSTATUS="150379506,XREFDATA+13^%YDBAIM,%YDBAIM-F-NOTAGBL Variable """" is not a
 ---------------
 
 NOSUBS write $$XREFDATA^%YDBAIM("^abcd")
-Error occurred: 150379506,XREFDATA+32^%YDBAIM,%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference default type, 2 for type=1; nsubs=0
+Error occurred: 150379506,XREFDATA+43^%YDBAIM,%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference default type, 2 for type=1; nsubs=0
 242
 ---------------
 
@@ -25,13 +25,13 @@ Error occurred: 150379506,XREFDATA+13^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "" is n
 ---------------
 
 NOPIECE write $$XREFDATA^%YDBAIM("^abcd",1,"|")
-Error occurred: 150379506,XREFDATA+106^%YDBAIM,%YDBAIM-F-NOPIECE Piece separator "|" specified, but no piece numbers
+Error occurred: 150379506,XREFDATA+117^%YDBAIM,%YDBAIM-F-NOPIECE Piece separator "|" specified, but no piece numbers
 242
 ---------------
 
 CANTADDSTAT write $$XREFDATA^%YDBAIM("^abcd",1,"|",1),!,$$XREFDATA^%YDBAIM("^abcd",1,"|",1,,,,2)
 ^%ydbAIMDGB3Ey8B4z3CDDZOF7U4Y52
-Error occurred: 150379506,XREFDATA+112^%YDBAIM,%YDBAIM-F-CANTADDSTAT stat=2 and ^%ydbAIMDGB3Ey8B4z3CDDZOF7U4Y52(10)=0 - adding statistics to existing metadata not supported
+Error occurred: 150379506,XREFDATA+123^%YDBAIM,%YDBAIM-F-CANTADDSTAT stat=2 and ^%ydbAIMDGB3Ey8B4z3CDDZOF7U4Y52(10)=0 - adding statistics to existing metadata not supported
 242
 ---------------
 
@@ -46,12 +46,12 @@ Error occurred: 150379506,XREFDATAQUIT+41^%YDBAIM,%YDBAIM-F-INVPIECE Range "1:2:
 ---------------
 
 INVPNUMSEP kill ^x set ^x(1)="a1|b1",^x(2)="a2|",^x(3)="|b3",subs(1)="*" write $$XREFDATA^%YDBAIM("^x",.subs,"|","1:2:3")
-Error occurred: 150379506,XREFDATAQUIT+140^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
+Error occurred: 150379506,XREFDATAQUIT+151^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
 242
 ---------------
 
 NOTAGBL2 write $$UNXREFDATA^%YDBAIM("xy123456789012345678901234567890",1)
-Error occurred: 150379506,UNXREFDATA+19^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "xy123456789012345678901234567890" is not a valid global variable name
+Error occurred: 150379506,UNXREFDATA+20^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
@@ -66,12 +66,12 @@ Error occurred: 150379506,XREFDATA+17^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123
 ---------------
 
 NOTAGBL5 write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",0)
-Error occurred: 150379506,UNXREFDATA+19^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+Error occurred: 150379506,UNXREFDATA+20^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
 NOTAGBL6 write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)
-Error occurred: 150379506,UNXREFDATA+19^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+Error occurred: 150379506,UNXREFDATA+20^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
