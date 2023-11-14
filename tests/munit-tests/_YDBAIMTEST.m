@@ -134,7 +134,8 @@ aim73	; @TEST Test for YDBAIM#73
 	set nodes=$$aim73genblk(nsubs,10000,1,1000)	; Generate simulated application global; values are entire nodes
 	set testval=$select($random(2):-1-$random(1000),1:1000+$random(1000))	; Application global value not generated above
 	set tvxref="#"_testval				; Xref for testval forced to be a string
-	set varpat=$$aim73genpat(nsubs)			; Indirect variable pattern for simulated application global
+	; Indirect variable pattern for simulated application global guaranteed to not already exist
+	set varpat=$ztranslate($$aim73genpat(nsubs),3,4)
 	;   - No statistics
 	;     - Initial scan; large number of nodes to hopefully force 2 processes
 	set x=$$XREFDATA^%YDBAIM("^x",nsubs,,,,,,,,1)
@@ -152,6 +153,7 @@ aim73	; @TEST Test for YDBAIM#73
 	set i=0,y="" for  set y=$order(@x@("",y)) quit:'$zlength(y)  if $increment(i,@x@("",y))
 	do assert(nodes=i)    ; Confirm that all nodes are counted
 	;     - Check set trigger
+	set varpat=$ztranslate(varpat,4,5)
 	set @varpat=testval,ref=$reference do assert($data(@x@(0,tvxref))),assert(1=@x@("",tvxref))
 	;     - Check kill trigger
 	kill @ref do assert('$data(@x@(0,tvxref))),assert('$data(@x@("",tvxref)))
@@ -165,6 +167,7 @@ aim73	; @TEST Test for YDBAIM#73
 	;       Confirm all nodes counted, total count, count of distinct values
 	do assert(nodes=i),assert(nodes=@x@(11)),assert(j=@x@(""))
 	;     - Check set trigger: additional xref, increase in total statistics, increase in number of distinct values
+	set varpat=$ztranslate(varpat,5,6)
 	set @varpat=testval,ref=$reference
 	do assert(10=$data(@x@(0,tvxref))),assert(1=@x@("",tvxref)),assert(nodes+1=@x@(11)),assert(j+1=@x@(""))
 	;     - Check kill trigger: no xref, decrease in total statistics, decrease in number of distinct values 
@@ -179,7 +182,7 @@ aim73	; @TEST Test for YDBAIM#73
 	set nsubs=1+$random(3)
 	set nodes=$$aim73genblk(nsubs,10000,npieces,1000)
 	set pnum=1+$random(npieces)		; Choose a piece number to test
-	set varpat=$$aim73genpat(nsubs)
+	set varpat=$ztranslate($$aim73genpat(nsubs),3,4)
 	;   - No statistics
 	;     - Initial scan
 	set x=$$XREFDATA^%YDBAIM("^x",nsubs,"|",pnum,,,,,,1)
@@ -197,6 +200,7 @@ aim73	; @TEST Test for YDBAIM#73
 	set i=0,y="" for  set y=$order(@x@(-pnum,y)) quit:'$zlength(y)  if $increment(i,@x@(-pnum,y))
 	do assert(nodes=i)    ; Confirm that all nodes are counted
 	;     - Check set trigger
+	set varpat=$ztranslate(varpat,4,5)
 	set $zpiece(@varpat,"|",pnum)=testval,ref=$reference
 	do assert(10=$data(@x@(pnum,tvxref))),assert(1=@x@(-pnum,tvxref))
 	;     - Check kill trigger
@@ -210,6 +214,7 @@ aim73	; @TEST Test for YDBAIM#73
 	set i=0,y="" for  set y=$order(@x@(-pnum,y)) quit:'$zlength(y)  if $increment(i,@x@(-pnum,y))
 	do assert(nodes=i),assert(nodes=@x@(11)),assert(j=@x@(-pnum))
 	;     - Check set trigger
+	set varpat=$ztranslate(varpat,5,6)
 	set $zpiece(@varpat,"|",pnum)=testval,ref=$reference
 	do assert(10=$data(@x@(pnum,tvxref))),assert(1=@x@(-pnum,tvxref)),assert(nodes+1=@x@(11)),assert(j+1=@x@(-pnum))
 	;     - Check kill trigger
