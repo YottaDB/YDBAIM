@@ -9,7 +9,7 @@ YottaDB must be installed first.
 
 YDBAIM requires YottaDB r1.32 or higher.
 
-To install, you need `cmake`, `make`, `cc`, and `ld` commands. After
+To install, you need `cmake`, `make`, and `ld.gold` commands. After
 downloading this repository, you can install as follows:
 
 ```
