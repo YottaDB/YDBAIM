@@ -1,6 +1,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;								;
-; Copyright (c) 2021-2023 YottaDB LLC and/or its subsidiaries.	;
+; Copyright (c) 2021-2024 YottaDB LLC and/or its subsidiaries.	;
 ; All rights reserved.						;
 ;								;
 ;	This source code contains the intellectual property	;
@@ -763,19 +763,19 @@ exptempl:(lab)
 	set str=line
 	for i=1:1 set tmp=$text(@lab+i) quit:" "=tmp  set len=$zlength(tmp,";"),line=$zpiece(tmp,";",2,len),str=str_$char(10)_line
 	set multiline=i-1
-	set outstr=str	; handle case where there are no substitutions
+	; Set template options to force string collation if specified
+	set npieces=$zlength(str,"/")-1
+	set:npieces#3 $ecode=",U231,"
+	do:npieces
+	. for i=npieces:-3:2 set $zpiece(str,"/",$select(force:i,1:i-1))=""
+	. set str=$ztranslate(str,"/")	; Remove / option separators
 	set vars=$zpiece($text(exptempl+-1),": ",2)
+	set outstr=str	; handle case where there are no substitutions
 	for i=1:1:$zlength(vars,",") set tmp=$zpiece(vars,",",i),var=$zpiece(tmp,"$",1),zflag=$zlength(tmp,"$")-1 do:$data(@var)
 	. set rep="@"_var,len=$zlength(str,rep),outstr=$zpiece(str,rep,1)
 	. for j=2:1:len do
 	. . set outstr=outstr_$select(zflag:$zwrite(@var),1:@var)_$zpiece(str,rep,j)
 	. set str=outstr
-	; Substitutions to handle forcing string collation
-	set npieces=$zlength(outstr,"/")-1
-	set:npieces#3 $ecode=",U231,"
-	do:npieces
-	. for i=npieces:-3:2 set $zpiece(outstr,"/",$select(force:i,1:i-1))=""
-	. set outstr=$ztranslate(outstr,"/")	; Remove / option separators
 	quit $select(multiline:"<<"_$char(10)_outstr_$c(10),1:$zwrite(outstr))
 
 ; Output metadata for a specific xref variable.

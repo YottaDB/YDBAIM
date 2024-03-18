@@ -1,6 +1,6 @@
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;								;
-	; Copyright (c) 2021-2023 YottaDB LLC and/or its subsidiaries.	;
+	; Copyright (c) 2021-2024 YottaDB LLC and/or its subsidiaries.	;
 	; All rights reserved.						;
 	;								;
 	;	This source code contains the intellectual property	;
@@ -258,6 +258,16 @@ aim73genpat(nsub,c)			; [private] generate a ^x random reference with number of 
 	set $zextract(varpat,$zlength(varpat))=")"
 	quit varpat
 	;
+aim74	; @TEST for YDBAIM#74
+	new ret,subs
+	kill ^x
+	for subs(2)="""/""","""ab/""","""/cd""","""ab/cd""" do
+	. set ^x(1,$zwrite(subs(2),1))="abcd",ret=$$XREFDATA^%YDBAIM("^x",.subs,"|",1,0,0,1,2,1,1)
+	. do assert(1=@ret@(-1,"#abcd"))
+	. do UNXREFDATA^%YDBAIM("^x",.subs,"|",1,0,0,1,2,1,1)
+	. do assert('$data(@ret))
+	kill ^x
+	quit
 tinv1	; @TEST Invalid Input: Global without ^
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
