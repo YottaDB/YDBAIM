@@ -51,9 +51,6 @@ source `pkg-config --variable=prefix yottadb`/ydb_env_set
 mupip set -journal=disable -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
 mupip set -access_method=mm -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
 
-# Extend the database for octo1083 test
-mupip extend -blocks=3000000 DEFAULT
-
 echo "# Info: [ydb_dir = $ydb_dir]"
 echo "# Info: [ydb_gbldir = $ydb_gbldir]"
 echo "# Info: [ydb_routines = $ydb_routines]"
@@ -146,6 +143,9 @@ $ydb_dist/yottadb -r %YDBAIMTEST | tee -a test_output.txt
 # This test runs only on the pipeline because it's outside of the main test suite
 # that is used for development; so having it run during development is not ideal
 if [ ! -z ${CI_PIPELINE_ID} ]; then
+	# Extend the database for octo1083 test
+	mupip extend -blocks=3000000 DEFAULT
+
 	unset ydb_repl_instance gtm_repl_instance
 	$ydb_dist/mupip rundown -r '*'
 	# rm AIM database files as we need to adjust values down (if we adjust them up, we can use mupip set)

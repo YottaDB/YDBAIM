@@ -8,70 +8,151 @@ $ZSTATUS="150379506,%YDBAIM+3^%YDBAIM,%YDBAIM-F-BADINVOCATION Top level invocati
 # Testing UNXREFDATA^%YDBAIM with tp=0
 # Testing UNXREFDATA^%YDBAIM with tp=1
 # Testing XREFDATA^%YDBAIM with tp=0
-$ZSTATUS="150379506,XREFDATA+13^%YDBAIM,%YDBAIM-F-NOTAGBL Variable """" is not a valid global variable name"
+$ZSTATUS="150379506,XREFSUBQUIT+122^%YDBAIM,%YDBAIM-F-NOTAGBL Variable """" is not a valid global variable name"
 # Testing XREFDATA^%YDBAIM with tp=1
-$ZSTATUS="150379506,XREFDATA+13^%YDBAIM,%YDBAIM-F-NOTAGBL Variable """" is not a valid global variable name"
+$ZSTATUS="150379506,XREFSUBQUIT+122^%YDBAIM,%YDBAIM-F-NOTAGBL Variable """" is not a valid global variable name"
 0
 ---------------
 
-NOSUBS write $$XREFDATA^%YDBAIM("^abcd")
-Error occurred: 150379506,XREFDATA+50^%YDBAIM,%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference default type, 2 for type=1; nsubs=0
+ALLCONST set s(1)=2,s(2)="abc" set x=$$XREFSUB^%YDBAIM("^x",.s,1)
+Error occurred: 150379506,XREFSUB+12^%YDBAIM,%YDBAIM-F-ALLCONST Cross referencing a subscript requires at least one non-constant subscript; No of subscripts=2
+242
+---------------
+
+BADTRANSFORM1 set x=$$XREFSUB^%YDBAIM("^x",2,1,,,,2,"$$abc^def(a)")
+Error occurred: 150379506,XREFSUBQUIT+144^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type>1, force="$$abc^def(a)" is not a valid function entryref
+242
+---------------
+
+BADTRANSFORM2 set x=$$XREFSUB^%YDBAIM("^x",2,1,,,,2)
+Error occurred: 150379506,XREFSUBQUIT+144^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type>1, force="" is not a valid function entryref
+242
+---------------
+
+NOSUBS1 write $$XREFDATA^%YDBAIM("^abcd")
+Error occurred: 150379506,XREFSUBQUIT+161^%YDBAIM,%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference default type, 2 for type=1; nsubs=0
+242
+---------------
+
+NOSUBS2 write $$XREFSUB^%YDBAIM("^abcd")
+Error occurred: 150379506,XREFSUBQUIT+161^%YDBAIM,%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference default type, 2 for type=1; nsubs=0
 242
 ---------------
 
 NOTAGBL1 write $$XREFDATA^%YDBAIM
-Error occurred: 150379506,XREFDATA+13^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "" is not a valid global variable name
+Error occurred: 150379506,XREFSUBQUIT+122^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "" is not a valid global variable name
+242
+---------------
+
+NOTAGBL2 write $$XREFSUB^%YDBAIM
+Error occurred: 150379506,XREFSUBQUIT+122^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "" is not a valid global variable name
 242
 ---------------
 
 NOPIECE write $$XREFDATA^%YDBAIM("^abcd",1,"|")
-Error occurred: 150379506,XREFDATA+124^%YDBAIM,%YDBAIM-F-NOPIECE Piece separator "|" specified, but no piece numbers
+Error occurred: 150379506,XREFDATA+81^%YDBAIM,%YDBAIM-F-NOPIECE Piece separator "|" specified, but no piece numbers
 242
 ---------------
 
-CANTADDSTAT write $$XREFDATA^%YDBAIM("^abcd",1,"|",1),!,$$XREFDATA^%YDBAIM("^abcd",1,"|",1,,,,2)
+CANTADDSTAT1 write $$XREFDATA^%YDBAIM("^abcd",1,"|",1),!,$$XREFDATA^%YDBAIM("^abcd",1,"|",1,,,,2)
 ^%ydbAIMDGB3Ey8B4z3CDDZOF7U4Y52
-Error occurred: 150379506,XREFDATA+130^%YDBAIM,%YDBAIM-F-CANTADDSTAT stat=2 and ^%ydbAIMDGB3Ey8B4z3CDDZOF7U4Y52(10)=0 - adding statistics to existing metadata not supported
+Error occurred: 150379506,XREFDATA+87^%YDBAIM,%YDBAIM-F-CANTADDSTAT stat=2 and ^%ydbAIMDGB3Ey8B4z3CDDZOF7U4Y52(10)=0 - adding statistics to existing metadata not supported
 242
 ---------------
 
-NOEXTREF write $$XREFDATA^%YDBAIM("^|""x.gld""|x")
-Error occurred: 150379506,XREFDATA+15^%YDBAIM,%YDBAIM-F-NOEXTREF Extended reference in ^|"x.gld"|x is not supported
+CANTADDSTAT2 write $$XREFSUB^%YDBAIM("^abcd",1,1,,,1),!,$$XREFSUB^%YDBAIM("^abcd",1,1,,,2)
+^%ydbAIMShgloryOxsbMC1gRofzhZIC
+Error occurred: 150379506,XREFSUB+61^%YDBAIM,%YDBAIM-F-CANTADDSTAT stat=2 and ^%ydbAIMShgloryOxsbMC1gRofzhZIC(10)=1 - adding statistics to existing metadata not supported
+242
+---------------
+
+NOEXTREF1 write $$XREFDATA^%YDBAIM("^|""x.gld""|x")
+Error occurred: 150379506,XREFSUBQUIT+124^%YDBAIM,%YDBAIM-F-NOEXTREF Extended reference in ^|"x.gld"|x is not supported
+242
+---------------
+
+NOEXTREF2 write $$XREFSUB^%YDBAIM("^|""x.gld""|x")
+Error occurred: 150379506,XREFSUBQUIT+124^%YDBAIM,%YDBAIM-F-NOEXTREF Extended reference in ^|"x.gld"|x is not supported
 242
 ---------------
 
 INVPIECE set subs(1)="1:2:3" write $$XREFDATA^%YDBAIM("^x",.subs)
-Error occurred: 150379506,XREFDATAQUIT+41^%YDBAIM,%YDBAIM-F-INVPIECE Range "1:2:3" has invalid number of pieces: 3
+Error occurred: 150379506,XREFSUBQUIT+41^%YDBAIM,%YDBAIM-F-INVPIECE Range "1:2:3" has invalid number of pieces: 3
 242
 ---------------
 
 INVPNUMSEP kill ^x set ^x(1)="a1|b1",^x(2)="a2|",^x(3)="|b3",subs(1)="*" write $$XREFDATA^%YDBAIM("^x",.subs,"|","1:2:3")
-Error occurred: 150379506,XREFDATAQUIT+155^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
+Error occurred: 150379506,XREFSUBQUIT+265^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
 242
 ---------------
 
-NOTAGBL2 write $$UNXREFDATA^%YDBAIM("xy123456789012345678901234567890",1)
+INVSNUM1 set x=$$XREFSUB^%YDBAIM("^x",2,0)
+Error occurred: 150379506,XREFSUB+44^%YDBAIM,%YDBAIM-F-INVSNUM snum=0 includes subscript numbers that cannot be cross referenced
+242
+---------------
+
+INVSNUM2 set x=$$XREFSUB^%YDBAIM("^x",2,30)
+Error occurred: 150379506,XREFSUB+44^%YDBAIM,%YDBAIM-F-INVSNUM snum=30 includes subscript numbers that cannot be cross referenced
+242
+---------------
+
+INVSNUM3 set x=$$XREFSUB^%YDBAIM("^x",2,"A")
+Error occurred: 150379506,XREFSUB+44^%YDBAIM,%YDBAIM-F-INVSNUM snum=A includes subscript numbers that cannot be cross referenced
+242
+---------------
+
+INVSNUM4 set x=$$XREFSUB^%YDBAIM("^x",3,4)
+Error occurred: 150379506,XREFSUB+44^%YDBAIM,%YDBAIM-F-INVSNUM snum=4 includes subscript numbers that cannot be cross referenced
+242
+---------------
+
+NOTAGBL2a write $$UNXREFDATA^%YDBAIM("xy123456789012345678901234567890",1)
 Error occurred: 150379506,UNXREFDATA+20^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
-NOTAGBL3 write $$XREFDATA^%YDBAIM("^xy123456789012345678901234567890",0)
-Error occurred: 150379506,XREFDATA+17^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+NOTAGBL2b write $$UNXREFSUB^%YDBAIM("xy123456789012345678901234567890",1)
+Error occurred: 150379506,UNXREFSUB+19^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
-NOTAGBL4 write $$XREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)
-Error occurred: 150379506,XREFDATA+17^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+NOTAGBL3a write $$XREFDATA^%YDBAIM("^xy123456789012345678901234567890",0)
+Error occurred: 150379506,XREFSUBQUIT+126^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
-NOTAGBL5 write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",0)
+NOTAGBL3b write $$XREFSUB^%YDBAIM("^xy123456789012345678901234567890",0)
+Error occurred: 150379506,XREFSUBQUIT+126^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+242
+---------------
+
+NOTAGBL4a write $$XREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)
+Error occurred: 150379506,XREFSUBQUIT+126^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+242
+---------------
+
+NOTAGBL4b write $$XREFSUB^%YDBAIM("^xy123456789012345678901234567890",1)
+Error occurred: 150379506,XREFSUBQUIT+126^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+242
+---------------
+
+NOTAGBL5a write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",0)
 Error occurred: 150379506,UNXREFDATA+20^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
-NOTAGBL6 write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)
+NOTAGBL5b write $$UNXREFSUB^%YDBAIM("^xy123456789012345678901234567890",0)
+Error occurred: 150379506,UNXREFSUB+19^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+242
+---------------
+
+NOTAGBL6a write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890",1)
 Error occurred: 150379506,UNXREFDATA+20^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
+242
+---------------
+
+NOTAGBL6b write $$UNXREFSUB^%YDBAIM("^xy123456789012345678901234567890",1)
+Error occurred: 150379506,UNXREFSUB+19^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy123456789012345678901234567890" is not a valid global variable name
 242
 ---------------
 
@@ -92,23 +173,38 @@ Error occurred: 150379506,%YDBAIM+3^%YDBAIM,%YDBAIM-F-BADINVOCATION Top level in
 242
 ---------------
 
-BADTRANSFORM1 do XREFDATA^%YDBAIM("^abcd",2,,,,,,,2,0)
-Error occurred: 150379506,XREFDATA+35^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type>1, force="" is not a valid function entryref
+BADTRANSFORM1a do XREFDATA^%YDBAIM("^abcd",2,,,,,,,2,0)
+Error occurred: 150379506,XREFSUBQUIT+144^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type>1, force="" is not a valid function entryref
 242
 ---------------
 
-BADTRANSFORM2 do XREFDATA^%YDBAIM("^abcd",2,,,,,,,2,1)
-Error occurred: 150379506,XREFDATA+35^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type>1, force="1" is not a valid function entryref
+BADTRANSFORM1b do XREFSUB^%YDBAIM("^abcd",2,2,,,,2,0)
+Error occurred: 150379506,XREFSUBQUIT+144^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type>1, force="" is not a valid function entryref
 242
 ---------------
 
-BADTRANSFORM3 do XREFDATA^%YDBAIM("^abcd",2,,,,,,,0,"abcd")
-Error occurred: 150379506,XREFDATA+39^%YDBAIM,%YDBAIM-F-BADTYPEFORCE Schema type= and/or force=abcd not recognized
+BADTRANSFORM2a do XREFDATA^%YDBAIM("^abcd",2,,,,,,,2,1)
+Error occurred: 150379506,XREFSUBQUIT+144^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type>1, force="1" is not a valid function entryref
+242
+---------------
+
+BADTRANSFORM2b do XREFSUB^%YDBAIM("^abcd",2,2,,,,2,1)
+Error occurred: 150379506,XREFSUBQUIT+144^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type>1, force="1" is not a valid function entryref
+242
+---------------
+
+BADTRANSFORM3a do XREFDATA^%YDBAIM("^abcd",2,,,,,,,0,"abcd")
+Error occurred: 150379506,XREFSUBQUIT+148^%YDBAIM,%YDBAIM-F-BADTYPEFORCE Schema type= and/or force=abcd not recognized
+242
+---------------
+
+BADTRANSFORM3b do XREFSUB^%YDBAIM("^abcd",2,2,,,,2,"abcd")
+Error occurred: 150379506,XREFSUBQUIT+144^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type>1, force="abcd" is not a valid function entryref
 242
 ---------------
 
 BADTRANSFORM4 do XREFDATA^%YDBAIM("^abcd",2,,,,,,,1,"abcd")
-Error occurred: 150379506,XREFDATA+39^%YDBAIM,%YDBAIM-F-BADTYPEFORCE Schema type=1 and/or force=abcd not recognized
+Error occurred: 150379506,XREFSUBQUIT+148^%YDBAIM,%YDBAIM-F-BADTYPEFORCE Schema type=1 and/or force=abcd not recognized
 242
 ---------------
 

@@ -1,4 +1,4 @@
-	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+g	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;								;
 	; Copyright (c) 2021-2025 YottaDB LLC and/or its subsidiaries.	;
 	; All rights reserved.						;
@@ -20,6 +20,7 @@
 	;do en^%ut($t(+0),3,1)
 	; end debug commands
 	;
+	view "jobpid":1
 	do en^%ut($t(+0),3)
 	quit
 	;
@@ -74,7 +75,7 @@ STARTUP	; Runs once to create test data
 	quit
 	;
 TEARDOWN ; Runs after each test
-	D UNXREFDATA^%YDBAIM
+	D UNXREFDATA^%YDBAIM,UNXREFSUB^%YDBAIM
 	QUIT
 	;
 LOADDATA(lab)	; load data after label lab
@@ -90,28 +91,32 @@ assert:(boolexpr,msg) ; [private] shortcut to tf^%ut
 	do tf^%ut(boolexpr,$get(msg))
 	quit
 	;
-trigout:(lines) ; [private] output triggers into .lines
+trigout:(lines,patt) ; [private] output triggers into .lines
 	new f set f="triggers.txt"
 	open f:newversion use f
 	view "ztrigger_output":1
-	if $ztrigger("s")
+	if $ztrigger("s",$get(patt,"*"))
 	use f:rewind
 	new i for i=1:1 read lines(i)  quit:$zeof
 	kill lines(i) ; last line is empty due to $zeof
 	close f:delete
 	quit
 	;
-aimgbls:(array) ; [private] output all AIM globals
-	new %,%1 set (%,%1)="^%ydbAIMD"
-	for  set %=$order(@%) quit:%=""  quit:%'[%1  if %'="^%ydbAIMDxref" set:$increment(array) array(%)=""
+aimgbls:(array,type) ; [private] output all AIM globals; type=1 means AIM subscript gbls
+	new %,%1,var
+	if +$get(type) set (%,%1)="^%ydbAIMS",var="^%ydbAIMSxref"
+	else  set (%,%1)="^%ydbAIMD",var="^%ydbAIMDxref"
+	for  set %=$order(@%) quit:%=""  quit:%'[%1  if %'=var set:$increment(array) array(%)=""
 	quit
 	;
-aimdxref:(array) ; [private] count globals in ^%ydbAIMDxref
-	new % set %=""
-	for  set %=$order(^%ydbAIMDxref(%)) quit:%=""  set:$increment(array) array(%)=""
+aimxref:(array,type) ; [private] count globals in ^%ydbAIMDxref; type=1 means ^%ydbAIMSxref
+	new %,var set %="",var=$select(+$get(type):"^%ydbAIMSxref",1:"^%ydbAIMDxref")
+	for  set %=$order(@var@(%)) quit:%=""  set:$increment(array) array(%)=""
 	quit
 	;
-aim72	; @TEST Regression test for YDBAIM#72
+aim72	; @TEST YDBAIM#72 - cross referencing continues after first value of lowest level subscript...
+	; Test that cross referencing continues after first value of lowest level subscript if xsub
+	; has range syntax with empty range-end
 	new i,j,s,x
 	do assert('$data(^x))
 	set s(1)="2:"
@@ -120,13 +125,15 @@ aim72	; @TEST Regression test for YDBAIM#72
 	set j="#"
 	for i=1:1:5 set j=j_$data(@x@(1,"abcd",i))
 	do assert("#01111"=j)
-	set x=$$UNXREFDATA^%YDBAIM("^x",.s,"|",1)
+	; Test XREFSUB()
+	set x=$$XREFSUB^%YDBAIM("^x",.s,1)
+	do assert(@x@(3)=$zbitstr(1,1))
 	kill ^x
 	quit
 	;
-aim73	; @TEST Test for YDBAIM#73
-	; This is a glass box test for the change to prefix cross references with "#" for force=1
-	new i,j,nodes,npieces,nsubs,pnum,ref,testval,tvxref,x,y,varpat
+aim73	; @TEST YDBAIM#73 - glass box test for prefixing cross references with "#" when force=1
+	; Test XREFSUB() alongside XREFDATA()
+	new i,j,k,l,nodes,npieces,nsubs,pnum,ref,testval,sub,tvxref,varpat,x,xs,xsr,y,ys,z,zs
 	do assert('$data(^x))
 	; Default type (0)
 	; - Entire node - start by simulating application global data
@@ -134,50 +141,65 @@ aim73	; @TEST Test for YDBAIM#73
 	set nodes=$$aim73genblk(nsubs,10000,1,1000)	; Generate simulated application global; values are entire nodes
 	set testval=$select($random(2):-1-$random(1000),1:1000+$random(1000))	; Application global value not generated above
 	set tvxref="#"_testval				; Xref for testval forced to be a string
+	set xsr=1+$random(nsubs)			; Random subscript to xref
 	; Indirect variable pattern for simulated application global guaranteed to not already exist
 	set varpat=$ztranslate($$aim73genpat(nsubs),3,4)
 	;   - No statistics
 	;     - Initial scan; large number of nodes to hopefully force 2 processes
-	set x=$$XREFDATA^%YDBAIM("^x",nsubs,,,,,,,,1)
+	set x=$$XREFDATA^%YDBAIM("^x",nsubs,,,,,,,,1),xs=$$XREFSUB^%YDBAIM("^x",.nsubs,xsr,,,,,1)
 	set y="" for  set y=$order(@x@(0,y)) quit:'$zlength(y)  do assert("#"=$zextract(y,1))
+	set ys="" for  set ys=$order(@xs@(xsr,ys)) quit:'$zlength(ys)  do assert("#"=$zextract(ys,1))
 	;     - Check set trigger by setting a value not previously set
-	set @varpat=testval,ref=$reference do assert(10=$data(@x@(0,tvxref)))
+	set @varpat=testval,ref=$reference,sub=$qsubscript(ref,xsr)
+	do assert(10=$data(@x@(0,tvxref))),assert($data(@xs@(xsr,"#"_sub))\10)
 	;     - Check kill trigger by killing the value just set
-	kill @ref do assert('$data(@x@(0,tvxref)))
+	kill @ref do assert('$data(@x@(0,tvxref))),assert('($data(@xs@(xsr,"#"_sub))\10))
 	;     - Check complete removal of AIM data
-	do UNXREFDATA^%YDBAIM(x),assert('$data(@x))
+	do UNXREFDATA^%YDBAIM(x),assert('$data(@x)),UNXREFSUB^%YDBAIM(xs),assert('$data(@xs))
 	;   - Statistics=1
 	;     - Initial scan
-	set x=$$XREFDATA^%YDBAIM("^x",nsubs,,,,,,1,,1)
+	set x=$$XREFDATA^%YDBAIM("^x",nsubs,,,,,,1,,1),xs=$$XREFSUB^%YDBAIM("^x",.nsubs,xsr,,,1,,1)
 	set y="" for  set y=$order(@x@(0,y)) quit:'$zlength(y)  do assert("#"=$zextract(y,1))
+	set ys="" for  set ys=$order(@xs@(xsr,ys)) quit:'$zlength(ys)  do assert("#"=$zextract(ys,1))
 	set i=0,y="" for  set y=$order(@x@("",y)) quit:'$zlength(y)  if $increment(i,@x@("",y))
-	do assert(nodes=i)    ; Confirm that all nodes are counted
+	set j=0,ys="" for  set ys=$order(@xs@(xsr,ys)) quit:'$zlength(ys)  if $increment(j,@xs@(-xsr,ys))
+	do assert(nodes=i),assert(nodes=j)    ; Confirm that all nodes are counted
 	;     - Check set trigger
-	set varpat=$ztranslate(varpat,4,5)
-	set @varpat=testval,ref=$reference do assert($data(@x@(0,tvxref))),assert(1=@x@("",tvxref))
+	set varpat=$ztranslate(varpat,4,5),@varpat=testval,ref=$reference,sub=$qsubscript(ref,xsr)
+	do assert($data(@x@(0,tvxref))),assert(1=@x@("",tvxref))
+	do assert($data(@xs@(xsr,"#"_sub))\10),assert(1=@xs@(-xsr,"#"_sub))
 	;     - Check kill trigger
-	kill @ref do assert('$data(@x@(0,tvxref))),assert('$data(@x@("",tvxref)))
+	kill @ref
+	do assert('$data(@x@(0,tvxref))),assert('$data(@x@("",tvxref)))
+	do assert('($data(@xs@(xsr,"#"_sub))\10)),assert('$data(@xs@(-xsr,"#"_sub)))
 	;     - Check removal
-	do UNXREFDATA^%YDBAIM(x),assert('$data(@x))
+	do UNXREFDATA^%YDBAIM(x),assert('$data(@x)),UNXREFSUB^%YDBAIM("^x",.nsubs,xsr,,,1,,1),assert('$data(@xs))
 	;   - Statistics=2
 	;     - Initial scan
-	set x=$$XREFDATA^%YDBAIM("^x",nsubs,,,,,,2,,1)
-	set y="" for j=0:1 set y=$order(@x@(0,y)) quit:'$zlength(y)  do assert("#"=$zextract(y,1))
+	set x=$$XREFDATA^%YDBAIM("^x",nsubs,,,,,,2,,1),xs=$$XREFSUB^%YDBAIM("^x",.nsubs,xsr,,,2,,1)
+	set y="" for  set y=$order(@x@(0,y)) quit:'$zlength(y)  do assert("#"=$zextract(y,1))
+	set ys="" for  set ys=$order(@xs@(xsr,ys)) quit:'$zlength(ys)  do assert("#"=$zextract(ys,1))
 	set i=0,y="" for  set y=$order(@x@("",y)) quit:'$zlength(y)  if $increment(i,@x@("",y))
+	set j=0,ys="" for  set ys=$order(@xs@(xsr,ys)) quit:'$zlength(ys)  if $increment(j,@xs@(-xsr,ys))
+	set z="" for k=0:1 set z=$order(@x@(0,z)) quit:'$zlength(z)  do assert("#"=$zextract(z,1))
+	set zs="" for l=0:1 set zs=$order(@xs@(xsr,zs)) quit:'$zlength(zs)  do assert("#"=$zextract(zs,1))
 	;       Confirm all nodes counted, total count, count of distinct values
-	do assert(nodes=i),assert(j=@x@(""))
+	do assert(nodes=i),assert(k=@x@(""))
+	do assert(nodes=j),assert(l=@xs@(-xsr))
 	;     - Check set trigger: additional xref, increase in total statistics, increase in number of distinct values
-	set varpat=$ztranslate(varpat,5,6)
-	set @varpat=testval,ref=$reference
-	do assert(10=$data(@x@(0,tvxref))),assert(1=@x@("",tvxref)),assert(j+1=@x@(""))
+	set varpat=$ztranslate(varpat,5,6),@varpat=testval,ref=$reference,sub=$qsubscript(ref,xsr)
+	do assert(10=$data(@x@(0,tvxref))),assert(1=@x@("",tvxref)),assert(k+1=@x@(""))
+	do assert($data(@xs@(xsr,"#"_sub))\10),assert(1=@xs@(-xsr,"#"_sub)),assert(l+1=@xs@(-xsr))
 	;     - Check kill trigger: no xref, decrease in total statistics, decrease in number of distinct values
 	kill @ref
-	do assert('$data(@x@(0,tvxref))),assert('$data(@x@("",tvxref))),assert(j=@x@(""))
+	do assert('$data(@x@(0,tvxref))),assert('$data(@x@("",tvxref))),assert(k=@x@(""))
+	do assert('($data(@xs@(xsr,"#"_sub))\10)),assert('$data(@xs@(-xsr,"#"_sub))),assert(l=@xs@(-xsr))
 	;     - Check removal
-	do UNXREFDATA^%YDBAIM(x),assert('$data(@x))
+	do UNXREFDATA^%YDBAIM(x),assert('$data(@x)),UNXREFSUB^%YDBAIM("^x",.nsubs,xsr,,,2,,1),assert('$data(@xs))
 	;   Done testing entire node for type=0
 	kill ^x
 	; - Nodes with pieces
+	;   Not meaningful to enhance for subscript cross-referencing, as that would add nothing to the testing above
 	set npieces=2+$random(5)		; No. of pieces in simulated application data
 	set nsubs=1+$random(3)
 	set nodes=$$aim73genblk(nsubs,10000,npieces,1000)
@@ -229,10 +251,10 @@ aim73	; @TEST Test for YDBAIM#73
 	quit
 	;
 aim73tut003	; @TEST Test fix for TUT003 test failure with AIM#73 code
+	; Not meaningful to enhance for subscript cross-referencing
 	new subs,x
 	kill ^x
 	set subs(1)=":"
-	do UNXREFDATA^%YDBAIM("^x",.subs,"","",0,0,1,2,0,1)
 	set x=$$XREFDATA^%YDBAIM("^x",.subs,"","",0,0,1,2,0,1)
 	set ^x(1)="Old"
 	do assert($data(@x@(0,"#Old",1)))
@@ -258,82 +280,95 @@ aim73genpat(nsub,c)			; [private] generate a ^x random reference with number of 
 	set $zextract(varpat,$zlength(varpat))=")"
 	quit varpat
 	;
-aim74	; @TEST for YDBAIM#74
-	new ret,subs
+aim74	; @TEST YDBAIM#74 - literal subscripts that include "/" work
+	; Test XREFSUB() alongside XREFATA()
+	new ret,rets,subs,zsubs2
 	kill ^x
 	for subs(2)="""/""","""ab/""","""/cd""","""ab/cd""" do
-	. set ^x(1,$zwrite(subs(2),1))="abcd",ret=$$XREFDATA^%YDBAIM("^x",.subs,"|",1,0,0,1,2,1,1)
-	. do assert(1=@ret@(-1,"#abcd"))
-	. do UNXREFDATA^%YDBAIM("^x",.subs,"|",1,0,0,1,2,1,1)
-	. do assert('$data(@ret))
+	. set zsubs2=$zwrite(subs(2),1),^x(1,zsubs2)="abcd"
+	. set ret=$$XREFDATA^%YDBAIM("^x",.subs,"|",1,0,0,1,2,1,1),rets=$$XREFSUB^%YDBAIM("^x",.subs,2,0,0,2,0,1)
+	. do assert(1=@ret@(-1,"#abcd")),assert(1=@rets@(-2,"#"_zsubs2))
+	. do UNXREFDATA^%YDBAIM("^x",.subs,"|",1,0,0,1,2,1,1),UNXREFSUB^%YDBAIM("^x",.subs,2,0,0,2,0,1)
+	. do assert('$data(@ret)),assert('$data(@rets))
 	kill ^x
 	quit
 	;
-aim77	; @Test for YDBAIM77
-	new force,i,j,aimgbl,stat,sub
+aim77	; @Test for YDBAIM77 - transformation functions
+	; Test XREFSUB() alongside XREFDATA()
+	new force,i,j,k,aimgbl,aimgbls,stat,sub
 	kill ^x
 	for i=1:1:100000 set ^x(i,i)=i
 	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,,,,,,,2,"$$aim77neg^%YDBAIMTEST()")
-	set j=1+$random(i)
-	do assert($data(@aimgbl@(0,-j,j,j)))
+	set aimgbls=$$XREFSUB^%YDBAIM("^x",2,"1;2",,,,2,"$$aim77neg^%YDBAIMTEST()")
+	set j=1+$random(i),k=1+$random(1)
+	do assert($data(@aimgbl@(0,-j,j,j))),assert($data(@aimgbls@(k,-j,j,j)))
 	zkill ^x(j,j)
-	do assert('$data(@aimgbl@(0,-j,j,j)))
+	do assert('$data(@aimgbl@(0,-j,j,j))),assert('$data(@aimgbls@(k,-j,j,j)))
 	set:$increment(i) ^x(i,i)=i
-	do assert($data(@aimgbl@(0,-i,i,i)))
+	do assert($data(@aimgbl@(0,-i,i,i))),assert($data(@aimgbls@(k,-i,i,i)))
 	kill:$increment(j) ^x(j,j)
-	do assert('$data(@aimgbl@(0,-j,j,j)))
-	do UNXREFDATA^%YDBAIM("^x",2,,,,,,,2,"$$aim77neg^%YDBAIMTEST()")
-	do assert('$data(@aimgbl))
+	do assert('$data(@aimgbl@(0,-j,j,j))),assert('$data(@aimgbls@(k,-j,j,j)))
+	do UNXREFDATA^%YDBAIM("^x",2,,,,,,,2,"$$aim77neg^%YDBAIMTEST()"),UNXREFSUB^%YDBAIM("^x",2,"1;2",,,,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert('$data(@aimgbl)),assert('$data(@aimgbls))
 	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,,,,,,1,2,"$$aim77neg^%YDBAIMTEST(,1)")
-	do assert(1=@aimgbl@("",-i))
-	set (^x(j,j),^x(j-1,j-1))=i
+	set aimgbls=$$XREFSUB^%YDBAIM("^x",2,"1;2",,,1,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert(1=@aimgbl@("",-i)),assert(1=@aimgbls@(-k,-i))
+	set (^x(j,j),^x(j-1,j-1))=i ; affects only data at existing nodes, subscripts are unaffected
 	do assert(3=@aimgbl@("",-i))
 	zkill ^x(i,i)
-	do assert(2=@aimgbl@("",-i))
-	do UNXREFDATA^%YDBAIM("^x",2,,,,,,1,2,"$$aim77neg^%YDBAIMTEST(,1)")
-	do assert('$data(@aimgbl))
+	do assert(2=@aimgbl@("",-i)),assert('$data(@aimgbls@(-k,-i)))
+	do UNXREFDATA^%YDBAIM("^x",2,,,,,,1,2,"$$aim77neg^%YDBAIMTEST(,1)"),UNXREFSUB^%YDBAIM("^x",2,"1;2",,,1,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert('$data(@aimgbl)),assert('$data(@aimgbls))
 	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,,,,,,2,2,"$$aim77neg^%YDBAIMTEST(,$$FUNC^%DH($system))")
-	do assert(99999=@aimgbl@(""))
+	set aimgbls=$$XREFSUB^%YDBAIM("^x",2,"1;2",,,2,2,"$$aim77neg^%YDBAIMTEST(,$$FUNC^%DH($system))")
+	do assert(99999=@aimgbl@("")),assert(100000=@aimgbls@(-k)) ; # of distinct subscripts is higher because two nodes have the same data
 	set ^x(0,0)=0
-	do assert(100000=@aimgbl@(""))
+	do assert(100000=@aimgbl@("")),assert(100001=@aimgbls@(-k))
 	do UNXREFDATA^%YDBAIM("^x",2,,,,,,2,2,"$$aim77neg^%YDBAIMTEST(,$$FUNC^%DH($system))")
-	do assert('$data(@aimgbl))
+	do UNXREFSUB^%YDBAIM("^x",2,"1;2",,,2,2,"$$aim77neg^%YDBAIMTEST(,$$FUNC^%DH($system))")
+	do assert('$data(@aimgbl)),assert('$data(@aimgbls))
 	kill ^x
 	for i=1:1:100000 set ^x(i,i)=$random(100000)_"|"_i_"|"_$random(100000)
 	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,"|",2,,,,,2,"$$aim77neg^%YDBAIMTEST(,""Some garbage"")")
+	set aimgbls=$$XREFSUB^%YDBAIM("^x",2,"1;2",,,,2,"$$aim77neg^%YDBAIMTEST(,""Some garbage"")")
 	set j=1+$random(i)
-	do assert($data(@aimgbl@(2,-j,j,j)))
+	do assert($data(@aimgbl@(2,-j,j,j))),assert($data(@aimgbls@(k,-j,j,j)))
 	zkill ^x(j,j)
-	do assert('$data(@aimgbl@(2,-j,j,j)))
+	do assert('$data(@aimgbl@(2,-j,j,j))),assert('$data(@aimgbls@(k,-j,j,j)))
 	set:$increment(i) ^x(i,i)=$random(100000)_"|"_i_"|"_$random(100000)
-	do assert($data(@aimgbl@(2,-i,i,i)))
+	do assert($data(@aimgbl@(2,-i,i,i))),assert($data(@aimgbls@(k,-i,i,i)))
 	kill:$increment(j) ^x(j,j)
-	do assert('$data(@aimgbl@(2,-j,j,j)))
+	do assert('$data(@aimgbl@(2,-j,j,j))),assert('$data(@aimgbls@(k,-j,j,j)))
 	do UNXREFDATA^%YDBAIM("^x",2,"|",2,,,,,2,"$$aim77neg^%YDBAIMTEST(,""Some garbage"")")
-	do assert('$data(@aimgbl))
+	do UNXREFSUB^%YDBAIM("^x",2,"1;2",,,,2,"$$aim77neg^%YDBAIMTEST(,""Some garbage"")")
+	do assert('$data(@aimgbl)),assert('$data(@aimgbls))
 	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,"|",2,,,,1,2,"$$aim77neg^%YDBAIMTEST()")
-	do assert(1=@aimgbl@(-2,-i))
-	set (^x(j,j),^x(j-1,j-1))=$random(100000)_"|"_i_"|"_$random(100000)
+	set aimgbls=$$XREFSUB^%YDBAIM("^x",2,"1;2",,,1,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert(1=@aimgbl@(-2,-i)),assert(1=@aimgbls@(-k,-i))
+	set (^x(j,j),^x(j-1,j-1))=$random(100000)_"|"_i_"|"_$random(100000) ; affects only data at existing nodes, subscripts are unaffected
 	do assert(3=@aimgbl@(-2,-i))
 	zkill ^x(j,j)
-	do assert(2=@aimgbl@(-2,-i))
+	do assert(2=@aimgbl@(-2,-i)),assert('$data(@aimgbls@(-k,-j)))
 	kill ^x(j-1,j-1)
-	do assert(1=@aimgbl@(-2,-i))
-	do UNXREFDATA^%YDBAIM("^x",2,"|",2,,,,1,2,"$$aim77neg^%YDBAIMTEST()")
-	do assert('$data(@aimgbl))
+	do assert(1=@aimgbl@(-2,-i)),assert('$data(@aimgbls@(-k,1-j)))
+	do UNXREFDATA^%YDBAIM("^x",2,"|",2,,,,1,2,"$$aim77neg^%YDBAIMTEST()"),UNXREFSUB^%YDBAIM("^x",2,"1;2",,,1,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert('$data(@aimgbl)),assert('$data(@aimgbls))
 	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,"|",2,,,,2,2,"$$aim77neg^%YDBAIMTEST()")
-	do assert(99999=@aimgbl@(-2))
+	set aimgbls=$$XREFSUB^%YDBAIM("^x",2,"1;2",,,2,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert(99999=@aimgbl@(-2)),assert(99999=@aimgbls@(-k))
 	set:$increment(i) ^x(i,i)=$random(100000)_"|"_i_"|"_$random(100000)
-	do assert(100000=@aimgbl@(-2))
+	do assert(100000=@aimgbl@(-2)),assert(100000=@aimgbls@(-k))
 	set (^x(j,j),^x(j-1,j-1))=$random(100000)_"|"_i_"|"_$random(100000)
 	do assert(100000=@aimgbl@(-2))
 	zkill ^x(i,i)
-	do assert(100000=@aimgbl@(-2))
+	do assert(100000=@aimgbl@(-2)),assert(100001=@aimgbls@(-k))
 	kill ^x(j,j),^x(j-1,j-1)
-	do assert(99999=@aimgbl@(-2))
+	do assert(99999=@aimgbl@(-2)),assert(99999=@aimgbls@(-k))
 	do UNXREFDATA^%YDBAIM("^x",2,"|",2,,,,2,2,"$$aim77neg^%YDBAIMTEST()")
-	do assert('$data(@aimgbl))
+	do UNXREFSUB^%YDBAIM("^x",2,"1;2",,,2,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert('$data(@aimgbl)),assert('$data(@aimgbls))
 	kill ^x
+	; The following are not relevant to XREFSUB()
 	set sub(1)="*",sub(2)=2
 	; The following are not strictly part of YDBAIM#77, but are included here since
 	; the omission was discovered during the code review
@@ -359,12 +394,18 @@ tinv1	; @TEST Invalid Input: Global without ^
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
 	if $$XREFDATA^%YDBAIM("ORD",3,"^",2)
 	do assert(ecodetest="U252")
+	; Test XREFSUB()
+	if $$XREFSUB^%YDBAIM("ORD",3,1+$random(3))
+	do assert(ecodetest="U252")
 	quit
 	;
 tinv2	; @TEST Invalid Input: Global including subscripts
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
 	if $$XREFDATA^%YDBAIM("^ORD(100.01)",2,"^",2)
+	do assert(ecodetest="U252")
+	; Test XREFSUB()
+	if $$XREFSUB^%YDBAIM("^ORD(100.01)",2,"1:2")
 	do assert(ecodetest="U252")
 	quit
 	;
@@ -376,6 +417,12 @@ tinv3	; @TEST Invalid Input: Bad Level
 	new ecodetest
 	if $$XREFDATA^%YDBAIM("^ORD",-1,"^",2)
 	do assert(ecodetest="U253")
+	; Test XREFSUB()
+	if $$XREFSUB^%YDBAIM("^ORD",0)
+	do assert(ecodetest="U253")
+	new ecodetest
+	if $$XREFSUB^%YDBAIM("^ORD",-1,1)
+	do assert(ecodetest="U253")
 	quit
 	;
 tinv4	; @TEST Invalid Input: Bad Piece Number
@@ -383,9 +430,14 @@ tinv4	; @TEST Invalid Input: Bad Piece Number
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
 	if $$XREFDATA^%YDBAIM("^ORD",3,"^",0)
 	do assert(ecodetest="U248")
+	if $$XREFSUB^%YDBAIM("^ORD",3,0)
+	do assert(ecodetest="U228")
+	; Test XREFSUB()
 	new ecodetest
 	if $$XREFDATA^%YDBAIM("^ORD",3,"^",-1)
 	do assert(ecodetest="U248")
+	if $$XREFSUB^%YDBAIM("^ORD",3,-1)
+	do assert(ecodetest="U228")
 	quit
 	;
 	;
@@ -395,6 +447,9 @@ tinv5	; @TEST Invalid Input: More subs than the number in top node
 	new subs set subs=1,subs(1)="""""",subs(2)="A"
 	if $$XREFDATA^%YDBAIM("^null",.subs)
 	do assert(ecodetest="U244")
+	; Test XREFSUB()
+	if $$XREFSUB^%YDBAIM("^null",.subs)
+	do assert(ecodetest="U230")
 	quit
 	;
 tinv6	; @TEST Invalid Input: subs contains negative subscripts
@@ -402,6 +457,9 @@ tinv6	; @TEST Invalid Input: subs contains negative subscripts
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
 	new subs set subs=1,subs(-1)="""""",subs(-2)="A"
 	if $$XREFDATA^%YDBAIM("^null",.subs)
+	do assert(ecodetest="U247")
+	; Test XREFSUB()
+	if $$XREFSUB^%YDBAIM("^null",.subs)
 	do assert(ecodetest="U247")
 	quit
 	;
@@ -411,10 +469,14 @@ tinv7	; @TEST Invalid Input: one of the subs is an empty string
 	new subs set subs(1)=100.01,subs(2)="",subs(3)=0
 	if $$XREFDATA^%YDBAIM("^ORD",.subs,"^",2)
 	do assert(ecodetest="U244")
+	; Test XREFSUB()
+	if $$XREFSUB^%YDBAIM("^ORD",.subs)
+	do assert(ecodetest="U244")
 	quit
 
 tinv8	; @TEST Test interaction of separators vs pieces
 	; Separator without piece
+	; Not meaningful for XREFSUB()
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
 	if $$XREFDATA^%YDBAIM("^customers",1,"§")
@@ -432,16 +494,28 @@ tinv9	; @TEST Request a higher level of stat after a lower level
 	if $$XREFDATA^%YDBAIM("^customers",1,"§",1,0,,,1)
 	if $$XREFDATA^%YDBAIM("^customers",1,"§",1,0,,,2)
 	do assert(ecodetest="U240")
+	; Test XREFSUB()
+	if $$XREFSUB^%YDBAIM("^names3",2,1,,,1)
+	if $$XREFSUB^%YDBAIM("^^names3",2,1,,,2)
+	do assert(ecodetest="U240")
 	quit
 	;
 tinv10	; @TEST invalid stat parameter value
+	; Test XREFSUB() alongside XREFDATA()
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$text(+0)
 	if $$XREFDATA^%YDBAIM("^customers",1,"§",1,0,,,-1)
 	do assert(ecodetest="U241")
 	kill ecodetest
+	if $$XREFSUB^%YDBAIM("^names3",2,1,,,-1)
+	do assert(ecodetest="U241")
+	kill ecodetest
 	if $$XREFDATA^%YDBAIM("^customers",1,"§",1,0,,,5)
 	do assert(ecodetest="U241")
+	kill ecodetest
+	if $$XREFSUB^%YDBAIM("^^names3",2,1,,,5)
+	do assert(ecodetest="U241")
+	kill ecodetest
 	quit
 	;
 tinv11	; @TEST indexing invalid repeated subscripts
@@ -452,17 +526,28 @@ tinv11	; @TEST indexing invalid repeated subscripts
 	new subs,xref
 	set subs(1)="1:1" set xref=$$XREFDATA^%YDBAIM("^x",.subs)
 	do assert(ecodetest="U244")
+	; Test XREFSUB()
+	kill ecodetest
+	set xref=$$XREFSUB^%YDBAIM("^x",.subs,1)
+	do assert(ecodetest="U244")
 	quit
 	;
 tinv12	; @TEST index spanning regions where null setting differs
 	; Detailed discussion located at https://gitlab.com/YottaDB/Util/YDBAIM/-/merge_requests/29#note_654447677
+	; Test XREFSUB() alongside XREFDATA()
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$text(+0)
 	; This should not issue an error as the null setting is the same across regions
 	new xref set xref=$$XREFDATA^%YDBAIM("^sameset",2)
 	do assert($data(@xref@(0,"test1",1,"")))
+	new xref set xref=$$XREFSUB^%YDBAIM("^sameset",2,1)
+	do assert(10=$data(@xref@(1,1)))
 	; This should issue an error
 	new xref set xref=$$XREFDATA^%YDBAIM("^diffset",2)
+	do assert(xref="")
+	do assert(ecodetest="U251")
+	kill ecodetest
+	new xref set xref=$$XREFSUB^%YDBAIM("^diffset",2,1)
 	do assert(xref="")
 	do assert(ecodetest="U251")
 	quit
@@ -474,7 +559,7 @@ err	; Error trap for tinv* tests
 	set $ecode=""
 	quit:$quit "" quit
 	;
-tsubs1	; @TEST XREFDATA with numbers & : as subs
+tsubs1	; @TEST XREFDATA & XREFSUB with numbers & : as subs
 	; Index single node in VistA Global; no sub at top node
 	new subs set subs(1)=100.01,subs(2)=":",subs(3)=0
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2)
@@ -489,6 +574,16 @@ tsubs1	; @TEST XREFDATA with numbers & : as subs
 	; Restore data to the way it was for later tests
 	merge ^ORD(100.01,99)=keepme
 	kill ^ORD(100.01,100)
+	; Test XREFSUB()
+	new aimgbl set aimgbl=$$XREFSUB^%YDBAIM("^ORD",.subs,"2:3")
+	do assert($data(@aimgbl@(3,0,1)),"subs array works with numeric subscripts,: for varying range")
+	; Add data and make sure triggers works
+	set ^ORD(100.01,100,0)="JUNK STATUS^junk"
+	do assert($data(@aimgbl@(3,0,100)),"set trigger works")
+	; Delete data and check that kill trigger works
+	kill ^ORD(100.01,100,0)
+	do assert('$data(@aimgbl@(3,0,100)),"kill trigger works")
+	do UNXREFSUB^%YDBAIM("^ORD",.subs,"2:3")
 	quit
 	;
 tsubs2	; @TEST subs w strings,subs>subs(n)/Index Octo Global
@@ -507,6 +602,27 @@ tsubs2	; @TEST subs w strings,subs>subs(n)/Index Octo Global
 	do assert('$data(@aimgbl@(1,"pg_namespace")),"Deleted data removed from index")
 	; restore for later tests
 	set ^%ydboctoocto("tables","pg_catalog","pg_namespace",11)=%aim
+	; Test XREFSUB()
+	set subs(2)=":",subs(4)=$ZWRITE(0)_":"_$ZWRITE($CHAR(0))
+	set ^%ydboctoocto("tables","pg_catalog","pg_namespace","STRING")="Ignore me"
+	set aimgbl=$$XREFSUB^%YDBAIM("^%ydboctoocto",.subs,4)
+	do assert(11=$data(@aimgbl@(4)))
+	new i,x set x="" for  set x=$order(@aimgbl@(4,x)) quit:""=x  if $increment(i)
+	do assert(6=i)
+	do assert($data(@aimgbl@(4,11805,"pg_catalog")))
+	do assert('$data(@aimgbl@(4,"STRING","pg_catalog")))
+	; Add data and make sure SET trigger works
+	set ^%ydboctoocto("tables","pg_catalog","pg_namespace",11806)="pg_toast_temp_2|10|"
+	do assert($data(@aimgbl@(4,11806,"pg_catalog")))
+	zkill ^%ydboctoocto("tables","pg_catalog","pg_namespace",11806)
+	do assert('$data(@aimgbl@(4,11806,"pg_catalog")))
+	kill %aim merge %aim=^%ydboctoocto("tables","pg_catalog","pg_namespace",11)
+	kill ^%ydboctoocto("tables","pg_catalog","pg_namespace",11)
+	do assert('$data(@aimgbl@(4,11,"pg_catalog")))
+	merge ^%ydboctoocto("tables","pg_catalog","pg_namespace",11)=%aim
+	do UNXREFSUB^%YDBAIM("^%ydboctoocto",.subs,4)
+	do assert('$data(@aimgbl))
+	kill ^%ydboctoocto("tables","pg_catalog","pg_namespace","STRING")
 	quit
 	;
 tsubs3	; @TEST index non-numeric data in last sub;
@@ -514,6 +630,10 @@ tsubs3	; @TEST index non-numeric data in last sub;
 	new subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_type""",subs(4)="*"
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",12)
 	do assert($data(@aimgbl@(12,1231,"numeric")),"non-numeric data properly indexed")
+	; Test XREFSUB()
+	set aimgbl=$$XREFSUB^%YDBAIM("^%ydboctoocto",.subs,4)
+	do assert($data(@aimgbl@(4,"numeric")))
+	do UNXREFSUB^%YDBAIM("^%ydboctoocto",.subs,4)
 	quit
 	;
 tsubs4	; @TEST index different subs in same global
@@ -523,13 +643,25 @@ tsubs4	; @TEST index different subs in same global
 	new subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_type""",subs(4)="*"
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",1)
 	do assert(aimgbl1'=aimgbl2)
+	; Test XREFSUB()
+	set subs(1)="*",subs(2)="""pg_catalog""",subs(3)="""pg_namespace""",subs=4
+	set aimgbl1=$$XREFSUB^%YDBAIM("^%ydboctoocto",.subs,1)
+	set subs(1)="*",subs(2)="""pg_catalog""",subs(3)="""pg_type""",subs=4
+	set aimgbl2=$$XREFSUB^%YDBAIM("^%ydboctoocto",.subs,1)
+	do assert(aimgbl1'=aimgbl2)
+	do UNXREFSUB^%YDBAIM
+	do assert('$data(@aimgbl1)),assert('$data(@aimgbl2))
 	quit
 	;
-tsubs5	; @TEST index different pieces in the same global
+tsubs5	; @TEST index different pieces / subscripts with the same global specifications
 	; Test that it produces the same aim global
 	new subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_type""",subs(4)="*"
 	new aimgbl1 set aimgbl1=$$XREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",12)
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",11)
+	do assert(aimgbl1=aimgbl2)
+	; Test XREFSUB()
+	set aimgbl1=$$XREFSUB^%YDBAIM("^%ydboctoocto",.subs,2)
+	set aimgbl2=$$XREFSUB^%YDBAIM("^%ydboctoocto",.subs,4)
 	do assert(aimgbl1=aimgbl2)
 	quit
 	;
@@ -548,11 +680,27 @@ tallsub	; @TEST index all subscripts at a specific level
 	kill ^%ydboctoocto("tables","pg_catalog","pg_namespace",11)
 	do assert('$data(@aimgbl@(0,"pg_catalog|10|""{postgres=UC/postgres|=U/postgres}""","tables","pg_catalog","pg_namespace",11)))
 	set ^%ydboctoocto("tables","pg_catalog","pg_namespace",11)=%
+	;
+	; Test XREFSUB()
+	set aimgbl=$$XREFSUB^%YDBAIM("^%ydboctoocto",4,"1:4")
+	do assert($data(@aimgbl@(4,99,"tables","pg_catalog","pg_namespace")))
+	set ^%ydboctoocto("tables","pg_catalog","pg_namespace",11806)="pg_toast_temp_2|10|"
+	do assert($data(@aimgbl@(4,11806,"tables","pg_catalog","pg_namespace")))
+	;
+	; Remove data and make sure triggers work
+	do assert($data(@aimgbl@(4,11,"tables","pg_catalog","pg_namespace")))
+	set %=^%ydboctoocto("tables","pg_catalog","pg_namespace",11)
+	kill ^%ydboctoocto("tables","pg_catalog","pg_namespace",11)
+	do assert('$data(@aimgbl@(4,11,"tables","pg_catalog","pg_namespace")))
+	set ^%ydboctoocto("tables","pg_catalog","pg_namespace",11)=%
 	quit
 	;
 tnodata1 ; @TEST indexing nodes that don't exist
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",1,"^",2)
 	do assert($order(@aimgbl@(0,""))="")
+	; Test XREFSUB()
+	set aimgbl=$$XREFSUB^%YDBAIM("^ORD",1,1)
+	do assert('$data(@aimgbl@(1,.5)))
 	quit
 	;
 tnodata2 ; @TEST indexing pieces that don't exist
@@ -563,13 +711,11 @@ tnodata2 ; @TEST indexing pieces that don't exist
 	do assert($data(@aimgbl@(17,"",1)))
 	do assert($data(@aimgbl@(17,"",2)))
 	do assert($data(@aimgbl@(17,"",3)))
+	; This is not a useful test to adapt for XREFSUB()
 	quit
 	;
 tnodata3 ; @TEST indexing fixed nodes that don't exist
 	; Default behavior is for nodes that don't exist to not be xrefed. Verify that.
-	; Once #51 is fixed, there will be an extra parameter to specify how non-existent fixed nodes
-	; need to be handled and at that time this test case can be enhanced to additionally verify
-	; the new behavior.
 	kill ^tnodata3
 	set ^tnodata3(100,1,"const1")="a"
 	set ^tnodata3(100,2,"const1","const2")="b"
@@ -591,16 +737,26 @@ tnodata3 ; @TEST indexing fixed nodes that don't exist
 	do assert(""=@aimgbl@(0,"d",3)) kill @aimgbl@(0,"d",3)
 	; Verify that no other nodes exist in the xref
 	do assert(1=$data(@aimgbl@(0)))
+	;
+	; Test XREFSUB() - there are no other nodes indexed
+	set aimgbl=$$XREFSUB^%YDBAIM("^tnodata3",.subs,"1")
+	do assert(""=@aimgbl@(1,100,2)) kill @aimgbl@(1,100,2)
+	do assert(""=@aimgbl@(1,100,3)) kill @aimgbl@(1,100,3)
+	do assert(1=$data(@aimgbl@(1)))
 	quit
 	;
 tutf8tp	; @TEST UTF-8 data; seq pieces; updates (kill, set $piece)
 	; 3rd piece = emails
+	; Test XREFSUB() alongside XREFDATA
 	new aimgbl1 set aimgbl1=$$XREFDATA^%YDBAIM("^customers",1,"§",3)
 	do assert($data(@aimgbl1@(3,"gwashington@usa.gov")))
 	; 7rd piece = zip codes
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^customers",1,"§",7)
 	do assert(aimgbl1=aimgbl2,"AIM global for separate pieces should be the same")
 	do assert($data(@aimgbl2@(7,22902,5)))
+	new aimgbl3 set aimgbl3=$$XREFSUB^%YDBAIM("^customers",1,1)
+	new i,j set i="" for j=1:1 set i=$order(@aimgbl3@(1,i)) quit:""=i  do assert(i=j)
+	do assert(6=j)
 	;
 	; Kill record 2
 	do assert($data(@aimgbl1@(3,"jadams@usa.gov",2)))
@@ -609,7 +765,11 @@ tutf8tp	; @TEST UTF-8 data; seq pieces; updates (kill, set $piece)
 	kill ^customers(2)
 	do assert('$data(@aimgbl1@(3,"jadams@usa.gov",2)))
 	do assert('$data(@aimgbl1@(7,"02169",2)))
+	do assert('$data(@aimgbl3@(1,2)))
 	set ^customers(2)=%
+	do assert($data(@aimgbl3@(1,2)))
+	do UNXREFSUB^%YDBAIM("^customers",1,1)
+	; The rest of this test is not relevant to XREFSUB()
 	;
 	; Modify record 1 email address
 	do assert($data(@aimgbl1@(3,"gwashington@usa.gov",1)))
@@ -627,23 +787,23 @@ tutf8tp	; @TEST UTF-8 data; seq pieces; updates (kill, set $piece)
 	;
 tmpiece	; @TEST multiple pieces requested sequentially
 	new aimgbl1 set aimgbl1=$$XREFDATA^%YDBAIM("^customers",1,"§","3;7")
-	new lines do trigout(.lines)
+	new lines do trigout(.lines,"%ydb"_$zpiece(aimgbl1,"AIMD",2)_"S")
 	do assert(lines(2)'["-delim=""§""")
 	do assert($order(@aimgbl1@(3,""))'="")
 	do assert($order(@aimgbl1@(7,""))'="")
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^customers",1,"§","3:4")
 	do assert(aimgbl1=aimgbl2)
 	do assert($order(@aimgbl1@(4,""))'="")
-	kill lines do trigout(.lines)
+	kill lines do trigout(.lines,"%ydb"_$zpiece(aimgbl2,"AIMD",2)_"S")
 	do assert(lines(3)["=3,4,7")
 	new aimgbl3 set aimgbl3=$$XREFDATA^%YDBAIM("^customers",1,"§","4:5")
-	kill lines do trigout(.lines)
+	kill lines do trigout(.lines,"%ydb"_$zpiece(aimgbl3,"AIMD",2)_"S")
 	do assert(lines(3)["=3,4,5,7")
 	new aimgbl4 set aimgbl4=$$XREFDATA^%YDBAIM("^customers",1,"§","5:8;10")
-	kill lines do trigout(.lines)
+	kill lines do trigout(.lines,"%ydb"_$zpiece(aimgbl4,"AIMD",2)_"S")
 	do assert(lines(3)["=3,4,5,6,7,8,10")
 	new aimgbl5 set aimgbl5=$$XREFDATA^%YDBAIM("^customers",1,"§","1;2;5")
-	kill lines do trigout(.lines)
+	kill lines do trigout(.lines,"%ydb"_$zpiece(aimgbl5,"AIMD",2)_"S")
 	do assert(lines(3)["=1,2,3,4,5,6,7,8,10")
 	do assert($order(@aimgbl1@(1,""))'="")
 	do assert($order(@aimgbl1@(2,""))'="")
@@ -652,18 +812,21 @@ tmpiece	; @TEST multiple pieces requested sequentially
 	do assert($order(@aimgbl1@(5,""))'="")
 	do assert($order(@aimgbl1@(6,""))'="")
 	do assert($order(@aimgbl1@(7,""))'="")
+	; This is not a useful test to adapt for XREFSUB()
 	quit
 	;
 tzpiece1 ; @TEST $zpiece
 	; Indexing emails (3rd piece) - should see $ZCH(167), leftover from $ZCH(167,194) = §'
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^customers",1,$ZCHAR(194),3,,1)
 	do assert($data(@aimgbl@(3,$ZCH(167)_"gwashington@usa.gov")))
+	; This is not a useful test to adapt for XREFSUB()
 	quit
 	;
 tzpiece2 ; @TEST $piece and $zpiece concurrently
 	new aimgbl1 set aimgbl1=$$XREFDATA^%YDBAIM("^customers",1,$ZCHAR(194),3,,1)
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^customers",1,"§",3)
 	do assert(aimgbl1'=aimgbl2)
+	; This is not a useful test to adapt for XREFSUB()
 	quit
 	;
 trmindex1 ; #TEST Remove a single piece index (NOT SUPPORTED RIGHT NOW; disabling test)
@@ -686,45 +849,81 @@ trmindex1 ; #TEST Remove a single piece index (NOT SUPPORTED RIGHT NOW; disablin
 	new aims  do aimgbls(.aims)
 	do assert(trigs(2)'["-delim=""§"" -pieces=3")
 	do assert(aims=1)
+	; This is not a useful test to adapt for XREFSUB()
 	quit
 	;
-trmindex2 ; @TEST Remove indexs on a specific entire global
+trmindex2 ; @TEST Remove indexes on a specific entire global
 	; Note: this test depends on the AIM global for ^customers preceding those for
 	; ^orders. This is the case with YottaDB r1.32 on x86_64. Depending on the
 	; hash used by AIM and the underlying platform, this may need to change for
 	; future releases of YottaDB and for other platforms.
+	new aimgblcust,aimgblorders
 	if $$XREFDATA^%YDBAIM("^orders",1,"§",1)
 	if $$XREFDATA^%YDBAIM("^customers",1,"§",3)
-	if $$XREFDATA^%YDBAIM("^customers",1,"§",7)
-	new trigs do trigout(.trigs)
-	new aims  do aimgbls(.aims)
-	new aimx  do aimdxref(.aimx)
+	set aimgblcust=$$XREFDATA^%YDBAIM("^customers",1,"§",7)
+	new trigs do trigout(.trigs,"%ydb"_$zpiece(aimgblcust,"AIMD",2)_"S")
+	new aims do aimgbls(.aims)
+	new aimx do aimxref(.aimx)
 	do assert(aims=2)
 	do assert(aimx=2)
 	do assert(trigs(3)["=3,7")
 	do UNXREFDATA^%YDBAIM("^customers",1,"§")
-	kill trigs do trigout(.trigs)
+	kill trigs do trigout(.trigs,"%ydb"_$zpiece(aimgblcust,"AIMD",2)_"S")
 	kill aims  do aimgbls(.aims)
-	kill aimx  do aimdxref(.aimx)
+	kill aimx  do aimxref(.aimx)
 	do assert(aims=1)
 	do assert(aimx=1)
-	do assert(trigs(3)'["=3,7")
+	do assert('$data(trigs(3)))
+	do UNXREFDATA^%YDBAIM("^orders",1,"§",1)
+	; Test XREFSUB()
+	set aimgblorders=$$XREFSUB^%YDBAIM("^orders",1,1)
+	set aimgblcust=$$XREFSUB^%YDBAIM("^customers",1,1)
+	kill trigs do trigout(.trigs,"%ydb"_$zpiece(aimgblcust,"AIMS",2)_"S")
+	kill aims do aimgbls(.aims,1)
+	kill aimx do aimxref(.aimx,1)
+	do assert(aims=2)
+	do assert(aimx=2)
+	do assert(trigs(2)["+^customers(sub1=*)")
+	do UNXREFSUB^%YDBAIM("^customers",1,1)
+	kill trigs do trigout(.trigs,"%ydb"_$zpiece(aimgblcust,"AIMS",2)_"S")
+	kill aims do aimgbls(.aims,1)
+	kill aimx do aimxref(.aimx,1)
+	do assert(aims=1)
+	do assert(aimx=1)
+	do assert('$data(trigs))
+	do UNXREFSUB^%YDBAIM("^orders",1,1)
 	quit
 	;
 trmindex3 ; @TEST Remove all indexes
 	if $$XREFDATA^%YDBAIM("^orders",1,"§",1)
 	if $$XREFDATA^%YDBAIM("^customers",1,"§",3)
-	if $$XREFDATA^%YDBAIM("^customers",1,"§",7)
-	new trigs do trigout(.trigs)
-	new aims  do aimgbls(.aims)
-	new aimx  do aimdxref(.aimx)
+	new aimgblcust set aimgblcust=$$XREFDATA^%YDBAIM("^customers",1,"§",7)
+	new trigs do trigout(.trigs,"%ydb"_$zpiece(aimgblcust,"AIMD",2)_"S")
+	new aims do aimgbls(.aims)
+	new aimx do aimxref(.aimx)
 	do assert(aims=2)
 	do assert(trigs(3)["=3,7")
 	do assert(aimx=2)
 	do UNXREFDATA^%YDBAIM
 	kill trigs do trigout(.trigs)
 	kill aims  do aimgbls(.aims)
-	kill aimx  do aimdxref(.aimx)
+	kill aimx  do aimxref(.aimx)
+	do assert('$data(trigs))
+	do assert('$data(aims))
+	do assert('$data(aimx))
+	; Test XREFSUB()
+	if $$XREFSUB^%YDBAIM("^orders",1,1)
+	set aimgblcust=$$XREFSUB^%YDBAIM("^customers",1,1)
+	kill trigs do trigout(.trigs,"%ydb"_$zpiece(aimgblcust,"AIMS",2)_"S")
+	kill aims do aimgbls(.aims,1)
+	kill aimx do aimxref(.aimx,1)
+	do assert(aims=2)
+	do assert(trigs(2)["+^customers(sub1=*)")
+	do assert(aimx=2)
+	do UNXREFSUB^%YDBAIM
+	kill trigs do trigout(.trigs)
+	kill aims do aimgbls(.aims,1)
+	kill aimx do aimxref(.aimx,1)
 	do assert('$data(trigs))
 	do assert('$data(aims))
 	do assert('$data(aimx))
@@ -736,39 +935,77 @@ trmindex4 ; @TEST Remove index on subscripts parts of same global
 	new subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_namespace""",subs(4)="*"
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",2)
 	new aims do aimgbls(.aims)
-	new aimx do aimdxref(.aimx)
+	new aimx do aimxref(.aimx)
 	do assert(aims=2)
 	do assert(aimx=1) ; single global
 	kill subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_type""",subs(4)="*"
 	do UNXREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",1)
 	kill aims do aimgbls(.aims)
-	kill aimx do aimdxref(.aimx)
+	kill aimx do aimxref(.aimx)
 	do assert(aims=1)
 	do assert(aimx=1)
 	kill subs set subs(1)="""tables""",subs(2)="""pg_catalog""",subs(3)="""pg_namespace""",subs(4)="*"
 	do UNXREFDATA^%YDBAIM("^%ydboctoocto",.subs,"|",2)
 	kill aims do aimgbls(.aims)
-	kill aimx do aimdxref(.aimx)
+	kill aimx do aimxref(.aimx)
+	do assert('$data(aims))
+	do assert('$data(aimx))
+	; Test XREFSUB()
+	set subs(1)="*",subs(2)="""pg_catalog""",subs(3)="""pg_type""",subs(4)="*"
+	set aimgbl1=$$XREFSUB^%YDBAIM("^%ydboctoocto",.subs,"3:4")
+	set subs(1)="*",subs(2)="""pg_catalog""",subs(3)="""pg_namespace""",subs(4)="*"
+	set aimgbl2=$$XREFSUB^%YDBAIM("^%ydboctoocto",.subs,"3:4")
+	kill aims do aimgbls(.aims,1)
+	kill aimx do aimxref(.aimx,1)
+	do assert(aims=2)
+	do assert(aimx=1) ; single global
+	set subs(1)="*",subs(2)="""pg_catalog""",subs(3)="""pg_type""",subs(4)="*"
+	do UNXREFSUB^%YDBAIM("^%ydboctoocto",.subs,"3:4")
+	kill aims do aimgbls(.aims,1)
+	kill aimx do aimxref(.aimx,1)
+	do assert(aims=1)
+	do assert(aimx=1)
+	kill subs set subs(1)="*",subs(2)="""pg_catalog""",subs(3)="""pg_namespace""",subs(4)="*"
+	do UNXREFSUB^%YDBAIM("^%ydboctoocto",.subs,"3:4")
+	kill aims do aimgbls(.aims,1)
+	kill aimx do aimxref(.aimx,1)
 	do assert('$data(aims))
 	do assert('$data(aimx))
 	quit
 	;
-trmindex5 ; @TEST Remove indexes by %ydbAIMD global name
+trmindex5 ; @TEST Remove indexes by %ydbAIMD & %ydbAIMS global names
 	new aimgbl1 set aimgbl1=$$XREFDATA^%YDBAIM("^orders",1,"§",1)
 	new aimgbl2 set aimgbl2=$$XREFDATA^%YDBAIM("^customers",1,"§",3)
 	new aimgbl3 set aimgbl3=$$XREFDATA^%YDBAIM("^customers",1,"§",7)
 	new aims do aimgbls(.aims)
-	new aimx  do aimdxref(.aimx)
+	new aimx  do aimxref(.aimx)
 	do assert(aims=2)
 	do assert(aimx=2)
 	do UNXREFDATA^%YDBAIM(aimgbl1)
 	kill aims do aimgbls(.aims)
-	kill aimx do aimdxref(.aimx)
+	kill aimx do aimxref(.aimx)
 	do assert(aims=1)
 	do assert(aimx=1)
 	do UNXREFDATA^%YDBAIM(aimgbl2)
 	kill aims do aimgbls(.aims)
-	kill aimx do aimdxref(.aimx)
+	kill aimx do aimxref(.aimx)
+	do assert('$data(aims))
+	do assert('$data(aimx))
+	; Test XREFSUB()
+	set aimgbl1=$$XREFSUB^%YDBAIM("^orders",1,1)
+	set aimgbl2=$$XREFSUB^%YDBAIM("^customers",1,1)
+	kill aims do aimgbls(.aims,1)
+	kill aimx do aimxref(.aimx,1)
+	do assert(aims=2)
+	do assert(aimx=2)
+	do UNXREFSUB^%YDBAIM(aimgbl1)
+	kill aims do aimgbls(.aims,1)
+	kill aimx do aimxref(.aimx,1)
+	do assert(aims=1)
+	do assert(aimx=1)
+	do UNXREFSUB^%YDBAIM(aimgbl2)
+	kill aims do aimgbls(.aims,1)
+	kill aimx do aimxref(.aimx,1)
 	do assert('$data(aims))
 	do assert('$data(aimx))
 	quit
@@ -797,11 +1034,35 @@ tresume ; @TEST Resuming an interrupted cross-reference
 	set indexcount=$$tresumecountindex()
 	do assert(count=indexcount)
 	do assert($data(@aimgbl@(3)))
+	;
+	; Test XREFSUB()
+	set aimgbl=$$XREFSUB^%YDBAIM("^PSNDF",.subs,2,1) ; nmonly
+	job tresumejob(1):passcurlvn set jobpid=$zjob
+	for  quit:$data(^%ydbAIMtmp("%YDBAIM",jobpid,0))  hang .01
+	if $ZSIGPROC(jobpid,"SIGUSR1") ; stop the job (job does zgoto 0 in $zint which stops it)
+	;
+	; Ensure that AIM did not certify this index complete (0 node)
+	; As the (0) node is not set and the (3) node is not updated until cross-referencing
+	; is complete, either one is a sufficient test for non-completion.
+	do assert('$data(@aimgbl@(0)))
+	;
+	; Ensure that the record count is greater than the index count
+	set count=$$tresumecountdata()
+	set indexcount=$$tresumecountindex(1)
+	do assert(count>indexcount)
+	;
+	; Resume building
+	if $$XREFSUB^%YDBAIM("^PSNDF",.subs,2)
+	; Now verify that AIM says it's complete, and verify index count
+	set indexcount=$$tresumecountindex(1)
+	do assert(count=indexcount)
+	do assert($data(@aimgbl@(0)))
 	quit
 	;
-tresumejob ; [job target - tresume target]
+tresumejob(type) ; [job target - tresume target] - type=1 means XREFSUB()
 	set $zinterrupt="if $zjobexam() zgoto 0"
-	if $$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1)
+	if +$get(type) do XREFSUB^%YDBAIM("^PSNDF",.subs,2)
+	else  do XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1)
 	quit
 	;
 tresumecountdata:() ; [$$: # of data items in ^PSNDF(50.6)]
@@ -809,10 +1070,14 @@ tresumecountdata:() ; [$$: # of data items in ^PSNDF(50.6)]
 	new i for i=0:0 set i=$order(^PSNDF(50.6,i)) quit:'i  if $data(^(i,"VUID")) if $increment(count)
 	quit count
 	;
-tresumecountindex:() ; [$$: # of index items in AIM global for ^PSNDF(50.6)]
+tresumecountindex:(type) ; [$$: # of index items in AIM global for ^PSNDF(50.6)] - type=1 means subscript test
 	new indexcount set indexcount=0
-	new i,j set i="" for  set i=$order(@aimgbl@(1,i)) quit:'$zlength(i)  do
-	. set j="" for  set j=$order(@aimgbl@(1,i,j)) quit:'$zlength(j)  if $increment(indexcount)
+	new i,j
+	if +$get(type) do
+	. set i="" for  set i=$order(@aimgbl@(2,i)) quit:'$zlength(i)  if $increment(indexcount)
+	else  do
+	. set i="" for  set i=$order(@aimgbl@(1,i)) quit:'$zlength(i)  do
+	. . set j="" for  set j=$order(@aimgbl@(1,i,j)) quit:'$zlength(j)  if $increment(indexcount)
 	quit indexcount
 	;
 trange1 ; @TEST Numeric Subscript Range
@@ -836,6 +1101,10 @@ trange1 ; @TEST Numeric Subscript Range
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2)
 	do assert($data(@aimgbl@(2,"hold",3)))
 	do assert('$data(@aimgbl@(2,"dlay",10)))
+	; Test XREFSUB()
+	set aimgbl=$$XREFSUB^%YDBAIM("^ORD",.subs,3)
+	do assert($data(@aimgbl@(3,0,9)))
+	do assert('$data(@aimgbl@(3,0,10)))
 	quit
 	;
 trange2 ; @TEST String Subscript Range
@@ -848,6 +1117,11 @@ trange2 ; @TEST String Subscript Range
 	do assert($data(@aimgbl@(2,"a2","a",1)))
 	do assert($data(@aimgbl@(2,"b2","b",2)))
 	do assert('$data(@aimgbl@(2,"c2","c",3)))
+	; Test XREFSUB()
+	set aimgbl=$$XREFSUB^%YDBAIM("^sam",.subs,1)
+	do assert($data(@aimgbl@(1,"a",1)))
+	do assert($data(@aimgbl@(1,"b",2)))
+	do assert('$data(@aimgbl@(1,"c",3)))
 	kill ^sam
 	quit
 	;
@@ -858,6 +1132,7 @@ trange3	; #TEST indexing subscripts with range symbols embedded
 	new subs,xref
 	set subs(1)="""dummy1;:""",subs(2)="*" set xref=$$XREFDATA^%YDBAIM("^x",.subs)
 	do assert($data(@xref@(0,"abcd")))
+	; Once this is enabled for XREFDATA(), add a test for XREFSUB()
 	quit
 	;
 trange4	; @TEST indexing subscripts with an open range
@@ -866,6 +1141,9 @@ trange4	; @TEST indexing subscripts with an open range
 	new subs,xref
 	set subs(1)="1:" set xref=$$XREFDATA^%YDBAIM("^x",.subs)
 	do assert($data(@xref@(0,"abcd")))
+	; Test XREFSUB()
+	set xref=$$XREFSUB^%YDBAIM("^x",.subs,1)
+	do assert($data(@xref@(1,1)))
 	quit
 	;
 trange5	; @TEST indexing repeated subscripts 1
@@ -874,6 +1152,9 @@ trange5	; @TEST indexing repeated subscripts 1
 	new subs,xref
 	set subs(1)="1;1" set xref=$$XREFDATA^%YDBAIM("^x",.subs)
 	do assert($data(@xref@(0,"abcd")))
+	; Test XREFSUB()
+	set xref=$$XREFSUB^%YDBAIM("^x",.subs,1)
+	do assert($data(@xref@(1,1))),assert('$data(@xref@(1,2)))
 	quit
 	;
 tnull	; @TEST Index data with null subscripts
@@ -882,6 +1163,11 @@ tnull	; @TEST Index data with null subscripts
 	do assert($data(@aimgbl1@(0,"test1","","")))
 	do assert($data(@aimgbl1@(0,"test2","","A")))
 	do assert($data(@aimgbl1@(0,"test5",5,"")))
+	; Test XREFSUB()
+	set aimgbl1=$$XREFSUB^%YDBAIM("^null",2,2)
+	do assert($data(@aimgbl1@(2,"","")))
+	do assert($data(@aimgbl1@(2,"A","")))
+	do assert($data(@aimgbl1@(2,"",5)))
 	;
 	; Index with null as a fixed sub
 	new subs set subs(1)="""""",subs=2
@@ -889,11 +1175,17 @@ tnull	; @TEST Index data with null subscripts
 	do assert($data(@aimgbl2@(0,"test1","")))
 	do assert($data(@aimgbl2@(0,"test2","A")))
 	do assert($data(@aimgbl2@(0,"test4",4)))
+	;
+	set aimgbl2=$$XREFSUB^%YDBAIM("^null",.subs,2)
+	do assert($data(@aimgbl2@(2,"")))
+	do assert($data(@aimgbl2@(2,"A")))
+	do assert('$data(@aimgbl2@(2,5)))
 	quit
 	;
 tomitfix1 ; @TEST Omit fixed subscripts aka omitfix
 	; Default is to omit fixed subscripts.
 	; Assert that nodes that are expected are present and those that are not are not.
+	; Test XREFSUB() alongside XREFDATA()
 	new subs set subs(1)="""""",subs=2
 	new aimgbl1 set aimgbl1=$$XREFDATA^%YDBAIM("^null",.subs)
 	; ^%ydbAIMDTeLUKXq5NuulyAqUDqoy1A(0,"test1","")=""
@@ -905,6 +1197,9 @@ tomitfix1 ; @TEST Omit fixed subscripts aka omitfix
 	do assert('$data(@aimgbl1@(0,"test1","","")))
 	do assert('$data(@aimgbl1@(0,"test2","","A")))
 	do assert('$data(@aimgbl1@(0,"test4","",4)))
+	set aimgbl1=$$XREFSUB^%YDBAIM("^null",.subs,1)
+	do assert($data(@aimgbl1@(1,"",4)))
+	do assert($data(@aimgbl1@(1,"","A")))
 	;
 	; Now create with omitfix=0
 	new subs set subs(1)="""""",subs=2
@@ -916,6 +1211,10 @@ tomitfix1 ; @TEST Omit fixed subscripts aka omitfix
 	do assert($data(@aimgbl2@(0,"test1",""))#2=0) ; This is special as we do have ("","") existing up above
 	do assert('$data(@aimgbl2@(0,"test2","A")))
 	do assert('$data(@aimgbl2@(0,"test4",4)))
+	set aimgbl2=$$XREFSUB^%YDBAIM("^null",.subs,1,,0)
+	do assert($data(@aimgbl2@(1,"","")))
+	do assert($data(@aimgbl2@(1,"","A")))
+	do assert($data(@aimgbl2@(1,"",4)))
 	quit
 	;
 tomitfix2 ; @TEST Omitfix crash [#35]
@@ -923,6 +1222,10 @@ tomitfix2 ; @TEST Omitfix crash [#35]
 	; params = gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2,0,0,0,0)
 	do assert($data(@aimgbl))
+	; params = gbl,xsub,snum,nmonly,omitfix,stat
+	; Test XREFSUB()
+	set aimgbl=$$XREFSUB^%YDBAIM("^ORD",.subs,"1:3",0,0,0)
+	do assert($data(aimgbl))
 	quit
 	;
 tnmonly	; @TEST Name only paramater aka nmonly
@@ -934,6 +1237,9 @@ tnmonly	; @TEST Name only paramater aka nmonly
 	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1,1) ; nmonly
 	; zwrite @aimgbl@(*)
+	do assert('$data(@aimgbl),"Shouldn't have been created yet")
+	; Test XREFSUB()
+	set aimgbl=$$XREFSUB^%YDBAIM("^PSNDF",.subs,2,1)
 	do assert('$data(@aimgbl),"Shouldn't have been created yet")
 	quit
 	;
@@ -969,6 +1275,24 @@ tlsxref1 ; @TEST LSXREFDATA normal tests
 	new xref set xref=""
 	new count for  set xref=$order(xrefs(xref)) quit:xref=""  if $increment(count)
 	do assert(count=1)
+	;
+	; Test XREFSUB()
+	kill xrefs do LSXREFSUB^%YDBAIM(.xrefs)
+	do assert('$data(xrefs))
+	set aimgbl1=$$XREFSUB^%YDBAIM("^orders",1,1)
+	set aimgbl2=$$XREFSUB^%YDBAIM("^customers",1,1)
+	set subs(1)="""""",subs=2
+	set aimgbl4=$$XREFSUB^%YDBAIM("^null",.subs,1)
+	set aimgbl5=$$XREFSUB^%YDBAIM("^null",2,1)
+	do LSXREFSUB^%YDBAIM(.xrefs)
+	set xref="" for count=0:1 set xref=$order(xrefs(xref)) quit:'$zlength(xref)
+	do assert(count=4)
+	kill xrefs do LSXREFSUB^%YDBAIM(.xrefs,"^null")
+	set xref="" for count=0:1 set xref=$order(xrefs(xref)) quit:'$zlength(xref)
+	do assert(count=2)
+	kill xrefs do LSXREFSUB^%YDBAIM(.xrefs,aimgbl2)
+	set xref="" for count=0:1 set xref=$order(xrefs(xref)) quit:'$zlength(xref)
+	do assert(count=1)
 	quit
 	;
 tlsxref2 ; @TEST LSXREFDATA when non-AIM ^%ydbAIM* globals exist
@@ -981,6 +1305,12 @@ tlsxref2 ; @TEST LSXREFDATA when non-AIM ^%ydbAIM* globals exist
 	new xrefs do LSXREFDATA^%YDBAIM(.xrefs)
 	new xref set xref=""
 	new count for  set xref=$order(xrefs(xref)) quit:xref=""  if $increment(count)
+	do assert(count=1)
+	; Test XREFSUB()
+	SET aimglobal=$$XREFSUB^%YDBAIM("^names",.subs,1)
+	kill count,xrefs set xref=""
+	do LSXREFSUB^%YDBAIM(.xrefs)
+	for count=0:1 set xref=$order(xrefs(xref)) quit:'$zlength(xref)
 	do assert(count=1)
 	quit
 	;
@@ -1007,33 +1337,56 @@ tstat1	; @TEST stats of 1 and 2 produce the correct output
 	do assert(@aimgbl2@(-1,"George")=1)
 	do assert(@aimgbl2@(-1,"James")=2)
 	do assert(@aimgbl2@(-1)=4) ; Distinct values
+	;
+	; Test XREFSUB()
+	; params = gbl,xsub,snum,nmonly,omitfix,stat
+	; Call with stat=1, which only provides data for the each value, not the total values
+	set aimgbl1=$$XREFSUB^%YDBAIM("^customers",1,1,,,1)
+	do assert(@aimgbl1@(-1,1)=1)
+	do assert(@aimgbl1@(-1,5)=1)
+	do assert($data(@aimgbl1@(-1))[0) ; Distinct values don't exist
+	;
+	; Unxref
+	DO UNXREFSUB^%YDBAIM("^customers",1,1,,,1)
+	do assert('$data(@aimgbl1))
+	;
+	; Call with stat=2, which provides data for the each value, and total and distinct values
+	set aimgbl2=$$XREFSUB^%YDBAIM("^customers",1,1,,,2)
+	do assert(@aimgbl2@(-1,1)=1)
+	do assert(@aimgbl2@(-1,5)=1)
+	do assert(@aimgbl2@(-1)=5) ; Distinct values
+	do UNXREFSUB^%YDBAIM(aimgbl2)
 	quit
 	;
 tstat2	; @TEST xref operations with stats=0,1,2
 	; Test 3 cases each of which is expected to produce the same output
 	; irrespective of whether stat=0, or stat=1 or stat=2.
+	; Test XREFSUB() alongside XREFDATA()
 	;
 	new stat for stat=0:1:2 do tstat2run(stat)
 	quit
 	;
 tstat2run(stat) ;
-	new case
+	new case,xrefdata,xrefsub
 	; -----------------------------------------------------
 	; Case 1
 	; ------
 	; SET 4 records first and then XREF all records in one shot
 	; -----------------------------------------------------
 	set case=1
-	do UNXREFDATA^%YDBAIM
 	kill ^names2
 	set ^names2(0)="Zero|Cool"
 	set ^names2(1)="Acid|Burn"
 	set ^names2(2)="Cereal|Killer"
 	set ^names2(3)="Zero|Nikon"
-	set xref=$$XREFDATA^%YDBAIM("^names2",1,"|",1,,,,stat)
-	do tstat2assertdata(xref,"Error with stat="_stat_" case="_case_" at "_$zpos)
-	if stat>0 do tstat2assertstat1(xref,"Error with stat="_stat_" case="_case_" at "_$zpos)
-	if stat=2 do tstat2assertstat2(xref,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	set xrefdata=$$XREFDATA^%YDBAIM("^names2",1,"|",1,,,,stat)
+	do tstat2assertdata(xrefdata,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat>0 do tstat2assertstat1(xrefdata,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat=2 do tstat2assertstat2(xrefdata,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	set xrefsub=$$XREFSUB^%YDBAIM("^names2",1,1,,,stat)
+	do tstat2assertsub(xrefsub,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat>0 do tstat2assertsubstat1(xrefsub,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat=2 do tstat2assertsubstat2(xrefsub,"Error with stat="_stat_" case="_case_" at "_$zpos)
 	; -----------------------------------------------------
 	; Case 2
 	; ------
@@ -1041,16 +1394,19 @@ tstat2run(stat) ;
 	; Final result is same 4 records as Case 1.
 	; -----------------------------------------------------
 	set case=2
-	DO UNXREFDATA^%YDBAIM
 	kill ^names2
-	set xref=$$XREFDATA^%YDBAIM("^names2",1,"|",1,,,,stat)
+	set xrefdata=$$XREFDATA^%YDBAIM("^names2",1,"|",1,,,,stat)
+	set xrefsub=$$XREFSUB^%YDBAIM("^names2",1,1,,,stat)
 	set ^names2(0)="Zero|Cool"
 	set ^names2(1)="Acid|Burn"
 	set ^names2(2)="Cereal|Killer"
 	set ^names2(3)="Zero|Nikon"
-	do tstat2assertdata(xref,"Error with stat="_stat_" case="_case_" at "_$zpos)
-	if stat>0 do tstat2assertstat1(xref,"Error with stat="_stat_" case="_case_" at "_$zpos)
-	if stat=2 do tstat2assertstat2(xref,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	do tstat2assertdata(xrefdata,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat>0 do tstat2assertstat1(xrefdata,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat=2 do tstat2assertstat2(xrefdata,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	do tstat2assertsub(xrefsub,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat>0 do tstat2assertsubstat1(xrefsub,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat=2 do tstat2assertsubstat2(xrefsub,"Error with stat="_stat_" case="_case_" at "_$zpos)
 	; -----------------------------------------------------
 	; Case 3
 	; ------
@@ -1058,7 +1414,6 @@ tstat2run(stat) ;
 	; Final result is same 4 records as Case 1 and Case 2.
 	; -----------------------------------------------------
 	set case=3
-	DO UNXREFDATA^%YDBAIM
 	kill ^names2
 	set ^names2(0)="Zero|Cool"
 	set ^names2(1)="Acid|Burn"
@@ -1066,14 +1421,19 @@ tstat2run(stat) ;
 	set ^names2(3)="Zero|Nikon"
 	set ^names2(4)="Joey|"
 	set ^names2(5)="Zero|Cool"
-	set xref=$$XREFDATA^%YDBAIM("^names2",1,"|",1,,,,stat)
+	set xrefdata=$$XREFDATA^%YDBAIM("^names2",1,"|",1,,,,stat)
+	set xrefsub=$$XREFSUB^%YDBAIM("^names2",1,1,,,stat)
 	zkill ^names2(3)
 	kill ^names2(4)
 	zkill ^names2(5)
 	set ^names2(3)="Zero|Nikon"
-	do tstat2assertdata(xref,"Error with stat="_stat_" case="_case_" at "_$zpos)
-	if stat>0 do tstat2assertstat1(xref,"Error with stat="_stat_" case="_case_" at "_$zpos)
-	if stat=2 do tstat2assertstat2(xref,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	do tstat2assertdata(xrefdata,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat>0 do tstat2assertstat1(xrefdata,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat=2 do tstat2assertstat2(xrefdata,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	do tstat2assertsub(xrefsub,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat>0 do tstat2assertsubstat1(xrefsub,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	if stat=2 do tstat2assertsubstat2(xrefsub,"Error with stat="_stat_" case="_case_" at "_$zpos)
+	DO UNXREFDATA^%YDBAIM,UNXREFSUB^%YDBAIM
 	quit
 	;
 tstat2assertdata(xref,message)
@@ -1085,12 +1445,29 @@ tstat2assertdata(xref,message)
 	do assert($data(@xref@(1,"Zero",3)),message)
 	quit
 	;
+tstat2assertsub(xref,message)
+	new aims  do aimgbls(.aims,1)
+	do assert(aims=1)
+	do assert($data(@xref@(1,1)),message)
+	do assert($data(@xref@(1,2)),message)
+	do assert($data(@xref@(1,0)),message)
+	do assert($data(@xref@(1,3)),message)
+	quit
+	;
 tstat2assertstat1(xref,message)
 	new aims  do aimgbls(.aims)
 	do assert(aims=1)
 	do assert(@xref@(-1,"Acid")=1,message)
 	do assert(@xref@(-1,"Cereal")=1,message)
 	do assert(@xref@(-1,"Zero")=2,message)
+	quit
+	;
+tstat2assertsubstat1(xref,message)
+	new aims  do aimgbls(.aims,1)
+	do assert(aims=1)
+	do assert(@xref@(-1,1)=1,message)
+	do assert(@xref@(-1,2)=1,message)
+	do assert(@xref@(-1,0)=1,message)
 	quit
 	;
 tstat2assertstat2(xref,message)
@@ -1100,10 +1477,19 @@ tstat2assertstat2(xref,message)
 	do assert(@xref@(-1)=3,message)
 	quit
 	;
+tstat2assertsubstat2(xref,message)
+	new aims  do aimgbls(.aims,1)
+	; zwrite aims
+	do assert(aims=1)
+	do assert(@xref@(-1)=4,message)
+	quit
+	;
 tstat3	; @TEST Ensure that stat=2 produces correct triggers
 	; https://gitlab.com/YottaDB/Util/YDBAIM/-/issues/47
 	kill ^x
 	new aim set aim=$$XREFDATA^%YDBAIM("^x",2,"|",1,0,0,1,2)
+	do assert(aim'="")
+	set aim=$$XREFSUB^%YDBAIM("^x",2,"1,2",,2)
 	do assert(aim'="")
 	quit
 	;
@@ -1114,15 +1500,18 @@ tstat4	; @TEST More general regression test of #47 than tstat3
 	; hexadecimal hash value, it could be a number (0-9) or (A-F). The latter case is okay as the first letter but
 	; the former case is not. Hence the below $random() usage to try various global names and subscript levels
 	; and ensure all of those continue to work fine.
-	new stat,gblname,subslevel,$etrap
+	; Test XREFSUB() alongside XREFDATA()
+	new stat,gblname,subslevel,subnum,$etrap
 	; In case of an error (like the %YDBAIM-F-SETZTRIGGERFAIL error we saw in #47), display relevant random variables
 	; in the error output so one can use that information to recreate the exact test that failed. Hence the zwrite below.
 	set $etrap="write ! zwrite $zstatus zwrite:$data(gblname) gblname zwrite:$data(subslevel) subslevel zwrite:$data(stat) stat"
 	set gblname=$$randgblname
-	set subslevel=1+$random(16)
+	set subslevel=1+$random(16),subnum="1:"_(1+$random(subslevel))
 	for stat=0:1:2 do
 	. set xref=$$XREFDATA^%YDBAIM(gblname,subslevel,"|",1,,,,stat)
 	. set xref=$$UNXREFDATA^%YDBAIM(gblname,subslevel,"|",1,,,,stat)
+	. set xref=$$XREFSUB^%YDBAIM(gblname,subslevel,subnum,,,stat)
+	. set xref=$$UNXREFSUB^%YDBAIM(gblname,subslevel,subnum,,,stat)
 	quit
 	;
 randgblname()	;
@@ -1138,7 +1527,7 @@ randgblname()	;
 	for i=1:1:gblnamelen set gblname=gblname_$extract(alphanumeric,1+$random(alphanumericlen))
 	quit gblname
 ;
-tspeed1	; @TEST Index 1E6 rows of ^names(:)="A|B"
+tspeeddata1	; @TEST Data Index 1E6 rows of ^names(:)="A|B"
 	;new reccount,indexcount set (reccount,indexcount)=0
 	;new i for i=0:0 set i=$order(^names(i)) quit:'i  if $increment(reccount)
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^names",1,"|",2)
@@ -1147,7 +1536,7 @@ tspeed1	; @TEST Index 1E6 rows of ^names(:)="A|B"
 	;do assert(reccount=indexcount)
 	quit
 	;
-tspeed2	; @TEST Index 1E6 rows of ^names3("fix",:,0)="A|B"
+tspeeddata2	; @TEST Data Index 1E6 rows of ^names3("fix",:,0)="A|B"
 	;new reccount,indexcount set (reccount,indexcount)=0
 	;new i for i=0:0 set i=$order(^names3("fix",i)) quit:'i  if $data(^(i,0)),$increment(reccount)
 	new subs set subs(1)="""fix""",subs(2)=":",subs(3)=0
@@ -1157,7 +1546,7 @@ tspeed2	; @TEST Index 1E6 rows of ^names3("fix",:,0)="A|B"
 	;do assert(reccount=indexcount)
 	quit
 	;
-tspeed3	; @TEST Index 1E6 rows of ^composite(1,2,3,4,5,6,7,:)="A|B"
+tspeeddata3	; @TEST Data Index 1E6 rows of ^composite(1,2,3,4,5,6,7,:)="A|B"
 	;new reccount,indexcount set (reccount,indexcount)=0
 	;new i set i=$name(^composite)
 	;for  set i=$query(@i) quit:i=""  if $increment(reccount)
@@ -1167,7 +1556,7 @@ tspeed3	; @TEST Index 1E6 rows of ^composite(1,2,3,4,5,6,7,:)="A|B"
 	;do assert(reccount=indexcount)
 	quit
 	;
-tspeed4	; @TEST Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
+tspeeddata4	; @TEST Data Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
 	;new reccount,indexcount set (reccount,indexcount)=0
 	;new i for i=0:0 set i=$order(^PSNDF(50.6,i)) quit:'i  if $data(^(i,"VUID")) if $increment(reccount)
 	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
@@ -1175,6 +1564,28 @@ tspeed4	; @TEST Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
 	;new i set i="" for  set i=$order(@aimgbl@(1,i)) quit:i=""  do
 	;. new j set j="" for  set j=$order(@aimgbl@(1,i,j)) quit:j=""  if $increment(indexcount)
 	;do assert(reccount=indexcount)
+	quit
+	;
+tspeedsubs1 ; @TEST Subs Index 1E6 rows of ^names(:)="A|B"
+	new aimgbl set aimgbl=$$XREFSUB^%YDBAIM("^names",1,1)
+	quit
+	;
+tspeedsubs2 ; @TEST Subs Index 1E6 rows of ^names3("fix",:,0)="A|B"
+	new subs set subs(1)="""fix""",subs(2)=":",subs(3)=0
+	new aimgbl set aimgbl=$$XREFSUB^%YDBAIM("^names3",.subs,1+$random(3))
+	quit
+	;
+tspeedsubs3 ; @TEST Subs Index 1E6 rows of ^composite(1,2,3,4,5,6,7,:)="A|B"
+	new aimgbl set aimgbl=$$XREFSUB^%YDBAIM("^composite",8,1+$random(8))
+	quit
+	;
+tspeedsubs3a ; @TEST Multiple Subs Index 1E6 rows of ^composite(1,2,3,4,5,6,7,:)="A|B"
+	new aimgbl set aimgbl=$$XREFSUB^%YDBAIM("^composite",8,"8;;6;1:3")
+	quit
+	;
+tspeedsubs4 ; @TEST Subs Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
+	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
+	new aimgbl set aimgbl=$$XREFSUB^%YDBAIM("^PSNDF",.subs,"1;3;2")
 	quit
 	;
 tcon1	; @TEST Concurrent do/undo of the same global
@@ -1196,6 +1607,25 @@ tcon1	; @TEST Concurrent do/undo of the same global
 	do assert('$data(files),"There should not be any error files; first error: "_$order(files("")))
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^names",1,"|",2,1) ; nmonly
 	do assert('$data(@aimgbl),"Shouldn't exist as the last operation should have been an unxref")
+	;
+	; Test XREFSUB()
+	lock +racegate
+	job tcon1subjob
+	set job1=$zjob
+	job tcon1subjob
+	set job2=$zjob
+	; Now jobs can run
+	lock -racegate
+	; Wait till they are done.
+	for  quit:'$zgetjpi(job1,"ISPROCALIVE")  hang 0.001
+	for  quit:'$zgetjpi(job2,"ISPROCALIVE")  hang 0.001
+	;
+	; Look for error files
+	new files,file set file="tcon1jobet.*.jobexam"
+	for  set file=$zsearch(file)  quit:file=""  set files(file)=""
+	do assert('$data(files),"There should not be any error files; first error: "_$order(files("")))
+	set aimgbl=$$XREFSUB^%YDBAIM("^names",1,1,1) ; nmonly
+	do assert('$data(@aimgbl),"Shouldn't exist as the last operation should have been an unxref")
 	quit
 	;
 tcon1job ; [Job target] Concurrent do/undo of the same global
@@ -1209,6 +1639,20 @@ tcon1job ; [Job target] Concurrent do/undo of the same global
 	.. do UNXREFDATA^%YDBAIM("^names",1,"|",2)
 	. else  do
 	.. do UNXREFDATA^%YDBAIM(aimgbl)
+	lock -racegate($J)
+	quit
+	;
+tcon1subjob ; [Job target] Concurrent do/undo of the same global
+	new aimgbl
+	new $etrap set $etrap="goto tcon1jobet^"_$text(+0)
+	lock +racegate($J)
+	new i for i=1:1:10 do
+	. set aimgbl=$$XREFSUB^%YDBAIM("^names",1,1)
+	. new % set %=$random(2)
+	. if % do
+	.. do UNXREFSUB^%YDBAIM("^names",1,1)
+	. else  do
+	.. do UNXREFSUB^%YDBAIM(aimgbl)
 	lock -racegate($J)
 	quit
 	;
@@ -1234,18 +1678,36 @@ tcon2	; @TEST Concurrent xref of different globals
 	new job2aim set job2aim=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2,1)
 	do assert($data(@job1aim))
 	do assert($data(@job2aim))
+	;
+	; Test XREFSUB()
+	lock +racegate
+	job tcon2job1(1)
+	set job1=$zjob
+	job tcon2job2(1)
+	set job2=$zjob
+	; Now jobs can run
+	lock -racegate
+	; Wait till they are done.
+	for  quit:'($zgetjpi(job1,"ISPROCALIVE")!$zgetjpi(job2,"ISPROCALIVE"))  hang 0.001
+	;
+	set job1aim=$$XREFSUB^%YDBAIM("^names",1,1)
+	set job2aim=$$XREFSUB^%YDBAIM("^ORD",.subs,1)
+	do assert($data(@job1aim))
+	do assert($data(@job2aim))
 	quit
 	;
-tcon2job1 ; [Job target] Concurrent xref of different globals
+tcon2job1(type) ; [Job target] Concurrent xref of different globals
 	lock +racegate($J)
-	if $$XREFDATA^%YDBAIM("^names",1,"|",1)
+	if +$get(type) do XREFSUB^%YDBAIM("^names",1,1)
+	else  if $$XREFDATA^%YDBAIM("^names",1,"|",1)
 	lock -racegate($J)
 	quit
 	;
-tcon2job2 ; [Job target] Concurrent xref of different globals
+tcon2job2(type) ; [Job target] Concurrent xref of different globals
 	lock +racegate($J)
 	new subs set subs(1)=100.01,subs(2)=":",subs(3)=0
-	if $$XREFDATA^%YDBAIM("^ORD",.subs,"^",2)
+	if +$get(type) do XREFSUB^%YDBAIM("^ORD",.subs,1)
+	else  if $$XREFDATA^%YDBAIM("^ORD",.subs,"^",2)
 	lock -racegate($J)
 	quit
 	;
@@ -1271,26 +1733,48 @@ tcon3	; @TEST Concurrent unxref of different globals
 	;
 	do assert('$data(@aimgbl1))
 	do assert('$data(@aimgbl2))
+	;
+	set aimgbl1=$$XREFSUB^%YDBAIM("^names",1,1)
+	set aimgbl2=$$XREFSUB^%YDBAIM("^ORD",.subs,"1:3")
+	;
+	do assert($data(@aimgbl1))
+	do assert($data(@aimgbl2))
+	;
+	; Test XREFSUB()
+	lock +racegate
+	job tcon3job1(1)
+	set job1=$zjob
+	job tcon3job2(1)
+	set job2=$zjob
+	; Now jobs can run
+	lock -racegate
+	; Wait till they are done.
+	for  quit:'($zgetjpi(job1,"ISPROCALIVE")!$zgetjpi(job2,"ISPROCALIVE"))  hang 0.001
+	;
+	do assert('$data(@aimgbl1))
+	do assert('$data(@aimgbl2))
 	quit
 	;
-tcon3job1 ; [Job target] Concurrent unxref of different globals
+tcon3job1(type) ; [Job target] Concurrent unxref of different globals
 	lock +racegate($J)
-	do UNXREFDATA^%YDBAIM("^names",1,"|",1)
+	if +$get(type) do UNXREFSUB^%YDBAIM("^names",1,1)
+	else  do UNXREFDATA^%YDBAIM("^names",1,"|",1)
 	lock -racegate($J)
 	quit
 	;
-tcon3job2 ; [Job target] Concurrent unxref of different globals
+tcon3job2(type) ; [Job target] Concurrent unxref of different globals
 	lock +racegate($J)
 	new subs set subs(1)=100.01,subs(2)=":",subs(3)=0
-	do UNXREFDATA^%YDBAIM("^ORD",.subs,"^",2)
+	if +$get(type) do UNXREFSUB^%YDBAIM("^ORD",.subs,"1:3")
+	else  do UNXREFDATA^%YDBAIM("^ORD",.subs,"^",2)
 	lock -racegate($J)
 	quit
 	;
 tcon4	; @TEST Concurrent xref of the same global
 	lock +racegate
-	job tcon4job1
+	job tcon4job
 	new job1 set job1=$zjob
-	job tcon4job2
+	job tcon4job
 	new job2 set job2=$zjob
 	; Now jobs can run
 	lock -racegate
@@ -1344,32 +1828,88 @@ tcon4	; @TEST Concurrent xref of the same global
 	do assert(@aimgbl@(-1,"B")=250000)
 	do assert(@aimgbl@(-1,"C")=249999)
 	do assert(@aimgbl@(-1,"Z")=1)
+	;
+	do UNXREFDATA^%YDBAIM(aimgbl)
+	set ^names(1)="A|B",^names(2)="C|B"
+	kill ^names(1000001),^names(1000002)
+	;
+	; Test XREFSUB()
+	lock +racegate
+	job tcon4job(1)
+	new job1 set job1=$zjob
+	job tcon4job(1)
+	new job2 set job2=$zjob
+	; Now jobs can run
+	lock -racegate
+	; Wait till they are done.
+	for  quit:'($zgetjpi(job1,"ISPROCALIVE")!$zgetjpi(job2,"ISPROCALIVE"))  hang .001
+	;
+	set aimgbl=$$XREFSUB^%YDBAIM("^names",1,1)
+	;
+	do assert($data(@aimgbl@(0)),"AIM says we completed")
+	;
+	; verify that all nodes in names are in aimgbl and vice versa
+	; ^names -> aimgbl
+	new i,v set i=""
+	for  set i=$order(^names(i)) quit:i=""  do
+	. do assert($data(@aimgbl@(1,i)),^names(i)_" does not match "_$name(@aimgbl@(1,i)))
+	;
+	; aimgbl -> ^names
+	kill i,v
+	set (i,v)=""
+	for  set v=$order(@aimgbl@(1,v)) quit:v=""  do
+	. do assert($data(^names(v)))
+	;
+	; Verify stats work properly
+	; @aimgbl@(-1)=1000000
+	; @aimgbl@(1,1 through 1000000) should exist
+	; @aimgbl@(-1,1 through 1000000) should exist
+	new tmp set tmp=1+$random(1000000) do assert($data(@aimgbl@(1,tmp)))
+	do assert($data(@aimgbl@(-1,1+$random(1000000))))
+	do assert(@aimgbl@(-1)=1000000)
+	;
+	set ^names(1000001)="A|Q"
+	set ^names(1000002)="Z|F"
+	;
+	set tmp=1000001+$random(2) do assert($data(@aimgbl@(1,tmp)))
+	do assert($data(@aimgbl@(-1,1000001+$random(2))))
+	do assert(@aimgbl@(-1)=1000002)
+	;
+	; ^names(1)="A|B"
+	; ^names(2)="C|B"
+	kill ^names(1),^names(2)
+	;
+	set tmp=3+$random(1000000) do assert($data(@aimgbl@(1,tmp)))
+	do assert($data(@aimgbl@(-1,3+$random(1000000))))
+	do assert(@aimgbl@(-1)=1000000)
 	quit
 	;
-tcon4job1 ; [Job target] Concurrent xref of the same global
+tcon4job(type) ; [Job target] Concurrent xref of the same global
 	lock +racegate($J)
-	if $$XREFDATA^%YDBAIM("^names",1,"|",1,"","","",2)
-	lock -racegate($J)
-	quit
-	;
-tcon4job2 ; [Job target] Concurrent xref of the same global
-	lock +racegate($J)
-	if $$XREFDATA^%YDBAIM("^names",1,"|",1,"","","",2)
+	if +$get(type) do XREFSUB^%YDBAIM("^names",1,1,,,2)
+	else  if $$XREFDATA^%YDBAIM("^names",1,"|",1,"","","",2)
 	lock -racegate($J)
 	quit
 	;
 tcon5	; @TEST Test concurrent lsxref
 	new $etrap set $etrap="goto tcon5jobet^"_$text(+0)
-	job tcon5job1
-	new i
-	for i=1:1:100 new xrefs do LSXREFDATA^%YDBAIM(.xrefs) hang $random(100)*0.001
+	new i,job1,job2,xrefs
+	job tcon5job1 set job1=$zjob
+	for i=1:1:100 kill xrefs do LSXREFDATA^%YDBAIM(.xrefs) hang $random(100)*.001
+	; Test concurrent DATA & SUB
+	job tcon5job1(1) set job2=$zjob
+	for i=1:1:100 kill xrefs do LSXREFSUB^%YDBAIM(.xrefs) hang $random(100)*.001
+	for  quit:'($zgetjpi(job1,"ISPROCALIVE")!$zgetjpi(job2,"ISPROCALIVE"))  hang .001
 	quit
 	;
-tcon5job1 ; [Job Target] Test concurrent lsxref
+tcon5job1(type) ; [Job Target] Test concurrent lsxref
 	new $etrap set $etrap="goto tcon5jobet^"_$text(+0)
 	kill ^x set ^x(1)=""
 	new i,xref,unxref
-	for i=1:1:100 do
+	if +$get(type) for i=1:1:100 do
+	. set ref=$$XREFSUB^%YDBAIM("^x",1,1)
+	. set unxref=$$UNXREFSUB^%YDBAIM("^x",1)
+	else  for i=1:1:100 do
 	. set xref=$$XREFDATA^%YDBAIM("^x",1)
 	. set unxref=$$UNXREFDATA^%YDBAIM("^x",1)
 	quit
@@ -1400,12 +1940,43 @@ tcon6	; @TEST Test concurrent xref, unxref, and lsxref together
 	. write "[FAIL] [cat tcon6job.mj*] output follows",!
 	. zsystem "cat tcon6job.mj* | sed 's/^/tcon6 : [FAIL] /'"
 	kill ^stop,^njobs,^cntr,^job
+	;
+	; Test XREFSUB()
+	set ^stop=0
+	set ^njobs=8
+	set ^cntr=^njobs
+	for i=1:1:^njobs set gbl="^x"_i kill @gbl set @gbl@(1)="",@gbl@(2)="abcd"
+	; Start ^njobs child processes
+	for i=1:1:^njobs do
+	. set jobstr="job tcon6job(1):(output=""tcon6job.mjo"_i_""":error=""tcon6job.mje"_i_""")"
+	. xecute jobstr
+	. set ^job(i)=$zjob
+	; Let child processes run for a max of 5 seconds. Stop before that if at least one process fails and sets ^stop=1
+	for i=1:1:50  quit:^stop=1  hang 0.1
+	; Signal child processes to stop
+	set ^stop=1
+	; Wait for child processes to terminate.
+	for i=1:1:^njobs set pid=^job(i) for  quit:'$zgetjpi(pid,"ISPROCALIVE")  hang 0.1
+	; Check if all child processes finished cleanly
+	do assert(^cntr=0,"^cntr : Expected=0 : Actual="_^cntr)
+	if ^cntr do
+	. write "[FAIL] [cat tcon6job.mj*] output follows",!
+	. zsystem "cat tcon6job.mj* | sed 's/^/tcon6 : [FAIL] /'"
+	kill ^stop,^njobs,^cntr,^job
 	quit
 	;
-tcon6job ; [Job Target] Test concurrent xref, unxref, and lsxref together
+tcon6job(type) ; [Job Target] Test concurrent xref, unxref, and lsxref together
 	set $etrap="zwrite $zstatus  set ^stop=1 halt"
 	set njobs=^njobs
-	for i=1:1 quit:^stop=1  do
+	if +$get(type) for i=1:1 quit:^stop=1  do
+	. for j=1:1:3 do
+	. . set gbl="^x"_(1+$random(njobs))
+	. . set:j=1 xref=$$XREFSUB^%YDBAIM(gbl,1,1)
+	. . set:j=2 xref=$$UNXREFSUB^%YDBAIM(gbl,1,1)
+	. . if j=3 for k=1:1:8 do
+	. . . if $random(2) do LSXREFSUB^%YDBAIM(.xrefs,gbl)
+	. . . else  do LSXREFSUB^%YDBAIM(.xrefs)
+	else  for i=1:1 quit:^stop=1  do
 	. for j=1:1:3 do
 	. . set gbl="^x"_(1+$random(njobs))
 	. . set:j=1 xref=$$XREFDATA^%YDBAIM(gbl,1)
@@ -1433,13 +2004,29 @@ tsanity	; @TEST Main Sanity YDBAIM tester
 	; Stop application and check xref
 	do simappstop
 	do xrefgblchk
+	;
+	do init(1)
+	do simappstart(12)
+	do xrefprocrun(4,1)
+	; Verify the names of all the cross-references
+	kill xrefgbl
+	set eachxref=""
+	for  set eachxref=$order(^%ydb674test("xref","aimxref",eachxref)) quit:""=eachxref  do
+	. if $data(xrefgbl) do assert(xrefgbl=^%ydb674test("xref","aimxref",eachxref)) if 1
+	. else  set xrefgbl=^%ydb674test("xref","aimxref",eachxref)
+	; Let the jobs create random data for one second
+	hang 1
+	; Stop application and check xref
+	do simappstop
+	do xrefgblchk(1)
 	quit
 	;
 	;
-init	new gbl,io,%
+init(type)	new gbl,io,%
 	view "jobpid":1,"ztrigger_output":0
 	kill ^%ydb674test,^ABC
-	set (gbl,%)="^%ydbAIMD" for  set gbl=$order(@gbl) quit:gbl'[%  kill @gbl
+	set (gbl,%)=$select(+$get(type):"^%ydbAIMS",1:"^%ydbAIMD")
+	for  set gbl=$order(@gbl) quit:gbl'[%  kill @gbl
 	if $ztrigger("item","-*")
 	view "ztrigger_output":1
 	quit
@@ -1469,19 +2056,18 @@ simapp
 	. ; hang 1+$random(10)/1E3					; random hang if needed to avoid saturating the CPU
 	quit
 
-
 	; Updating a node. If a node does not exist, create it, using odd numbers for the first and third pieces so that it is easy
 	; to determine how many times a node was updated. If a node exists, zkill it 20% of the time (since triggers don't work on trees
 	; AIM won't handle kill well at present), and the rest of the time, update the node.
 update(node)
 	new piece
-	tstart ()
+	tstart ():transactionid="batch"
 	if $data(@node)#10 do
 	. if $random(5) do						; 80% of the time node will be updated
 	. . set piece=$random(2)*2+1					; piece is either 1 or 3
 	. . set $zpiece(@node,"|",piece)=0.5*$zpiece(@node,"|",piece)
 	. . set $zpiece(@node,"|",2)=$zpiece(@node,"|",2)_$$^%RANDSTR(1,,"AL")
-	. else  zkill @node						; and removed 20% of the time
+	. else  zkill @node
 	else  set @node=$random(1E3)*2+1_"|"_$$^%RANDSTR(1,,"AL")_"|"_($random(1E3)*2+1)
 	tcommit
 	quit
@@ -1507,33 +2093,47 @@ simappstop
 	quit
 
 	; Check complete nodes and cross references for Consistency - a cross reference for each node, and a node for each cross reference
-xrefgblchk
-	new flag,sub1,sub2,sub3,val
-	; write "Checking that a node exists for each cross reference ",!
+xrefgblchk(type)
+	new flag,ref,sub1,sub2,sub3,val
 	; Should check whether a $query() loop is faster than the following nested $order() loop
-	set flag=0,val="" for  set val=$order(@xrefgbl@(0,val)) quit:""=val  do
-	. set sub1="" for  set sub1=$order(@xrefgbl@(0,val,sub1)) quit:""=sub1  do
-	. . set sub2="" for  set sub2=$order(@xrefgbl@(0,val,sub1,sub2)) quit:""=sub2  do
-	. . . set sub3="" for  set sub3=$order(@xrefgbl@(0,val,sub1,sub2,sub3)) quit:""=sub3  do
-	. . . . if '$data(^ABC(sub1,sub2,sub3))#10 write !,xrefgbl,"(",val,",",sub1,",",sub2,",",sub3,") exists but ^ABC node does not" set flag=1
-	. . . . else  if val'=^ABC(sub1,sub2,sub3) write !,"^ABC(",sub1,",",sub2,",",sub3,")=",^ABC(sub1,sub2,sub3)," but xref is ",val set flag=1
-	do assert('flag)
-	; write "Checking that an xref exists for each global node ",!
-	set flag=0,sub1=""  for  set sub1=$order(^ABC(sub1)) quit:""=sub1  do:$data(^ABC(sub1))\10
-	. set sub2="" for  set sub2=$order(^ABC(sub1,sub2)) quit:""=sub2  do:$data(^ABC(sub1,sub2))\10
-	. . set sub3="" for  set sub3=$order(^ABC(sub1,sub2,sub3)) quit:""=sub3  do:$data(^ABC(sub1,sub2,sub3))#10
-	. . . set val=^ABC(sub1,sub2,sub3)
-	. . . if '$data(@xrefgbl@(0,val,sub1,sub2,sub3)) write !,"^ABC(",sub1,",",sub2,",",sub3,")=",val," has no xref" set flag=1
-	do assert('flag)
+	if +$get(type) do
+	. ; write "Checking that a node exists for each cross reference ",!
+	. set flag=0,ref=$query(@xrefgbl@(3,"")) for  quit:3'=$qsubscript(ref,1)!'$zlength(ref)  do  set ref=$query(@ref)
+	. . set sub1=$qsubscript(ref,3),sub2=$qsubscript(ref,4),sub3=$qsubscript(ref,2)
+	. . if '($data(^ABC(sub1,sub2,sub3))#10) write !,xrefgbl,"(3,",sub3,",",sub1,",",sub2,",",") exists but ^ABC node does not" set flag=1
+	. do assert('flag)
+	. ; write "checking that an xref exists for each global node",!
+	. set flag=0,sub1="" for  set sub1=$order(^ABC(sub1)) quit:""=sub1  do
+	. . set sub2="" for  set sub2=$order(^ABC(sub1,sub2)) quit:""=sub2  do
+	. . . set sub3="" for  set sub3=$order(^ABC(sub1,sub2,sub3)) quit:""=sub3  do:10'=$data(^ABC(sub1,sub2,sub3))
+	. . . . if '$data(@xrefgbl@(3,sub3,sub1,sub2)) write !,"^ABC(",sub1,",",sub2,",",sub3,") exists but xref does not" set flag=1
+	. do assert('flag)
+	else  do
+	. ; write "Checking that a node exists for each cross reference ",!
+	. set flag=0,val="" for  set val=$order(@xrefgbl@(0,val)) quit:""=val  do
+	. .set sub1="" for  set sub1=$order(@xrefgbl@(0,val,sub1)) quit:""=sub1  do
+	. . . set sub2="" for  set sub2=$order(@xrefgbl@(0,val,sub1,sub2)) quit:""=sub2  do
+	. . . . set sub3="" for  set sub3=$order(@xrefgbl@(0,val,sub1,sub2,sub3)) quit:""=sub3  do
+	. . . . . if '$data(^ABC(sub1,sub2,sub3))#10 write !,xrefgbl,"(",val,",",sub1,",",sub2,",",sub3,") exists but ^ABC node does not" set flag=1
+	. . . . . else  if val'=^ABC(sub1,sub2,sub3) write !,"^ABC(",sub1,",",sub2,",",sub3,")=",^ABC(sub1,sub2,sub3)," but xref is ",val set flag=1
+	. do assert('flag)
+	. ; write "Checking that an xref exists for each global node ",!
+	. set flag=0,sub1=""  for  set sub1=$order(^ABC(sub1)) quit:""=sub1  do:$data(^ABC(sub1))\10
+	. . set sub2="" for  set sub2=$order(^ABC(sub1,sub2)) quit:""=sub2  do:$data(^ABC(sub1,sub2))\10
+	. . . set sub3="" for  set sub3=$order(^ABC(sub1,sub2,sub3)) quit:""=sub3  do:$data(^ABC(sub1,sub2,sub3))#10
+	. . . . set val=^ABC(sub1,sub2,sub3)
+	. . . . if '$data(@xrefgbl@(0,val,sub1,sub2,sub3)) write !,"^ABC(",sub1,",",sub2,",",sub3,")=",val," has no xref" set flag=1
+	. do assert('flag)
+	;
 	quit
 
 	; Run multiple parallel xref processes, to show parallel processes can concurrently cross reference
-xrefprocrun(nproc)
+xrefprocrun(nproc,type)
 	new i
 	set ^%ydb674test("xref","start")=nproc				; number of xref processes
 	lock ^%ydb674test("xref","start")
 	; write "Starting ",nproc," concurrent xrefs",!
-	for i=1:1:nproc job xrefproc set ^%ydb674test("xref","jobs",$zjob)=""
+	for i=1:1:nproc job xrefproc(+$get(type)) set ^%ydb674test("xref","jobs",$zjob)=""
 	for  quit:'^%ydb674test("xref","start")  hang .001		; zero ^%ydb674test("xref","start") means all xref processes are up
 	kill ^%ydb674test("xref","start")
 	lock -^%ydb674test("xref","start")
@@ -1545,12 +2145,12 @@ xrefprocrun(nproc)
 	; write "Cross reference processes complete",!
 	quit
 
-xrefproc
+xrefproc(type)
 	lock +^%ydb674test("xref","stop",$job)
 	if $increment(^%ydb674test("xref","start"),-1)
 	lock +^%ydb674test("xref","start",$job)				; Gate to ensure all xref processes are up and running
 	lock -^%ydb674test("xref","start",$job)
-	set ^%ydb674test("xref","aimxref",$job)=$$XREFDATA^%YDBAIM("^ABC",3)
+	set ^%ydb674test("xref","aimxref",$job)=$select(+$get(type):$$XREFSUB^%YDBAIM("^ABC",3,3),1:$$XREFDATA^%YDBAIM("^ABC",3))
 	lock -^%ydb674test("xref","stop",$job)
 	quit
 
@@ -2782,17 +3382,20 @@ TW27p3	; @TEST Range to empty string doesn't work with AIM#42 changes
 	new subs set subs(1)=100.01,subs(2)="0:",subs(3)=0
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM("^ORD",.subs,"^",2,0,0,1,0,0)
 	do assert($data(@aimgbl@(2,"dc",1)))
+	; Test XREFSUB()
+	set aimgbl=$$XREFSUB^%YDBAIM("^ORD",.subs,2,0,1)
+	do assert($data(@aimgbl@(2,1)))
 	quit
 	;
 tsigusr1 ; @TEST Interrupt using SIGUSR1
 	; This is supposed to only do a job exam, and resume
 	; $ZYINTRSIG is supposed to be SIGUSR1
 	; Set interrupt code
-	view "setenv":"ydb_zinterrupt":"do sigusrint^"_$text(+0)
+	view "setenv":"ydb_zinterrupt":"do sigusrint^"_$text(+0),"jobpid":1
 	;
 	; delete old data generated from interrupt (in case of re-runs)
 	zsy "rm -f tsigusr1.jobexam"
-	kill ^tsigusr
+	kill ^tsigusr,^%ydbAIMtmp
 	;
 	; Get AIM index name for later use
 	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
@@ -2803,7 +3406,6 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	;
 	; Wait till the parallel process children show up
 	for  quit:$data(^%ydbAIMtmp("%YDBAIM",jobpid,0))  hang .01
-	;
 	; give it some time to index
 	for  quit:$data(@aimgbl@(1,"A"))  hang .0001
 	;
@@ -2826,9 +3428,6 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	;
 	; Wait for AIM job to die (this takes a while as we are still indexing)
 	for  quit:'$zgetjpi(jobpid,"ISPROCALIVE")  hang 0.01
-	;
-	; Reset envionment
-	view "unsetenv":"ydb_zinterrupt"
 	;
 	; Final count
 	do sigusrcount(7,aimgbl)
@@ -2853,13 +3452,59 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	do assert(^tsigusr(7,"count","A")=497000)
 	do assert(^tsigusr(7,"count","B")=497001)
 	;
-	; Previous count should not be zero.
-	do assert(^tsigusr(6,"count","A"))
-	do assert(^tsigusr(6,"count","B"))
+	; Counts should be non-zero and increasing monotonically
+	new i for i=1:1:6 do
+	. do assert(^tsigusr(i,"count","A")),assert(^tsigusr(i,"count","A")<^tsigusr(i+1,"count","A"))
+	. do assert(^tsigusr(i,"count","B")),assert(^tsigusr(i,"count","B")<^tsigusr(i+1,"count","B"))
 	;
-	; The previous count should be much less. Assert that.
-	do assert(^tsigusr(6,"count","A")<^tsigusr(7,"count","A"))
-	do assert(^tsigusr(6,"count","B")<^tsigusr(7,"count","B"))
+	; Test XREFSUB()
+	; delete old data generated from interrupt (in case of re-runs)
+	zsy "rm -f tsigusr1.jobexam"
+	kill ^tsigusr
+	;
+	; Get AIM index name for later use
+	set aimgbl=$$XREFSUB^%YDBAIM("^PSNDF",.subs,2,1) ; nmonly
+	;
+	; Job off AIM jobs that will be signaled
+	job jobsigusr(1):passcurlvn set jobpid=$zjob
+	;
+	; Wait till the parallel process children show up
+	for  quit:$data(^%ydbAIMtmp("%YDBAIM",jobpid,0))  hang .01
+	;
+	; give it some time to index
+	for  quit:$data(@aimgbl@(2,200000))  hang .0001
+	;
+	; Interrupt with USR1
+	if $ZSIGPROC(jobpid,"SIGUSR1")
+	;
+	; Wait till interrupt is processed
+	for  quit:$zsearch("tsigusr1.jobexam")'=""  hang .01
+	;
+	; Count data six times. Each count should be greater than the previous one.
+	do sigusrcount(1,aimgbl,1) h .001
+	do sigusrcount(2,aimgbl,1) h .001
+	do sigusrcount(3,aimgbl,1) h .001
+	do sigusrcount(4,aimgbl,1) h .001
+	do sigusrcount(5,aimgbl,1) h .001
+	do sigusrcount(6,aimgbl,1)
+	;
+	; Assert that the signal is USR1
+	do assert(^tsigusr="SIGUSR1")
+	;
+	; Wait for AIM job to die (this takes a while as we are still indexing)
+	for  quit:'$zgetjpi(jobpid,"ISPROCALIVE")  hang 0.01
+	;
+	; Reset envionment
+	view "unsetenv":"ydb_zinterrupt"
+	;
+	; Final count
+	do sigusrcount(7,aimgbl,1)
+	;
+	; Final count should be the full count
+	do assert(^tsigusr(7)=999378)
+	;
+	; Counts should be non-zero and increasing monotonically
+	for i=1:1:6 do assert(^tsigusr(i)),assert(^tsigusr(i)<^tsigusr(i+1))
 	quit
 	;
 tsigusr2 ; @TEST Interrupt using SIGUSR2
@@ -2867,7 +3512,7 @@ tsigusr2 ; @TEST Interrupt using SIGUSR2
 	; $ZYINTRSIG is supposed to be SIGUSR2
 	; SIGUSR2 processing is only activated when we set ydb_treat_sigusr2_like_sigusr1
 	view "setenv":"ydb_treat_sigusr2_like_sigusr1":"1"
-	view "setenv":"ydb_zinterrupt":"do sigusrint^"_$text(+0)
+	view "setenv":"ydb_zinterrupt":"do sigusrint^"_$text(+0),"jobpid":1
 	;
 	; delete old data generated from interrupt (in case of re-runs)
 	zsy "rm -f tsigusr2.jobexam"
@@ -2884,7 +3529,7 @@ tsigusr2 ; @TEST Interrupt using SIGUSR2
 	for  quit:$data(^%ydbAIMtmp("%YDBAIM",jobpid,0))  hang .01
 	;
 	; give it some time to index
-	for  quit:$data(@aimgbl@(1,"A"))  hang .0001
+	for  quit:$data(@aimgbl@(1,"A"))  hang .001
 	;
 	; Interrupt with USR2
 	if $ZSIGPROC(jobpid,"SIGUSR2")
@@ -2910,6 +3555,50 @@ tsigusr2 ; @TEST Interrupt using SIGUSR2
 	do assert(^tsigusr(5,"count","A")=^tsigusr(6,"count","A"))
 	do assert(^tsigusr(5,"count","B")=^tsigusr(6,"count","B"))
 	;
+	; Wait for AIM job to die (this is fast as indexing is done)
+	for  quit:'$zgetjpi(jobpid,"ISPROCALIVE")  hang 0.001
+	;
+	; Test XREFSUB()
+	; delete old data generated from interrupt (in case of re-runs)
+	zsy "rm -f tsigusr2.jobexam"
+	kill ^tsigusr,^%ydbAIMtmp
+	do UNXREFSUB^%YDBAIM("^PSNDF") ; for repeated runs
+	;
+	; Get AIM index name for later use
+	set aimgbl=$$XREFSUB^%YDBAIM("^PSNDF",.subs,2,1) ; nmonly
+	;
+	; Job off AIM jobs that will be signaled
+	new jobpid job jobsigusr(1):passcurlvn set jobpid=$zjob
+	;
+	; Wait till the parallel process children show up
+	for  quit:$data(^%ydbAIMtmp("%YDBAIM",jobpid,0))  hang .001
+	;
+	; give it some time to index
+	for  quit:$data(@aimgbl@(2))  hang .0001
+	;
+	; Interrupt with USR2
+	if $ZSIGPROC(jobpid,"SIGUSR2")
+	;
+	; Wait till interrupt is processed
+	for  quit:$zsearch("tsigusr2.jobexam")'=""  hang .01
+	;
+	; Count data six times. The counts should all the same, as we stopped indexing.
+	do sigusrcount(1,aimgbl,1) h .001
+	do sigusrcount(2,aimgbl,1) h .001
+	do sigusrcount(3,aimgbl,1) h .001
+	do sigusrcount(4,aimgbl,1) h .001
+	do sigusrcount(5,aimgbl,1) h .001
+	do sigusrcount(6,aimgbl,1)
+	;
+	; Assert that the signal is USR2
+	do assert(^tsigusr="SIGUSR2")
+	;
+	; Assert that the zgoto in the interrupt handler actually executed
+	do assert($data(^tsigusr("finish")))
+	;
+	; Counts should be non-zero and identical
+	for i=1:1:5 do assert(^tsigusr(i)),assert(^tsigusr(i)=^tsigusr(i+1))
+	;
 	; Reset environment
 	view "unsetenv":"ydb_zinterrupt"
 	view "unsetenv":"ydb_treat_sigusr2_like_sigusr1"
@@ -2918,8 +3607,9 @@ tsigusr2 ; @TEST Interrupt using SIGUSR2
 	for  quit:'$zgetjpi(jobpid,"ISPROCALIVE")  hang 0.001
 	quit
 	;
-jobsigusr ; [job for tsigusr1 and tsigusr2]
-	if $$XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1)
+jobsigusr(type) ; [job for tsigusr1 and tsigusr2] - type=1 means XREFSUB()
+	if +$get(type) do XREFSUB^%YDBAIM("^PSNDF",.subs,2)
+	else  do XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1)
 	quit
 	;
 sigusrint ; [interrupt for tsigusr1 and tsigusr2]
@@ -2931,9 +3621,12 @@ sigusrint ; [interrupt for tsigusr1 and tsigusr2]
 sigusrjobcancel ;
 	zgoto 1:sigusr2finish
 	;;;
-sigusrcount(n,aimgbl) ;
-	do sigusrcountA(n,aimgbl)
-	do sigusrcountB(n,aimgbl)
+sigusrcount(n,aimgbl,type) ; type=1 is XREFSUB() test
+	if +$get(type) do
+	. new count,i set count=0,i=""
+	. for  set i=$order(@aimgbl@(2,i)) quit:'i  if $increment(count)
+	. set ^tsigusr(n)=count
+	else  do sigusrcountA(n,aimgbl),sigusrcountB(n,aimgbl)
 	quit
 	;
 sigusrcountA(n,aimgbl) ;
@@ -2956,14 +3649,18 @@ tintrestore ; @TEST Test that the AIM restores the original interrupt
 	kill ^tintrestore
 	view "setenv":"ydb_zinterrupt":"do intintrestore^"_$text(+0)
 	job jobintrestore
-	new myJob set myJob=$zjob
+	for  quit:$data(^tintrestore("after"))  hang 0.001
+	do assert(^tintrestore("before")=^tintrestore("after"))
+	kill ^tintrestore
+	job jobintrestore(1)
 	for  quit:$data(^tintrestore("after"))  hang 0.001
 	do assert(^tintrestore("before")=^tintrestore("after"))
 	quit
 	;
-jobintrestore ; [job target for tintrestore]
+jobintrestore(type) ; [job target for tintrestore] - type is XREFSUB() test
 	set ^tintrestore("before")=$zinterrupt
-	if $$XREFDATA^%YDBAIM("^customers",1,"§",3)
+	if +$get(type) do XREFSUB^%YDBAIM("^customers",1,1)
+	else  do XREFDATA^%YDBAIM("^customers",1,"§",3)
 	set ^tintrestore("after")=$zinterrupt
 	quit
 intintrestore ; [no op interrupt; not a typo]
