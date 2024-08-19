@@ -1,7 +1,7 @@
 #!/bin/bash
 #################################################################
 #								#
-# Copyright (c) 2021-2022 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2021-2024 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -38,6 +38,10 @@ run_test NOTAGBL6 'write $$UNXREFDATA^%YDBAIM("^xy123456789012345678901234567890
 run_test GVSUBOFLOW0 'do gvsuboflow^%YDBAIMTEST(0)'	# Test $ZLEVEL=0
 run_test GVSUBOFLOW1 'do gvsuboflow^%YDBAIMTEST(1)'	# Test $ZLEVEL=1
 run_test BADINVOCATION2 'DO ^%YDBAIM'		# Test of BADINVOCATION via %XCMD
+run_test BADTRANSFORM1 'do XREFDATA^%YDBAIM("^abcd",2,,,,,,,2,0)'
+run_test BADTRANSFORM2 'do XREFDATA^%YDBAIM("^abcd",2,,,,,,,2,1)'
+run_test BADTRANSFORM3 'do XREFDATA^%YDBAIM("^abcd",2,,,,,,,0,"abcd")'
+run_test BADTRANSFORM4 'do XREFDATA^%YDBAIM("^abcd",2,,,,,,,1,"abcd")'
 
 echo "BADINVOCATION3 DO ^%YDBAIM in direct mode (not via %XCMD)"
 echo 'DO ^%YDBAIM' | yottadb -direct		# Test of BADINVOCATION in direct mode

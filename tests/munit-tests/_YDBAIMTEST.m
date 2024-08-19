@@ -170,7 +170,7 @@ aim73	; @TEST Test for YDBAIM#73
 	set varpat=$ztranslate(varpat,5,6)
 	set @varpat=testval,ref=$reference
 	do assert(10=$data(@x@(0,tvxref))),assert(1=@x@("",tvxref)),assert(nodes+1=@x@(11)),assert(j+1=@x@(""))
-	;     - Check kill trigger: no xref, decrease in total statistics, decrease in number of distinct values 
+	;     - Check kill trigger: no xref, decrease in total statistics, decrease in number of distinct values
 	kill @ref
 	do assert('$data(@x@(0,tvxref))),assert('$data(@x@("",tvxref))),assert(nodes=@x@(11)),assert(j=@x@(""))
 	;     - Check removal
@@ -268,6 +268,92 @@ aim74	; @TEST for YDBAIM#74
 	. do assert('$data(@ret))
 	kill ^x
 	quit
+	;
+aim77	; @Test for YDBAIM77
+	new force,i,j,aimgbl,stat,sub
+	kill ^x
+	for i=1:1:100000 set ^x(i,i)=i
+	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,,,,,,,2,"$$aim77neg^%YDBAIMTEST()")
+	set j=1+$random(i)
+	do assert($data(@aimgbl@(0,-j,j,j)))
+	zkill ^x(j,j)
+	do assert('$data(@aimgbl@(0,-j,j,j)))
+	set:$increment(i) ^x(i,i)=i
+	do assert($data(@aimgbl@(0,-i,i,i)))
+	kill:$increment(j) ^x(j,j)
+	do assert('$data(@aimgbl@(0,-j,j,j)))
+	do UNXREFDATA^%YDBAIM("^x",2,,,,,,,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert('$data(@aimgbl))
+	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,,,,,,1,2,"$$aim77neg^%YDBAIMTEST(,1)")
+	do assert(1=@aimgbl@("",-i))
+	set (^x(j,j),^x(j-1,j-1))=i
+	do assert(3=@aimgbl@("",-i))
+	zkill ^x(i,i)
+	do assert(2=@aimgbl@("",-i))
+	do UNXREFDATA^%YDBAIM("^x",2,,,,,,1,2,"$$aim77neg^%YDBAIMTEST(,1)")
+	do assert('$data(@aimgbl))
+	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,,,,,,2,2,"$$aim77neg^%YDBAIMTEST(,$$FUNC^%DH($system))")
+	do assert(99999=@aimgbl@("")),assert(100000=@aimgbl@(11))
+	set ^x(0,0)=0
+	do assert(100000=@aimgbl@("")),assert(100001=@aimgbl@(11))
+	do UNXREFDATA^%YDBAIM("^x",2,,,,,,2,2,"$$aim77neg^%YDBAIMTEST(,$$FUNC^%DH($system))")
+	do assert('$data(@aimgbl))
+	kill ^x
+	for i=1:1:100000 set ^x(i,i)=$random(100000)_"|"_i_"|"_$random(100000)
+	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,"|",2,,,,,2,"$$aim77neg^%YDBAIMTEST(,""Some garbage"")")
+	set j=1+$random(i)
+	do assert($data(@aimgbl@(2,-j,j,j)))
+	zkill ^x(j,j)
+	do assert('$data(@aimgbl@(2,-j,j,j)))
+	set:$increment(i) ^x(i,i)=$random(100000)_"|"_i_"|"_$random(100000)
+	do assert($data(@aimgbl@(2,-i,i,i)))
+	kill:$increment(j) ^x(j,j)
+	do assert('$data(@aimgbl@(2,-j,j,j)))
+	do UNXREFDATA^%YDBAIM("^x",2,"|",2,,,,,2,"$$aim77neg^%YDBAIMTEST(,""Some garbage"")")
+	do assert('$data(@aimgbl))
+	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,"|",2,,,,1,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert(1=@aimgbl@(-2,-i))
+	set (^x(j,j),^x(j-1,j-1))=$random(100000)_"|"_i_"|"_$random(100000)
+	do assert(3=@aimgbl@(-2,-i))
+	zkill ^x(j,j)
+	do assert(2=@aimgbl@(-2,-i))
+	kill ^x(j-1,j-1)
+	do assert(1=@aimgbl@(-2,-i))
+	do UNXREFDATA^%YDBAIM("^x",2,"|",2,,,,1,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert('$data(@aimgbl))
+	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,"|",2,,,,2,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert(99999=@aimgbl@(11)),assert(99999=@aimgbl@(-2))
+	set:$increment(i) ^x(i,i)=$random(100000)_"|"_i_"|"_$random(100000)
+	do assert(100000=@aimgbl@(11)),assert(100000=@aimgbl@(-2))
+	set (^x(j,j),^x(j-1,j-1))=$random(100000)_"|"_i_"|"_$random(100000)
+	do assert(100002=@aimgbl@(11)),assert(100000=@aimgbl@(-2))
+	zkill ^x(i,i)
+	do assert(100001=@aimgbl@(11)),assert(100000=@aimgbl@(-2))
+	kill ^x(j,j),^x(j-1,j-1)
+	do assert(99999=@aimgbl@(11)),assert(99999=@aimgbl@(-2))
+	do UNXREFDATA^%YDBAIM("^x",2,"|",2,,,,2,2,"$$aim77neg^%YDBAIMTEST()")
+	do assert('$data(@aimgbl))
+	kill ^x
+	set sub(1)="*",sub(2)=2
+	; The following are not strictly part of YDBAIM#77, but are included here since
+	; the omission was discovered during the code review
+	; (https://gitlab.com/YottaDB/Util/YDBAIM/-/merge_requests/76#note_2166696698).
+	; No type 1 test because of bug YDBAIM#79.
+	for stat=0:1:2 do
+	. set ^x(1,2)="a",x=$$XREFDATA^%YDBAIM("^x",.sub,"|",2,,,1,stat,0),^x(7,2)="e||f"
+	. do assert($data(@x@(2,"",1))),assert($data(@x@(2,"",7)))
+	. if stat do assert(2=@x@(-2,"")) if stat-1 do assert(1=@x@(-2)),assert(2=@x@(11))
+	. do UNXREFDATA^%YDBAIM("^x",.sub,"|",2,,,1,stat,0) kill ^x
+	set force="$$aim77neg^%YDBAIMTEST()"
+	for stat=0:1:2 do
+	. set ^x(1,2)="a",x=$$XREFDATA^%YDBAIM("^x",.sub,"|",2,,,1,stat,2,force),^x(7,2)="e||f"
+	. do assert($data(@x@(2,"",1))),assert($data(@x@(2,"",7)))
+	. if stat do assert(2=@x@(-2,"")) if stat-1 do assert(1=@x@(-2)),assert(2=@x@(11))
+	. do UNXREFDATA^%YDBAIM("^x",.sub,"|",2,,,1,stat,2,force) kill ^x
+	quit
+	;
+aim77neg(val,ignore)	quit $select($zlength(val):-val,1:"")	;transformation function negative of value
+	;
 tinv1	; @TEST Invalid Input: Global without ^
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
@@ -1482,13 +1568,17 @@ tbash	; @TEST Run bash tests through run_bash_tests.sh/ydbaim_test.sh
 
 gvsuboflow(level)	;	Used by tbash
 	if level do gvsuboflowhelper quit  ; If level=1, test $ZLEVEL=1 by adding one more DO frame before calling gvsuboflowhelper.
-gvsuboflowhelper:    ;
-	do UNXREFDATA^%YDBAIM
-	kill ^x
-	for i=1:1:10 set ^x(i)=$j(2**i,2**i)
-	set $etrap="zwrite $zstatus set $ecode="""" zhalt +$zstatus"
-	set aimglobal=$$XREFDATA^%YDBAIM("^x",1)
-	zwrite aimglobal	; this line should not be reached as GVSUBOFLOW error should transfer control in previous line
+gvsuboflowhelper:	;	Test is meaningful only if key size is less than maximum (i.e., YottaDB defaults pre 2.02)
+	if 1019<$$^%PEEKBYNAME("sgmnt_data.max_key_size","YDBAIM") do
+	. do UNXREFDATA^%YDBAIM
+	. kill ^x
+	. for i=1:1 set ^x(i)=$j(2**i,2**i)
+	. set $etrap="zwrite $zstatus set $ecode="""" zhalt +$zstatus"
+	. set aimglobal=$$XREFDATA^%YDBAIM("^x",1)
+	. zwrite aimglobal	; this line should not be reached as GVSUBOFLOW error should transfer control in previous line
+	else  do	;	else fake expected error message
+	. write "Error occurred: 150372986,xrefdata+137^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, ",$c(9,9),"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*",!
+	. write "aimglobal=""^%ydbAIMDgFr8HZY2gJsda6acj41uCE""",!
 	quit
 
 badinvocation	; Used by tbash

@@ -146,19 +146,47 @@
 ;   Metadata for nodes with that constant subscript that do exist have the same
 ;   schema as metadata for the default type ("").
 ;
-; Forcing string ordering
+; Metadata Transformations
 ;
-;   M default collation collates the empty string first, then canonic numbers
-;   and then other strings. This can lead to unintuitive ordering where an
-;   Octo SQL VARCHAR column of zip codes would expect 02067 to be sorted
-;   before 14534 whereas M would sort 14534 first as it is a canonic number,
-;   unlike 02067.
+; There are cases where it is required for the cross reference to have a
+; different value than the application data:
 ;
-;   With a nonzero length force parameter, AIM prefixes each data item with a
-;   hash ("#"), forcing it to be a string. An application using $ORDER() to
-;   step through a cross reference built with a nonzero length force will need
-;   to strip that hash prefix, e.g., if x is the variable used for the $ORDER()
-;   calls, the actual subscripts are $ZEXTRACT(x,2,$ZLENGTH(x)).
+; - Data ordering: M default collation collates the empty string first, then
+;   canonic numbers and then other strings. This can lead to unintuitive
+;   ordering where an Octo SQL VARCHAR column of zip codes would expect 02067
+;   to be sorted before 14534 whereas M would sort 14534 first as it is a
+;   canonic number, unlike 02067.
+;
+; - Multiple data representations: an application may store a timestamp as
+;   "2024-02-21T13:31:48.05098021+07:00" in one node and as "2024-02-21
+;   13:31:48.05098021+07:00" in another. Since both represent the same
+;   timestamp, they should ideally have the same metadata.
+;
+; The former has a specific solution; the latter a general solution. As the
+; latter requirement came after the former requirement, the parameters are
+; overloaded, and it would not be unreasonable to consider the solution hacky.
+;
+; - With a type parameter of 0 or 1, and a nonzero length force parameter, AIM
+;   prefixes each data item with a hash ("#"), forcing it to be a string. An
+;   application using $ORDER() to step through a cross reference built with a
+;   nonzero length force parameter will need to strip that hash prefix, e.g.,
+;   if x is the variable used for the $ORDER() calls, the actual subscripts are
+;   $ZEXTRACT(x,2,$ZLENGTH(x)).
+;
+; - With a type parameter of 2, a nonzero length force parameter is treated as
+;   a transformation function e.g., "$$ABC^DEF()". Metadata uses the value
+;   returned by the transformation function as the value to cross
+;   reference. When the function is called at runtime by the trigger, its first
+;   parameter is the actual node or piece value, e.g.,
+;   $$ABC^DEF("2024-02-21T13:31:48.05098021+07:00") would be the actual value
+;   using the example of a timestamp at
+;   https://gitlab.com/YottaDB/DBMS/YDBOcto/-/issues/1050. If the function
+;   requires additional parameters, they can be specified as comma separated
+;   values for the second and subsequent parameters, e.g.,
+;   "$$ABC^DEF(,1,""two"")". Additional parameters can only be constants or
+;   global variable references, as local variables cannot be passed to
+;   triggers. Application code that needs to pass local variable values to the
+;   transformation function should use $ZTWORMHOLE.
 ;
 ; Note that $DATA(@name@(SUB))#10 constructs where SUB is an integer occur in
 ; the code because these root nodes are metadata about the metadata and
@@ -172,7 +200,7 @@
 ; metadata format.
 %YDBAIM;1
 	; Top level entry not supported
-	new $etrap do etrap
+	new $etrap,io do etrap
 	set $ecode=",U255,"	; top level entry not supported
 	quit			; should get here only in direct mode
 
@@ -190,7 +218,7 @@
 ;   locks acquired by %YDBAIM. In non-error code paths, acquired locks are
 ;   released without the need to refer to captured locks.
 etrap
-	set $etrap="set $etrap=""open """"/proc/self/fd/2"""" use """"/proc/self/fd/2"""" write $zstatus,! zshow """"*"""" zhalt $piece($zstatus,"""","""",1)""  goto err^"_$text(+0)
+	set $etrap="set io=$io,$etrap=""open """"/proc/self/fd/2"""" use """"/proc/self/fd/2"""" write $zstatus,! zshow """"*"""" zhalt $piece($zstatus,"""","""",1)""  goto err^"_$text(+0)
 	quit
 
 err	; Primary Error Handler
@@ -222,6 +250,7 @@ err	; Primary Error Handler
 	; The rethrow will cause a different $etrap to be invoked in the first non-AIM caller frame (because AIM
 	; did a "new $etrap" at entry).
 	set $etrap="quit:$quit """" quit"
+	use io
 	quit:$quit "" quit
 
 ; List metadata for a cross reference, all cross references for a global
@@ -248,7 +277,7 @@ err	; Primary Error Handler
 ;   - It is omitted or the empty string (""). In lvn, the function returns
 ;     information about all cross references.
 LSXREFDATA(lvn,gbl)
-	new $etrap do etrap
+	new $etrap,io do etrap
 	new currlck,tlevel,xrefvar
 	set tlevel=$tlevel
 	do snaplck(.currlck)
@@ -277,8 +306,9 @@ LSXREFDATA(lvn,gbl)
 ;
 ; Parameters:
 ; - gbl is the global variable name, e.g., "^ABC" for which the specified
-;   triggers are to be removed. If omitted, all xrefs and triggers for xrefs are
-;   removed.
+;   metadata and triggers are to be removed. If omitted, all metadata and
+;   associated triggers for xrefs are removed. If gbl is an AIM global, then
+;   that metadata and its triggers are removed.
 ; - xsub is a specification of the subscripts in the cross reference to be
 ;   removed. There are four cases:
 ;   - xsub is unspecified or its root node is zero and there is no subtree. In
@@ -317,14 +347,12 @@ LSXREFDATA(lvn,gbl)
 ;   XREFDATA() and is ignored.
 ; - zpiece, if 1 means that $ZPIECE() was used as the piece separator instead
 ;   of $PIECE(); this is part of the trigger signature.
-; - omitfix, stat and exist only to allow the parameters of UNXREFDATA()
+; - omitfix and stat exist only to allow the parameters of UNXREFDATA()
 ;   to match those of XREFDATA() and are ignored.
-; - type is used to get the name of the global, and is optional. If used in the
-;   XREFDATA() call, it should be passed here.
-; - force is used to in XREFDATA() to force string ordering, it should be passed
-;   here.
+; - if type is used in the XREFDATA() call, it should be passed here.
+; - if force is used in the XREFDATA() call, it should be passed here.
 UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
-	new $etrap do etrap
+	new $etrap,io do etrap
 	new currlck,i,nsubs,tlevel,xrefvar
 	set tlevel=$tlevel
 	; Ensure type & force have values and convert 0 to "" for backward compatibility
@@ -410,10 +438,24 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 ;   If not specified, omitfix defaults to 1.
 ; - stat if 1 or 2 says the metadata should include statistics, as described
 ;   above under "Statistics".
-; - type, defaulting to the empty string, specifies the application schema for
-;   which AIM is being asked to compute and maintain metadata.
-; - force, defaulting to the empty string, specifies whether AIM should force
-;   string collation.
+; - type and force, both defaulting to the empty string, together specify the
+;   application schema and metadata type, as follows:
+;
+;                                              type
+;                  |        0         |         1        |         2        |
+;                --+------------------+------------------+------------------+
+;             0    | normal schema;   | Fileman schema;  |                  |
+;                  | normal data      | normal data      |                  |
+;                  | ordering         | ordering         |                  |
+;                --+------------------+------------------+       Error      |
+;                  | normal schema;   | Fileman schema;  |                  |
+;     force   1    | forced string    | forced string    |                  |
+;                  | ordering         | ordering         |                  |
+;                --+------------------+------------------+------------------+
+;                  |                                     | normal schema;   |
+;           string |               Error                 | transform func.  |
+;                  |                                     | ordering         |
+;                --+------------------+------------------+------------------+
 ;
 ; Return value: name of global variable with cross reference e.g.,
 ; "^%ydbAIMDZzUmfwxt80MHPiWLZNtq4". The subscripts of cross reference variables
@@ -490,18 +532,17 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 ;   potentially merged with the ZKILL trigger in (8).
 ; - subscripts above those record type-specific triggers
 ;
-;
 ; Nodes of ^%ydbAIMDxref(gbl,aimgbl) are metadata on metadata, where gbl is an
 ; application global and aimgbl is the AIM global.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
-	new $etrap do etrap
+	new $etrap,io do etrap
 	new altlastsub,altsub,asciisep,constlist,currlck,fullsub,fullsubprnt
 	new fulltrigsub,gblind,gblindtype1,i,j,killtrg,lastfullsub
 	new lastsub,lastsubind,lastvarsub,locxsub,modflag,name,nameind,newpnum
 	new newpstr,pieces,nsubs,nullsub,omitflag,oldpstr,stacklvl1,sub,subary
 	new suffix,tlevel,tmp,trigdel,trigdelx,type1last,trigprefix
-	new trigset,trigsub,ttprfx,valcntind,xrefind,xrefindtype1,z,zintrptsav
-	new zlsep,ztout,zyintrsig
+	new trigset,trigsub,ttprfx,valcntind,xfnp1,xfnp2,xfntest,xrefind
+	new xrefindtype1,z,zintrptsav,zlsep,ztout,zyintrsig
 	set stacklvl1=$stack	; required by premature termination
 	set tlevel=$tlevel	; required by error trap to rollback/unwind
 	set zintrptsav=$zinterrupt
@@ -516,7 +557,6 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	; Ensure type & force have values and convert 0 to "" for backward compatibility
 	if '$data(type)!(0=type) set type=""
 	if '$data(force)!(0=force) set force=""
-	set:($zlength(type)&(1'=type))!($zlength(force)&(1'=force)) $ecode=",U237,"
 	; While the caller is expected to pass both type and force if specified as 1
 	; this raises the possibility of ambiguity in the AIM variable name if one of
 	; them defaults to and the other does not (both add 1 to the suffix). Therefore
@@ -526,7 +566,15 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	; - "1" type specified, force defaults
 	; - "-1" type defaults; force specified
 	; - "1-1" both specified
-	set:$zlength(force) force=-force
+	; If type=2, there is no ambiguity
+	if 2=type do
+	. set xfnp1=$zpiece(force,"(",1)_"(",xfnp2=$zpiece(force,"(",2,$zlength(force,"("))
+	. set:(xfnp1'?1"$$"0.1"%".an1"^"0.1"%".an1"(")!(xfnp2'?1(1")",1","1.e1")")) $ecode=",U230,"
+	. set xfntest=$$^%ZMVALID("set zyx="_xfnp1_"zyx"_xfnp2),$ecode=""	; compile & discard errors
+	. set:$zlength(xfntest) $ecode=",U230,"
+	else  do
+	. set:($zlength(type)&(1'=type))!($zlength(force)&(1'=force)) $ecode=",U237,"
+	. set:$zlength(force) force=-force
 	; If constraints specified for subscripts, ensure all refer to
 	; subscripts that are integers in the range 1 through 31
 	do:$data(xsub)\10
@@ -756,7 +804,7 @@ chktrgspec:(locxsub,n)
 ; - code between slashes (///) is replaced, with the first part used if force
 ;   is non-zero, and the second if it is zero
 ; Uses local variables from XREFDATA() but does not substitute them: force
-; Uses local variables from XREFDATA(): altlastsub,altsub,fullsubprnt,fullsub,fulltrigsub,gbl,lastfullsub,lastsub,name,pieces,sep$,sub,type1last,z
+; Uses local variables from XREFDATA(): altlastsub,altsub,fullsubprnt,fullsub,fulltrigsub,gbl,lastfullsub,lastsub,name,pieces,sep$,sub,type1last,xfnp1,xfnp2,z
 exptempl:(lab)
 	new i,j,len,line,multiline,outstr,npieces,rep,str,tmp,var,vars,zflag
 	set tmp=$text(@lab),len=$zlength(tmp,";"),line=$zpiece(tmp,";",2,len)
@@ -793,7 +841,7 @@ lsxrefdata:(lvn,xref)
 ;   constlist, gbl, gblind, gblindtype1, lastvarsub, name, nameind, nsubs,
 ;   omitflags, sep, subary, type, valcntind, xrefind, xrefindtype1
 mkindxrefdata:
-	new i,tmp
+	new i,tmp,valtype
 	set gblind(1)=gbl_"("_$select(constlist(1):locxsub(1),1:"subary(1)")
 	for i=2:1:nsubs set gblind(i)=gblind(i-1)_","_$select(constlist(i):locxsub(i),1:"subary("_i_")")
 	for i=1:1:nsubs set gblind(i)=gblind(i)_")"
@@ -803,12 +851,16 @@ mkindxrefdata:
 	. . if 'omitfix set lastvarsub=i,lastsubind=locxsub(i),xrefind=xrefind_","_lastsubind
 	. else  set lastvarsub=i,lastsubind="subary("_i_")",xrefind=xrefind_","_lastsubind
 	set xrefind=xrefind_")"
+	if $zlength(sep) set nameind=name_"(-k,"_$select(force:"""#""_",1:"")_"pieceval)",valcntind=name_"(-k)"
+	else  set nameind=name_"("""","_$select(force:"""#""_",1:"")_"nodeval)",valcntind=name_"("""")"
 	if 1=type do
 	. set xrefindtype1=$select(omitfix:xrefind,1:$zpiece(xrefind,",",1,$zlength(xrefind,",")-1)_","""")")
 	. set gblindtype1=gblind(nsubs)
 	. set $zpiece(gblindtype1,",",$zlength(gblindtype1,","))=type1last_")"
-	if $zlength(sep) set nameind=name_"(-k,"_$select(force:"""#""_",1:"")_"pieceval)",valcntind=name_"(-k)"
-	else  set nameind=name_"("""","_$select(force:"""#""_",1:"")_"nodeval)",valcntind=name_"("""")"
+	else  do:2=type
+	. set valtype=$select($zfind(xrefind,"nodeval"):"nodeval",1:"pieceval")
+	. set xrefind=$zpiece(xrefind,valtype,1)_xfnp1_valtype_xfnp2_$zpiece(xrefind,valtype,2)
+	. set nameind=$zpiece(nameind,valtype,1)_xfnp1_valtype_xfnp2_$zpiece(nameind,valtype,2)
 	quit
 
 ; ravel() takes a bit-map like piece number string, e.g., "#0010100111", and
@@ -906,7 +958,7 @@ unxrefdata:(xrefgbl)
 ; References variables defined in parent or passed through from  XREFDATA():
 ;   constlist, force, gbl, gblind, gblindtype1, lastsubind, lastvarsub, locxsub,
 ;   name, nameind, newpstr, nullsub, omitfix, stacklvl1, stacklvl2, stat, subary,
-;   tick, type, type1last, valcntind, xrefind, xrefindtype1, zpiece
+;   tick, type, type1last, valcntind, xfnp1, xfnp2, xrefind, xrefindtype1, zpiece
 xrefdata(nsubsxref,dir,ppid)
 	new flag,i,j,k,nodelen1,nodeval,nranges,piece2,piece2,pieceval,quitflag
 	new rangebegin,rangeend,rangefirst,rangeflag,rangelast,sublvl,thisrange,tmp2,tmp2
@@ -1109,14 +1161,14 @@ xrefdatajobs(nsubs)
 	. . set @name@(11)=totcnt
 	. . tcommit
 	; quit		; uncomment for debugging
+	; Raise error if there is any non-information (-I-), non-success (S) message other than FORCEDHALT.
 	for i=1,-1 do
-	. set out(i)=$zsearch(out(i)_"*") open out(i) use out(i)
-	. for j=1:1 read line quit:$zeof  use io write line,! use out(i)
+	. set out(i)=$zsearch(out(i)_"*") open out(i)
+	. for j=1:1 use out(i) read line quit:$zeof  use io set:$zlength(line)&'($zfind(line,"FORCEDHALT")!(line?@((".E1"""_msgprefix_"""1""-""1(1""I"",1""S"")1""-"".E")))) $ecode=",U233,"
 	. use io close out(i):delete
-	. ; Raise error if there is any non-information (-I-), non-success (S) message other than FORCEDHALT.
-	. set err(i)=$zsearch(err(i)_"*") open err(i) use err(i)
-	. for j=1:1 read line quit:$zeof  set:$zlength(line)&'($zfind(line,"FORCEDHALT")!(line?@((".E1"""_msgprefix_"""1""-""1(1""I"",1""S"")1""-"".E")))) $ecode=",U233,"
-	. close err(i):delete
+	. set err(i)=$zsearch(err(i)_"*") open err(i)
+	. for j=1:1 use err(i) read line quit:$zeof  use io set:$zlength(line)&'($zfind(line,"FORCEDHALT")!(line?@((".E1"""_msgprefix_"""1""-""1(1""I"",1""S"")1""-"".E")))) $ecode=",U233,"
+	. use io close err(i):delete
 	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear subprocess metadata on clean exit
 	quit
 
@@ -1431,14 +1483,59 @@ tt1pZKp2; set inccnt=0
 	; if '($ZTDATA\10) for i=@pieces if $data(@name(i,"/#//",@altsub)) set j=-i zkill ^(@altlastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,"/#//"),-1) zkill ^("/#//") zkill:1>$increment(@name(j),-1) ^(j)
 	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
+tt2Se0	;zkill @name(0,@xfnp1$ztoldval@xfnp2,@sub) set @name(0,@xfnp1$ztvalue@xfnp2,@sub)=""
+
+tt2ZKe0	;zkill @name(0,@xfnp1$ztoldval@xfnp2,@sub)
+
+tt2Se1	; if $data(@name(0,@xfnp1$ztoldval@xfnp2,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",@xfnp1$ztoldval@xfnp2),-1) ^(@xfnp1$ztoldval@xfnp2)
+	; if '$data(@name(0,@xfnp1$ztvalue@xfnp2,@sub)) set ^(@lastsub)="" if $increment(@name("",@xfnp1$ztvalue@xfnp2))
+
+tt2ZKe1	;if $data(@name(0,@xfnp1$ztoldval@xfnp2,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",@xfnp1$ztoldval@xfnp2),-1) ^(@xfnp1$ztoldval@xfnp2)
+
+tt2Se2	; set inccnt=0
+	; set tmp=@xfnp1$ztoldval@xfnp2 if $data(@name(0,tmp,@sub))#10 zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name("",tmp),-1) zkill ^(tmp) zkill:1>$increment(@name(""),-1) ^("")
+	; set tmp=@xfnp1$ztvalue@xfnp2 if '$data(@name(0,tmp,@sub)) set ^(@lastsub)="" set inccnt=inccnt+1 if (1=$increment(@name("",tmp))),$increment(@name(""))
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
+
+tt2ZKe2	; set inccnt=0
+	; set tmp=@xfnp1$ztoldva@xfnp2 if $data(@name(0,tmp,@sub))#10 zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name("",tmp),-1) zkill ^(tmp) if 1>$increment(@name(""),-1) zkill ^("")
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
+
+tt2Sp0	; for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2 do
+	; . if p'=q zkill @name(i,p,@sub) set @name(i,q,@sub)=""
+	; . else  set:'($zlength(q)) @name(i,"",@sub)=""
+
+tt2ZKp0	;for i=@pieces zkill @name(i,@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,@sub)
+
+tt2Sp1	; for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2,j=-i do
+	; . if p'=q do
+	; . . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
+	; . . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" if $increment(@name(j,q))
+	; . else  if '($zlength(q)),'($data(@name(i,"",@sub))#10) set ^(@lastsub)="" if $increment(@name(j,q))
+
+tt2ZKp1	;for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
+
+tt2Sp2	; set inccnt=0
+	; for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2,j=-i do
+	; . if p'=q do
+	; . . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,p),-1) zkill ^(p) if 1>$increment(@name(j),-1) zkill ^(j)
+	; . . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" set inccnt=inccnt+1 if (1=$increment(@name(j,q))),$increment(@name(j))
+	; . else  if '($zlength(q)),'($data(@name(i,"",@sub))#10) set ^(@lastsub)="" set inccnt=inccnt+1 if (1=$increment(@name(j,""))),$increment(@name(j))
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
+
+tt2ZKp2	; set inccnt=0
+	; for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
+
 ;	Error message texts
+U230	;"-F-BADTRANSFORM  with type=2, force="""_force_""" is not a valid function entryref"
 U231	;"-F-BADTEMPLATE Trigger "_outstr_" has incorrect number of / delimiters for text substitution"
 U232	;"-F-BADZINTERRUPT Caller's $ZINTERRUPT handler returned control to %YDBAIM"
 U233	;"-F-JOBERR Error(s) reported by JOB'd process in "_err(i)
 U234	;"-F-JOBFAIL Failed to JOB process for xrefdata("_nsubs_","_i_")"
 U235	;"-F-NULL1 Null subscripts are not permitted for type=1 global variables"
 U236	;"-F-SUBERR1 Subscript specification does not match type=1 requirements"
-U237	;"-F-BADTYPEFORCE Schema type="_type_" and/or force="_force_"not recognized"
+U237	;"-F-BADTYPEFORCE Schema type="_type_" and/or force="_force_" not recognized"
 U238	;"-F-NOPSEP Piece numbers "_pnum_" specified, but piece separator not specifed"
 U239	;"-F-SETZTRIGGERFAIL Out of design condition - setting $ZTRIGGER() failed"
 U240	;"-F-CANTADDSTAT stat="_stat_" and "_name_"(10)="_+$get(@name@(10))_" - adding statistics to existing metadata not supported"
