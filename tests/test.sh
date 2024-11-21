@@ -1,7 +1,7 @@
 #!/bin/bash
 #################################################################
 #								#
-# Copyright (c) 2021-2022 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2021-2024 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -138,6 +138,12 @@ set +e # grep will have status of 1 if no lines are found, and that will exit th
 grep -B1 -F '[FAIL]' $ydb_dir/test_output.txt
 grep_status=$?
 set -e
+
+#Set-up artifacts directory
+mkdir -p /artifacts/tmp/
+cp $ydb_dir/test_output.txt /artifacts/
+cp -r /tmp/* /artifacts/tmp/
+
 # Check if we have M-Unit failures.
 if [ "$grep_status" -eq 1 ]; then
 	exit 0
