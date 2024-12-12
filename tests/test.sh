@@ -47,6 +47,10 @@ if [ "$1" = "clean" ]; then
 fi
 source `pkg-config --variable=prefix yottadb`/ydb_env_set
 
+# Turn off journaling and use MM mode for faster execution
+mupip set -journal=disable -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
+mupip set -access_method=mm -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
+
 echo "# Info: [ydb_dir = $ydb_dir]"
 echo "# Info: [ydb_gbldir = $ydb_gbldir]"
 echo "# Info: [ydb_routines = $ydb_routines]"

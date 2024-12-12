@@ -93,12 +93,12 @@ Error occurred: 150379506,%YDBAIM+3^%YDBAIM,%YDBAIM-F-BADINVOCATION Top level in
 ---------------
 
 BADTRANSFORM1 do XREFDATA^%YDBAIM("^abcd",2,,,,,,,2,0)
-Error occurred: 150379506,XREFDATA+35^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type=2, force="" is not a valid function entryref
+Error occurred: 150379506,XREFDATA+35^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type>1, force="" is not a valid function entryref
 242
 ---------------
 
 BADTRANSFORM2 do XREFDATA^%YDBAIM("^abcd",2,,,,,,,2,1)
-Error occurred: 150379506,XREFDATA+35^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type=2, force="1" is not a valid function entryref
+Error occurred: 150379506,XREFDATA+35^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with type>1, force="1" is not a valid function entryref
 242
 ---------------
 

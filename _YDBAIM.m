@@ -128,9 +128,9 @@
 ;     and existing trigger templates.
 ;   - Adding logic in xrefdata() to create the initial metadata.
 ;
-;   With a value of 1 for type, AIM creates and manages metadata for a schema
+;   With values of 1 or 3 for type, AIM creates and manages metadata for a schema
 ;   used by the VistA Fileman software
-;   (https://www.va.gov/vdl/application.asp?appid=5). For a type 1 schema, when
+;   (https://www.va.gov/vdl/application.asp?appid=5):
 ;
 ;   - the last subscript specification specifies a constant;
 ;   - a node with that constant subscript does not exist; and
@@ -141,7 +141,8 @@
 ;   AIM creates and maintains metadata nodes for the requested pieces using the
 ;   empty string ("") as the last subscript instead of the specified constant.
 ;   If omitfix=1 (the default), the metadata node omits that last empty string
-;   subscript.
+;   subscript. The difference between a type of 1 and a type of 3 is that the latter
+;   allows the application to provide a transformation function (see below).
 ;
 ;   Metadata for nodes with that constant subscript that do exist have the same
 ;   schema as metadata for the default type ("").
@@ -173,8 +174,8 @@
 ;   if x is the variable used for the $ORDER() calls, the actual subscripts are
 ;   $ZEXTRACT(x,2,$ZLENGTH(x)).
 ;
-; - With a type parameter of 2, a nonzero length force parameter is treated as
-;   a transformation function e.g., "$$ABC^DEF()". Metadata uses the value
+; - With a type parameter of 2 or 3, a nonzero length force parameter is treated
+;   as a transformation function e.g., "$$ABC^DEF()". Metadata uses the value
 ;   returned by the transformation function as the value to cross
 ;   reference. When the function is called at runtime by the trigger, its first
 ;   parameter is the actual node or piece value, e.g.,
@@ -441,21 +442,21 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 ; - type and force, both defaulting to the empty string, together specify the
 ;   application schema and metadata type, as follows:
 ;
-;                                              type
-;                  |        0         |         1        |         2        |
-;                --+------------------+------------------+------------------+
-;             0    | normal schema;   | Fileman schema;  |                  |
-;                  | normal data      | normal data      |                  |
-;                  | ordering         | ordering         |                  |
-;                --+------------------+------------------+       Error      |
-;                  | normal schema;   | Fileman schema;  |                  |
-;     force   1    | forced string    | forced string    |                  |
-;                  | ordering         | ordering         |                  |
-;                --+------------------+------------------+------------------+
-;                  |                                     | normal schema;   |
-;           string |               Error                 | transform func.  |
-;                  |                                     | ordering         |
-;                --+------------------+------------------+------------------+
+;                                                       type
+;                  |        0         |         1        |         2        |         3        | 
+;                --+------------------+------------------+------------------+------------------+
+;             0    | normal schema;   | Fileman schema;  |                                     |
+;                  | normal data      | normal data      |                                     |
+;                  | ordering         | ordering         |                                     |
+;                --+------------------+------------------+                Error                |
+;                  | normal schema;   | Fileman schema;  |                                     |
+;     force   1    | forced string    | forced string    |                                     |
+;                  | ordering         | ordering         |                                     |
+;                --+------------------+------------------+------------------+------------------+
+;                  |                                     | normal schema;   | Fileman schema;  |
+;           string |               Error                 | transform func.  | transform func.  |
+;                  |                                     | ordering         | ordering         |
+;                --+------------------+------------------+------------------+------------------+
 ;
 ; Return value: name of global variable with cross reference e.g.,
 ; "^%ydbAIMDZzUmfwxt80MHPiWLZNtq4". The subscripts of cross reference variables
@@ -534,6 +535,10 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 ;
 ; Nodes of ^%ydbAIMDxref(gbl,aimgbl) are metadata on metadata, where gbl is an
 ; application global and aimgbl is the AIM global.
+;
+; Note that for historical reasons, variables whose names suggest they are
+; relevant just to type=1, e.g., type1last, are also relevant to type=3,
+; i.e., to Fileman globals.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	new $etrap,io do etrap
 	new altlastsub,altsub,asciisep,constlist,currlck,fullsub,fullsubprnt
@@ -566,10 +571,10 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	; - "1" type specified, force defaults
 	; - "-1" type defaults; force specified
 	; - "1-1" both specified
-	; If type=2, there is no ambiguity
-	if 2=type do
+	; If type>1, there is no ambiguity
+	if 1<type do	; Superficial syntax check of transformation function
 	. set xfnp1=$zpiece(force,"(",1)_"(",xfnp2=$zpiece(force,"(",2,$zlength(force,"("))
-	. set:(xfnp1'?1"$$"0.1"%".an1"^"0.1"%".an1"(")!(xfnp2'?1(1")",1","1.e1")")) $ecode=",U230,"
+	. set:(xfnp1'?1(1"$$"0.1"%".an1"^"0.1"%",1"$").an1"(")!(xfnp2'?1(1")",1","1.e1")")) $ecode=",U230,"
 	. set xfntest=$$^%ZMVALID("set zyx="_xfnp1_"zyx"_xfnp2),$ecode=""	; compile & discard errors
 	. set:$zlength(xfntest) $ecode=",U230,"
 	else  do
@@ -584,15 +589,15 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	. . set constlist(i)=$$chktrgspec(.locxsub,i)
 	. set i=$order(locxsub(""),-1)
 	. set:i>nsubs nsubs=i
-	set:$select(1=type:2,1:1)>nsubs $ecode=",U253,"
+	set:$select(type#2:2,1:1)>nsubs $ecode=",U253,"	; Fileman schema requires at least 2 subscripts
 	set:nsubs\1'=nsubs!(31<nsubs) $ecode=",U247,"
 	for i=1:1:nsubs set:'$data(locxsub(i)) locxsub(i)="*",constlist(i)=0
-	; Ensure subscript specifications for type=1 global variables must end
-	; in constant. The actual trigger subscript specification for the last
+	; Ensure subscript specifications for Fileman global variables end in
+	; a constant. The actual trigger subscript specification for the last
 	; subscript matches all subscripts, as metadata varies depending on
-	; whether or not there are other nodes at that last level, if node
+	; whether or not there are other nodes at that last level, if no node
 	; exists with the constant subscript.
-	set:(1=type)&'constlist(nsubs) $ecode=",U236,"
+	set:(type#2)&'constlist(nsubs) $ecode=",U236,"
 	; Derive subscript specification for trigger definitions from parameters
 	; and build string from which to derive xref variable name
 	set omitfix=+$get(omitfix,1),omitflag=0
@@ -600,7 +605,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	for i=1:1:nsubs do
 	. set name=name_locxsub(i)
 	. set lastfullsub="sub"_i,trigsub=trigsub_lastfullsub_"=",fulltrigsub=fulltrigsub_lastfullsub_","
-	. if constlist(i)&(1=type) do
+	. if constlist(i)&(type#2) do
 	. . set fullsub=fullsub_locxsub(i)_","
 	. . set trigsub=trigsub_$select(i=nsubs:"*",1:locxsub(i))_","
 	. else  do
@@ -627,10 +632,10 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	; a value, as calling it as a routine asking for a name is a
 	; meaningless operation that is likely an application program bug.
 	quit:+$get(nmonly) name
-	; For type=1 application globals need to search all subtrees at bottom
+	; For Fileman application globals need to search all subtrees at bottom
 	; level when other subscripts match. Note that these application globals
 	; have at least two subscripts.
-	do:1=type
+	do:type#2
 	. if omitfix set altsub=sub,altlastsub=$zpiece(sub,",",$zlength(sub,","))
 	. else  set tmp=$zlength(sub,",")-1,altsub=$zpiece(sub,",",1,tmp)_$select(tmp:",""""",1:""""""),altlastsub=""
 	. set type1last=locxsub(nsubs),locxsub(nsubs)="*",constlist(nsubs)=0
@@ -653,7 +658,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	; unary operators ('') are used to force non-zero values to 1.
 	set tmp=$view("region",gbl),nullsub=''$$^%PEEKBYNAME("sgmnt_data.null_subs",$zpiece(tmp,",",1))
 	for i=2:1:$zlength(tmp,",") set:nullsub'=''$$^%PEEKBYNAME("sgmnt_data.null_subs",$zpiece(tmp,",",i)) $ecode=",U251,"
-	set:nullsub&(1=type) $ecode=",U235,"		; null subscripts not permitted for type=1 globals
+	set:nullsub&(type#2) $ecode=",U235,"		; null subscripts not permitted for Fileman globals
 	set ttprfx="tt"_type				; prefix for trigger template
 	set killtrg="rk"_nullsub			; template for KILL trigger
 	; Determine whether to xref pieces or entire node, and act accordingly
@@ -700,7 +705,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	. set oldpstr=$get(@name@(3),"#"),modflag=0
 	. for i=2:1:$zlength(newpstr) if +$zextract(newpstr,i)&'+$zextract(oldpstr,i) set modflag=1 quit
 	. do:modflag
-	. . set:1=type tmp=$order(constlist(""),-1),constlist(tmp)=1,locxsub(tmp)=$zwrite(type1last,1)
+	. . set:type#2 tmp=$order(constlist(""),-1),constlist(tmp)=1,locxsub(tmp)=$zwrite(type1last,1)
 	. . do xrefdatajobs(nsubs)
 	. . ; Update metadata to indicate completion
 	. . tstart ():transactionid="batch"
@@ -735,12 +740,12 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	. . set @name=gbl,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
 	. . set:2=stat ^(11)=0
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
-	. . do:$zlength(type) xtratrig		; set type specific additional triggers
+	. . do xtratrig		; set additional triggers for higher level nodes
 	. . set ^%ydbAIMDxref(gbl,name)=""
 	. tcommit
 	. view "ztrigger_output":ztout
 	. set newpstr=""
-	. set:1=type tmp=$order(constlist(""),-1),constlist(tmp)=1,locxsub(tmp)=$zwrite(type1last,1)
+	. set:type#2 tmp=$order(constlist(""),-1),constlist(tmp)=1,locxsub(tmp)=$zwrite(type1last,1)
 	. do xrefdatajobs(nsubs)
 	. ; Add metadata to indicate completion
 	. tstart ():transactionid="batch"
@@ -847,17 +852,17 @@ mkindxrefdata:
 	for i=1:1:nsubs set gblind(i)=gblind(i)_")"
 	set xrefind=name_"("_$select($zlength(sep):"k,"_$select(force:"""#""_",1:"")_"pieceval",1:"0,"_$select(force:"""#""_",1:"")_"nodeval")
 	for i=1:1:nsubs do
-	. if constlist(i)!((1=type)&(i=nsubs)) do
+	. if constlist(i)!((type#2)&(i=nsubs)) do
 	. . if 'omitfix set lastvarsub=i,lastsubind=locxsub(i),xrefind=xrefind_","_lastsubind
 	. else  set lastvarsub=i,lastsubind="subary("_i_")",xrefind=xrefind_","_lastsubind
 	set xrefind=xrefind_")"
 	if $zlength(sep) set nameind=name_"(-k,"_$select(force:"""#""_",1:"")_"pieceval)",valcntind=name_"(-k)"
 	else  set nameind=name_"("""","_$select(force:"""#""_",1:"")_"nodeval)",valcntind=name_"("""")"
-	if 1=type do
+	do:type#2	; Fileman global schema
 	. set xrefindtype1=$select(omitfix:xrefind,1:$zpiece(xrefind,",",1,$zlength(xrefind,",")-1)_","""")")
 	. set gblindtype1=gblind(nsubs)
 	. set $zpiece(gblindtype1,",",$zlength(gblindtype1,","))=type1last_")"
-	else  do:2=type
+	do:1<type	; Transformation function used for metadata
 	. set valtype=$select($zfind(xrefind,"nodeval"):"nodeval",1:"pieceval")
 	. set xrefind=$zpiece(xrefind,valtype,1)_xfnp1_valtype_xfnp2_$zpiece(xrefind,valtype,2)
 	. set nameind=$zpiece(nameind,valtype,1)_xfnp1_valtype_xfnp2_$zpiece(nameind,valtype,2)
@@ -961,14 +966,7 @@ unxrefdata:(xrefgbl)
 ;   tick, type, type1last, valcntind, xfnp1, xfnp2, xrefind, xrefindtype1, zpiece
 xrefdata(nsubsxref,dir,ppid)
 	new flag,i,j,k,nodelen1,nodeval,nranges,piece2,piece2,pieceval,quitflag
-	new rangebegin,rangeend,rangefirst,rangeflag,rangelast,sublvl,thisrange,tmp2,tmp2
-	; As noted in xrefdatajobs() there is a small window during which if an
-	; interrupt is received before the pid of the child process is captured
-	; the child process pid may not be captured, resulting in an interrupt
-	; not terminating a child process. By having the child process record
-	; its pid, the window is made even smaller, although it cannot be
-	; eliminated entirely.
-	set $zpiece(^%ydbAIMtmp($text(+0),ppid,0),",",$select(1=dir:1,1:2))=$job
+	new rangebegin,rangeend,rangefirst,rangeflag,rangelast,sublvl,thisrange,tmp1,tmp2
 	; If nsubsxref>1 it means call the function recursively for the next
 	; subscript level.
 	set flag=nullsub
@@ -997,7 +995,7 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . set flag=$select(1=dir:$select($zlength(piece1):1,1:nullsub),1:$select($zlength(piece2):1,1:0))
 	. . . set subary(sublvl)=$select(1=dir:rangebegin,1:rangeend)
 	. . . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl),dir) quit:'$zlength(tmp2)!(rangeflag&$select(1=dir:$select($zlength(piece2):tmp2]]rangeend,1:0),1:rangebegin]]tmp2))
-	. . . . if (1=type)&(2=nsubsxref) do
+	. . . . if (type#2)&(2=nsubsxref) do
 	. . . . . tstart ():transactionid="batch"
 	. . . . . set tmp1=$data(@gblind(sublvl))
 	. . . . . if tmp1\10 do xrefdata(nsubsxref-1,dir,ppid)
@@ -1014,16 +1012,15 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . . . . . set ^(@lastsubind)=""
 	. . . . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . . . . tcommit
-	. . . . . if $increment(tick)\1E3 do xrefdatajobsrec set tick=0
 	. . . . else  do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,dir,ppid)
 	; if nsubsxref=1 (the rest of the code below) the traversal has reached the
 	; subscript level at which globals are to have metadata
 	; computed. Compute metadata per subscript and metadata type
 	; specification.
-	; Note that the code for type=1 comes before the code for
-	; constlist(sublvl) because constlist(sublvl)=1 for type=1 but the
-	; type=1 has precedence over constlist(sublvl)=1
-	else  if 1=type do  quit	; for type=1 create metadata (based on peers if node does not exist), quit is performance optimization
+	; Note that the code for Fileman type comes before the code for
+	; constlist(sublvl) because constlist(sublvl)=1 for Fileman data but
+	; Fileman schema has precedence over constlist(sublvl)=1
+	else  if type#2 do  quit	; create metadata for Fileman globals, quit is performance optimization
 	. tstart ():transactionid="batch"
 	. if $data(@gblindtype1)#10 do
 	. . set nodeval=@gblindtype1
@@ -1050,7 +1047,6 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
 	. . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. tcommit
-	. if $increment(tick)\1E3 do xrefdatajobsrec set tick=0
 	else  if constlist(sublvl) do  quit	; quit is performance optimization
 	. tstart ():transactionid="batch"
 	. if $data(@gblind(sublvl))#10 do
@@ -1066,8 +1062,7 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
 	. . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. tcommit
-	. if $increment(tick)\1E3 do xrefdatajobsrec set tick=0
-	else  do	; not type=1 or a constant subscript specification
+	else  do	; not Fileman or a constant subscript specification
 	. set nranges=$select(zpiece:$zlength(locxsub(sublvl),";"),1:$length(locxsub(sublvl),";"))
 	. if 1=dir set rangefirst=1,rangelast=nranges
 	. else  set rangefirst=nranges,rangelast=1
@@ -1098,7 +1093,6 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . . . . if '($data(@xrefind)#10) set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . . . else  if '($data(@xrefind)#10) set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . . tcommit
-	. . . if $increment(tick)\1E3 do xrefdatajobsrec set tick=0
 	quit
 
 ; JOB two processes for xrefdata(); one to scan the global subscripts in the
@@ -1121,15 +1115,20 @@ xrefdatajobs(nsubs)
 	set prefix="/tmp/xrefdata^"_$text(+0)_"_"_$job_"_"_($zut\1E6)_"_"
 	set stacklvl2=$stack	; required by premature termination
 	set tick=0
-	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear any prior subprocess metadata
-	; Set interrupt handler to terminate JOB'd processes and %YDBAIM
-	set $zinterrupt="set zyintrsig=$zyintrsig zgoto:""SIGUSR2""=$zyintrsig stacklvl2:xrefdatajobsterm xecute zintrptsav"
 	; Job the two processes and record their pids so that they can be
 	; subsequently identified, e.g., to terminate them. Since JOB'd
 	; processes sever all ties with the parent process, if a terminating
 	; interrupt is received after a JOB command executes, but before the
 	; pid is captured from $ZJOB, there is potentially a JOB'd process
-	; that is not reflected in ^%ydbAIMtmp($text(+0),$job,0).
+	; that is not reflected in ^%ydbAIMtmp($text(+0),$job,0). To avoid
+	; a scenario where the parent is terminated, but a JOB'd process
+	; continues scanning and creating cross references after the parent
+	; has been terminated, the parent ignores temporarily ignores interrupts
+	; until it records the JOB'd pids. Once it records those pids
+	; it sets the interrupt handler to terminate them, and itself in
+	; response to an interrupt.
+	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear any prior subprocess metadata
+	set $zinterrupt=""
 	for i=1,-1 do
 	. set err(i)=prefix_i_".err"
 	. set out(i)=prefix_i_".out"
@@ -1137,6 +1136,7 @@ xrefdatajobs(nsubs)
 	. job @cmd
 	. if $zjob set xrefproc(i)=$zjob set $zpiece(^%ydbAIMtmp($text(+0),$job,0),",",$select(1=i:1,1:2))=$zjob
 	. else  set $ecode=",U234,"
+	set $zinterrupt="set zyintrsig=$zyintrsig zgoto:""SIGUSR2""=$zyintrsig stacklvl2:xrefdatajobsterm xecute zintrptsav"
 	; - check whether processes have crossed, if processes have crossed, terminate one process
 	; - if one process has terminated, because it was terminated or completed the scan, terminate the other process
 	for  do  quit:'$data(xrefproc)  hang .01
@@ -1170,15 +1170,6 @@ xrefdatajobs(nsubs)
 	. for j=1:1 use err(i) read line quit:$zeof  use io set:$zlength(line)&'($zfind(line,"FORCEDHALT")!(line?@((".E1"""_msgprefix_"""1""-""1(1""I"",1""S"")1""-"".E")))) $ecode=",U233,"
 	. use io close err(i):delete
 	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear subprocess metadata on clean exit
-	quit
-
-; In JOB'd process, record the state of the current scanning process
-; Uses local variables from caller: constlist, dir, nsubsxref, ppid, subary
-xrefdatajobsrec:
-	new i
-	tstart ():transactionid="batch"
-	for i=1:1:nsubsxref set:'constlist(i) ^%ydbAIMtmp("%YDBAIM",ppid,dir*i)=subary(i)
-	tcommit
 	quit
 
 ; Check whether concurrent JOBs indexing existing data can be terminated because
@@ -1237,7 +1228,7 @@ xtratrig:
 	. set:'$ztrigger("item",trig) $ecode=",U239,"
 	. set ^(12+i)=trig
 	; type specific additional triggers, caution: code uses & extends i from above
-	do:1=type
+	do:type#2
 	. set tmp=$zlength(trigsub)
 	. set:","=$zextract(trigsub,tmp) $zextract(trigsub,tmp)=""
 	. set trigsub=trigsub_")"
@@ -1263,7 +1254,8 @@ xtratrigsufx:	;0123456789ABCDEFGHIJLMNOPQRTUVWX
 ; Templates for triggers
 ; The labeling convention is as follows:
 ; - tt[t] for trigger template where the optional [t] is the type parameter:
-;   - 1 for type 1 global nodes, and 1p for type1 parent global nodes
+;   - 1 for type 1 global nodes, and 1p for Fileman parent global nodes
+;   - 2 or 3 for type 2 or 3 global nodes respectively
 ; - trigger command: S, ZK, K
 ; - e for entire node, p for pieces of node
 ; - statistics level: 0, 1 or 2
@@ -1527,8 +1519,81 @@ tt2ZKp2	; set inccnt=0
 	; for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
 	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
 
+tt3Se0	; if @type1last=@lastfullsub zkill @name(0,"",@altsub),@name(0,@xfnp1$ztoldval@xfnp2,@sub) set @name(0,@xfnp1$ztvalue@xfnp2,@sub)=""
+	; else  set:'($data(@gbl(@fullsub))#10) @name(0,"",@altsub)=""
+
+tt3ZKe0	; if @type1last=@lastfullsub zkill @name(0,@xfnp1$ztoldval@xfnp2,@sub) set:($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) @name(0,"",@altsub)=""
+	; else  zkill:'($data(@gbl(@fullsubprnt))#10)&('$data(@gbl(@fullsub))#10)&('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))) @name(0,"",@altsub)
+
+tt3Se1	; if @type1last=@lastfullsub do
+	; . if $data(@name(0,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name("",""),-1) ^("")
+	; . set tmp=@xfnp1$ztoldval@xfnp2 if $data(@name(0,tmp,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name("",tmp),-1) ^(tmp)
+	; . set tmp=@xfnp1$ztvalue@xfnp2 if '$data(@name(0,tmp,@sub)) set ^(@lastsub)="" if $increment(@name("",tmp))
+	; else  if '($data(@gbl(@fullsub))#10),'$data(@name(0,"",@altsub)) set ^(@altlastsub)="" if $increment(@name("",""))
+
+tt3ZKe1	; if @type1last=@lastfullsub do
+	; . set tmp=@xfnp1$ztoldval@xfnp2 if $data(@name(0,tmp,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name("",tmp),-1) ^(tmp)
+	; . if ($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)),$increment(@name("","")) set @name(0,"",@altsub)=""
+	; else  if '($data(@gbl(@fullsubprnt))#10),'$data(@gbl(@fullsub))#10,('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))),$data(@name(0,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name("",""),-1) ^("")
+
+tt3Se2	; set inccnt=0
+	; if @type1last=@lastfullsub do
+	; . if $data(@name(0,"",@altsub)) zkill ^(@altlastsub) set inccnt=inccnt-1 if 1>$increment(@name("",""),-1) zkill ^("") if 1>$increment(@name(""),-1) zkill ^("")
+	; . set tmp=@xfnp1$ztoldval@xfnp2 if $data(@name(0,tmp,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name("",tmp),-1) zkill ^(tmp) if 1>$increment(@name(""),-1) zkill ^("")
+	; . set tmp=@xfnp1$ztvalue@xfnp2 if '$data(@name(0,tmp,@sub)) set ^(@lastsub)="" set inccnt=inccnt+1 if 1=$increment(@name("",tmp)),$increment(@name(""))
+	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'$data(@name(0,"",@altsub)) set ^(@altlastsub)="" set inccnt=inccnt+1 if 1=$increment(@name("","")),$increment(@name(""))
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
+
+tt3ZKe2	; set inccnt=0
+	; if @type1last=@lastfullsub do
+	; . set tmp=@xfnp1$ztoldval@xfnp2 if $data(@name(0,tmp,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name("",tmp),-1) zkill ^(tmp) if 1>$increment(@name(""),-1) zkill ^("")
+	; . if ($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) set inccnt=inccnt+1,@name(0,"",@altsub)="" if 1=$increment(@name("","")),$increment(@name(""))
+	; else  if '($data(@gbl(@fullsubprnt))#10),'$data(@gbl(@fullsub)),('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))),$data(@name(0,"",@altsub)) zkill ^(@altlastsub) set inccnt=inccnt-1 if 1>$increment(@name("",""),-1) zkill ^("") if 1>$increment(@name(""),-1) zkill ^("")
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
+
+tt3Sp0	; if @type1last=@lastfullsub do
+	; . for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2 zkill @name(i,"",@altsub),@name(i,p,@sub) set @name(i,q,@sub)=""
+	; else  if '($data(@gbl(@fullsub))#10) for i=@pieces set @name(i,"",@altsub)=""
+
+tt3ZKp0	; if @type1last=@lastfullsub do
+	; . if $data(@gbl(@fullsubprnt))#10!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) for i=@pieces zkill @name(i,@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,@sub) set @name(i,"",@altsub)=""
+	; . else  for i=@pieces zkill @name(i,@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,@sub)
+	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces zkill @name(i,"",@altsub)
+
+tt3Sp1	; if @type1last=@lastfullsub do
+	; . for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2 do
+	; . . if $data(@name(i,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(-i,""),-1) ^("")
+	; . . else  if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(-i,p),-1) ^(p)
+	; . . if '$data(@name(i,q,@sub)) set ^(@lastsub)="" if $increment(@name(-i,q))
+	; else  if '($data(@gbl(@fullsub))#10) for i=@pieces if '$data(@name(i,"",@altsub)) set ^(@altlastsub)="" if $increment(@name(-i,""))
+
+tt3ZKp1	; if @type1last=@lastfullsub do
+	; . if $data(@gbl(@fullsubprnt))#10!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 do
+	; . . if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(-i,p),-1) ^(p)
+	; . . if '$data(@name(i,"",@altsub)) set ^(@altlastsub)="" if $increment(@name(-i,""))
+	; . else  for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(-i,p),-1) ^(p)
+	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces if $data(@name(i,"",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(-i,""),-1) ^("")
+
+tt3Sp2	; set inccnt=0
+	; if @type1last=@lastfullsub do
+	; . for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2 do
+	; . . if $data(@name(i,"",@altsub)) zkill ^(@altlastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,""),-1) zkill ^("") zkill:1>$increment(@name(j),-1) ^(j)
+	; . . else  if $data(@name(i,p,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
+	; . . if '$data(@name(i,q,@sub)) set ^(@lastsub)="" set inccnt=inccnt+1 if 1=$increment(@name(j,q)),$increment(@name(j))
+	; else  if '($data(@gbl(@fullsub))#10) for i=@pieces set j=-i if '$data(@name(i,"",@altsub)) set ^(@altlastsub)="" set inccnt=inccnt+1 if 1=$increment(@name(j,"")),$increment(@name(j))
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
+
+tt3ZKp2	; set inccnt=0
+	; if @type1last=@lastfullsub do
+	; . if $data(@gbl(@fullsubprnt))#10!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 do
+	; . . if $data(@name(i,p,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
+	; . . if '$data(@name(i,"",@altsub)) set ^(@altlastsub)="" set inccnt=inccnt+1 if 1=$increment(@name(j,"")),$increment(@name(j))
+	; . else  for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
+	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces if $data(@name(i,"",@altsub)) set j=-i zkill ^(@altlastsub) set inccnt=inccnt-1 if 1>$increment(@name(j,""),-1) zkill ^("") zkill:1>$increment(@name(j),-1) ^(j)
+	; if inccnt set inccnt=inccnt+@name(11),^(11)=$select(1>inccnt:0,1:inccnt)
+
 ;	Error message texts
-U230	;"-F-BADTRANSFORM  with type=2, force="""_force_""" is not a valid function entryref"
+U230	;"-F-BADTRANSFORM  with type>1, force="""_force_""" is not a valid function entryref"
 U231	;"-F-BADTEMPLATE Trigger "_outstr_" has incorrect number of / delimiters for text substitution"
 U232	;"-F-BADZINTERRUPT Caller's $ZINTERRUPT handler returned control to %YDBAIM"
 U233	;"-F-JOBERR Error(s) reported by JOB'd process in "_err(i)
