@@ -140,9 +140,11 @@ grep_status=$?
 set -e
 
 #Set-up artifacts directory
-mkdir -p /artifacts/tmp/
-cp $ydb_dir/test_output.txt /artifacts/
-cp -r /tmp/* /artifacts/tmp/
+if [ ! -z ${CI_PIPELINE_ID} ]; then
+	mkdir -p /artifacts/tmp/
+	cp $ydb_dir/test_output.txt /artifacts/
+	cp -r /tmp/* /artifacts/tmp/
+fi
 
 # Check if we have M-Unit failures.
 if [ "$grep_status" -eq 1 ]; then
