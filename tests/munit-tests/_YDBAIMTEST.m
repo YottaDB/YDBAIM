@@ -1,6 +1,6 @@
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;								;
-	; Copyright (c) 2021-2024 YottaDB LLC and/or its subsidiaries.	;
+	; Copyright (c) 2021-2025 YottaDB LLC and/or its subsidiaries.	;
 	; All rights reserved.						;
 	;								;
 	;	This source code contains the intellectual property	;
@@ -165,14 +165,14 @@ aim73	; @TEST Test for YDBAIM#73
 	set y="" for j=0:1 set y=$order(@x@(0,y)) quit:'$zlength(y)  do assert("#"=$zextract(y,1))
 	set i=0,y="" for  set y=$order(@x@("",y)) quit:'$zlength(y)  if $increment(i,@x@("",y))
 	;       Confirm all nodes counted, total count, count of distinct values
-	do assert(nodes=i),assert(nodes=@x@(11)),assert(j=@x@(""))
+	do assert(nodes=i),assert(j=@x@(""))
 	;     - Check set trigger: additional xref, increase in total statistics, increase in number of distinct values
 	set varpat=$ztranslate(varpat,5,6)
 	set @varpat=testval,ref=$reference
-	do assert(10=$data(@x@(0,tvxref))),assert(1=@x@("",tvxref)),assert(nodes+1=@x@(11)),assert(j+1=@x@(""))
+	do assert(10=$data(@x@(0,tvxref))),assert(1=@x@("",tvxref)),assert(j+1=@x@(""))
 	;     - Check kill trigger: no xref, decrease in total statistics, decrease in number of distinct values
 	kill @ref
-	do assert('$data(@x@(0,tvxref))),assert('$data(@x@("",tvxref))),assert(nodes=@x@(11)),assert(j=@x@(""))
+	do assert('$data(@x@(0,tvxref))),assert('$data(@x@("",tvxref))),assert(j=@x@(""))
 	;     - Check removal
 	do UNXREFDATA^%YDBAIM(x),assert('$data(@x))
 	;   Done testing entire node for type=0
@@ -212,14 +212,14 @@ aim73	; @TEST Test for YDBAIM#73
 	set x=$$XREFDATA^%YDBAIM("^x",nsubs,"|",pnum,,,,2,,1)
 	set y="" for j=0:1 set y=$order(@x@(pnum,y)) quit:'$zlength(y)  do assert("#"=$zextract(y,1))
 	set i=0,y="" for  set y=$order(@x@(-pnum,y)) quit:'$zlength(y)  if $increment(i,@x@(-pnum,y))
-	do assert(nodes=i),assert(nodes=@x@(11)),assert(j=@x@(-pnum))
+	do assert(nodes=i),assert(j=@x@(-pnum))
 	;     - Check set trigger
 	set varpat=$ztranslate(varpat,5,6)
 	set $zpiece(@varpat,"|",pnum)=testval,ref=$reference
-	do assert(10=$data(@x@(pnum,tvxref))),assert(1=@x@(-pnum,tvxref)),assert(nodes+1=@x@(11)),assert(j+1=@x@(-pnum))
+	do assert(10=$data(@x@(pnum,tvxref))),assert(1=@x@(-pnum,tvxref)),assert(j+1=@x@(-pnum))
 	;     - Check kill trigger
 	kill @ref
-	do assert('$data(@x@(pnum,tvxref))),assert('$data(@x@(-pnum,tvxref))),assert(nodes=@x@(11)),assert(j=@x@(-pnum))
+	do assert('$data(@x@(pnum,tvxref))),assert('$data(@x@(-pnum,tvxref))),assert(j=@x@(-pnum))
 	;     - Check removal
 	do UNXREFDATA^%YDBAIM(x),assert('$data(@x))
 	;   Done testing pieces of nodes for type=0
@@ -293,9 +293,9 @@ aim77	; @Test for YDBAIM77
 	do UNXREFDATA^%YDBAIM("^x",2,,,,,,1,2,"$$aim77neg^%YDBAIMTEST(,1)")
 	do assert('$data(@aimgbl))
 	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,,,,,,2,2,"$$aim77neg^%YDBAIMTEST(,$$FUNC^%DH($system))")
-	do assert(99999=@aimgbl@("")),assert(100000=@aimgbl@(11))
+	do assert(99999=@aimgbl@(""))
 	set ^x(0,0)=0
-	do assert(100000=@aimgbl@("")),assert(100001=@aimgbl@(11))
+	do assert(100000=@aimgbl@(""))
 	do UNXREFDATA^%YDBAIM("^x",2,,,,,,2,2,"$$aim77neg^%YDBAIMTEST(,$$FUNC^%DH($system))")
 	do assert('$data(@aimgbl))
 	kill ^x
@@ -322,15 +322,15 @@ aim77	; @Test for YDBAIM77
 	do UNXREFDATA^%YDBAIM("^x",2,"|",2,,,,1,2,"$$aim77neg^%YDBAIMTEST()")
 	do assert('$data(@aimgbl))
 	set aimgbl=$$XREFDATA^%YDBAIM("^x",2,"|",2,,,,2,2,"$$aim77neg^%YDBAIMTEST()")
-	do assert(99999=@aimgbl@(11)),assert(99999=@aimgbl@(-2))
+	do assert(99999=@aimgbl@(-2))
 	set:$increment(i) ^x(i,i)=$random(100000)_"|"_i_"|"_$random(100000)
-	do assert(100000=@aimgbl@(11)),assert(100000=@aimgbl@(-2))
+	do assert(100000=@aimgbl@(-2))
 	set (^x(j,j),^x(j-1,j-1))=$random(100000)_"|"_i_"|"_$random(100000)
-	do assert(100002=@aimgbl@(11)),assert(100000=@aimgbl@(-2))
+	do assert(100000=@aimgbl@(-2))
 	zkill ^x(i,i)
-	do assert(100001=@aimgbl@(11)),assert(100000=@aimgbl@(-2))
+	do assert(100000=@aimgbl@(-2))
 	kill ^x(j,j),^x(j-1,j-1)
-	do assert(99999=@aimgbl@(11)),assert(99999=@aimgbl@(-2))
+	do assert(99999=@aimgbl@(-2))
 	do UNXREFDATA^%YDBAIM("^x",2,"|",2,,,,2,2,"$$aim77neg^%YDBAIMTEST()")
 	do assert('$data(@aimgbl))
 	kill ^x
@@ -342,13 +342,13 @@ aim77	; @Test for YDBAIM77
 	for stat=0:1:2 do
 	. set ^x(1,2)="a",x=$$XREFDATA^%YDBAIM("^x",.sub,"|",2,,,1,stat,0),^x(7,2)="e||f"
 	. do assert($data(@x@(2,"",1))),assert($data(@x@(2,"",7)))
-	. if stat do assert(2=@x@(-2,"")) if stat-1 do assert(1=@x@(-2)),assert(2=@x@(11))
+	. if stat do assert(2=@x@(-2,"")) if stat-1 do assert(1=@x@(-2))
 	. do UNXREFDATA^%YDBAIM("^x",.sub,"|",2,,,1,stat,0) kill ^x
 	set force="$$aim77neg^%YDBAIMTEST()"
 	for stat=0:1:2 do
 	. set ^x(1,2)="a",x=$$XREFDATA^%YDBAIM("^x",.sub,"|",2,,,1,stat,2,force),^x(7,2)="e||f"
 	. do assert($data(@x@(2,"",1))),assert($data(@x@(2,"",7)))
-	. if stat do assert(2=@x@(-2,"")) if stat-1 do assert(1=@x@(-2)),assert(2=@x@(11))
+	. if stat do assert(2=@x@(-2,"")) if stat-1 do assert(1=@x@(-2))
 	. do UNXREFDATA^%YDBAIM("^x",.sub,"|",2,,,1,stat,2,force) kill ^x
 	quit
 	;
@@ -997,7 +997,6 @@ tstat1	; @TEST stats of 1 and 2 produce the correct output
 	do assert(@aimgbl1@(-1,"George")=1)
 	do assert(@aimgbl1@(-1,"James")=2)
 	do assert($data(@aimgbl1@(-1))[0) ; Distinct values don't exist
-	do assert($data(@aimgbl1@(11))[0) ; Total values don't exist
 	;
 	; Unxref
 	DO UNXREFDATA^%YDBAIM("^customers",1,"§",1,0,,,1)
@@ -1008,7 +1007,6 @@ tstat1	; @TEST stats of 1 and 2 produce the correct output
 	do assert(@aimgbl2@(-1,"George")=1)
 	do assert(@aimgbl2@(-1,"James")=2)
 	do assert(@aimgbl2@(-1)=4) ; Distinct values
-	do assert(@aimgbl2@(11)=5) ; Total values
 	quit
 	;
 tstat2	; @TEST xref operations with stats=0,1,2
@@ -1100,7 +1098,6 @@ tstat2assertstat2(xref,message)
 	; zwrite aims
 	do assert(aims=1)
 	do assert(@xref@(-1)=3,message)
-	do assert(@xref@(11)=4,message)
 	quit
 	;
 tstat3	; @TEST Ensure that stat=2 produces correct triggers
@@ -1324,12 +1321,10 @@ tcon4	; @TEST Concurrent xref of the same global
 	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"A")=500000
 	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"B")=250000
 	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(-1,"C")=250000
-	; ^%ydbAIMDXtoXI8zgdGIqUuCoYeqwF6(11)=1000000
 	do assert(@aimgbl@(-1)=3)
 	do assert(@aimgbl@(-1,"A")=500000)
 	do assert(@aimgbl@(-1,"B")=250000)
 	do assert(@aimgbl@(-1,"C")=250000)
-	do assert(@aimgbl@(11)=1000000)
 	;
 	set ^names(1000001)="A|Q"
 	set ^names(1000002)="Z|F"
@@ -1339,7 +1334,6 @@ tcon4	; @TEST Concurrent xref of the same global
 	do assert(@aimgbl@(-1,"B")=250000)
 	do assert(@aimgbl@(-1,"C")=250000)
 	do assert(@aimgbl@(-1,"Z")=1)
-	do assert(@aimgbl@(11)=1000002)
 	;
 	; ^names(1)="A|B"
 	; ^names(2)="C|B"
@@ -1350,7 +1344,6 @@ tcon4	; @TEST Concurrent xref of the same global
 	do assert(@aimgbl@(-1,"B")=250000)
 	do assert(@aimgbl@(-1,"C")=249999)
 	do assert(@aimgbl@(-1,"Z")=1)
-	do assert(@aimgbl@(11)=1000000)
 	quit
 	;
 tcon4job1 ; [Job target] Concurrent xref of the same global
@@ -1661,19 +1654,19 @@ ttype1	; @TEST test type1 application global variables
 	. set y="" for i=1:1 set y=$order(@x@(0,nullxref,y)) quit:""=y
 	. do assert(23=i),assert(46=$$LOADDATA("USPresidents"))
 	. set y="" for i=1:1 set y=$order(@x@(0,nullxref,y)) quit:""=y
-	. do assert(22=i),assert(3=@x@("")),assert(23=@x@(11))
+	. do assert(22=i),assert(3=@x@(""))
 	. set y=nullxref for i=1:1 set y=$order(@x@(0,y)) quit:""=y
 	. do assert(3=i),assert(21=@x@("",nullxref)),assert(1=@x@("",nullxref_"Martin|Van|Buren")),assert(1=@x@("",nullxref_"William|Henry|Harrison"))
 	. zkill ^USPresidents(1837,1841) set y="" for i=1:1 set y=$order(@x@(0,nullxref,y)) quit:""=y
 	. do assert(23=i),assert(22=@x@("",nullxref)),assert('$data(@x@("",nullxref_"Martin|Van|Buren"))),assert(@x@("",nullxref_"William|Henry|Harrison"))
 	. set y=nullxref for i=1:1 set y=$order(@x@(0,y)) quit:""=y
-	. do assert(2=i),assert(2=@x@("")),assert(23=@x@(11))
+	. do assert(2=i),assert(2=@x@(""))
 	. zkill ^USPresidents(1837,-42) set y="" for i=1:1 set y=$order(@x@(0,nullxref,y)) quit:""=y
-	. do assert(23=i),assert(22=@x@("",nullxref)),assert(2=@x@("")),assert(23=@x@(11))
+	. do assert(23=i),assert(22=@x@("",nullxref)),assert(2=@x@(""))
 	. zkill ^USPresidents(1837,42) set y="" for i=1:1 set y=$order(@x@(0,nullxref,y)) quit:""=y
-	. do assert(22=i),assert(21=@x@("",nullxref)),assert(2=@x@("")),assert(22=@x@(11))
+	. do assert(22=i),assert(21=@x@("",nullxref)),assert(2=@x@(""))
 	. do assert(3=$$LOADDATA("NotUSPresidents")) set y="" for i=1:1 set y=$order(@x@(0,nullxref,y)) quit:""=y
-	. do assert(23=i),assert(22=@x@("",nullxref)),assert(2=@x@("")),assert(23=@x@(11))
+	. do assert(23=i),assert(22=@x@("",nullxref)),assert(2=@x@(""))
 	. do assert(46=$$LOADDATA("USPresidents")) set y=nullxref for i=1:1 set y=$order(@x@(0,y)) quit:""=y
 	. do assert(3=i)
 	. do assert(21=@x@("",nullxref)),assert(1=@x@("",nullxref_"Martin|Van|Buren")),assert(1=@x@("",nullxref_"William|Henry|Harrison"))
@@ -1730,21 +1723,21 @@ ttype1	; @TEST test type1 application global variables
 	. zkill ^USPresidents(1837,1841)
 	. set z=$$XREFDATA^%YDBAIM("^USPresidents",.s,"|","1:3",,,,2,1,fstr)
 	. set y="" for i=1:1 set y=$order(@z@(1,nullxref,y)) quit:""=y
-	. do assert(23=i),assert(2=@z@(-2)),assert(69=@z@(11)),assert(46=$$LOADDATA("USPresidents")) quit
+	. do assert(23=i),assert(2=@z@(-2)),assert(46=$$LOADDATA("USPresidents")) quit
 	. set y="" for i=1:1 set y=$order(@z@(1,nullxref,y)) quit:""=y
-	. do assert(22=i),assert(3=@z@(-2)),assert(69=@z@(11))
+	. do assert(22=i),assert(3=@z@(-2))
 	. set y=nullxref for i=1:1 set y=$order(@z@(1,y)) quit:""=y
 	. do assert(3=i),assert(21=@z@(-2*$random(2)-1,nullxref)),assert(1=@z@(-1,nullxref_"Martin")),assert(1=@z@(-3,nullxref_"Buren")),assert(1=@z@(-1,nullxref_"William")),assert(1=@z@(-3,nullxref_"Harrison"))
 	. zkill ^USPresidents(1837,1841) set y="" for i=1:1 set y=$order(@z@(1,nullxref,y)) quit:""=y
 	. do assert(23=i),assert(22=@z@(-2*$random(2)-1,nullxref)),assert('$data(@z@(-1,nullxref_"Martin"))),assert('$data(@z@(-2,nullxref_"Van"))),assert('$data(@z@(-3,nullxref_"Buren"))),assert(1=@z@(-1,nullxref_"William")),assert(1=@z@(-3,nullxref_"Harrison"))
 	. set y=nullxref for i=1:1 set y=$order(@z@(1,y)) quit:""=y
-	. do assert(2=i),assert(22=@z@(-2*$random(2)-1,nullxref)),assert(69=@z@(11))
+	. do assert(2=i),assert(22=@z@(-2*$random(2)-1,nullxref))
 	. zkill ^USPresidents(1837,-42) set y="" for i=1:1 set y=$order(@z@(1,nullxref,y)) quit:""=y
-	. do assert(23=i),assert(22=@z@(-2*$random(2)-1,nullxref)),assert(2=@z@(-2)),assert(69=@z@(11))
+	. do assert(23=i),assert(22=@z@(-2*$random(2)-1,nullxref)),assert(2=@z@(-2))
 	. zkill ^USPresidents(1837,42) set y="" for i=1:1 set y=$order(@z@(1,nullxref,y)) quit:""=y
-	. do assert(22=i),assert(21=@z@(-2*$random(2)-1,nullxref)),assert(2=@z@(-1)),assert(66=@z@(11))
+	. do assert(22=i),assert(21=@z@(-2*$random(2)-1,nullxref)),assert(2=@z@(-1))
 	. do assert(3=$$LOADDATA("NotUSPresidents")) set y="" for i=1:1 set y=$order(@z@(1,nullxref,y)) quit:""=y
-	. do assert(23=i),assert(22=@z@(-2*$random(2)-1,"")),assert(2=@z@(-2)),assert(69=@z@(11))
+	. do assert(23=i),assert(22=@z@(-2*$random(2)-1,"")),assert(2=@z@(-2))
 	. do assert(46=$$LOADDATA("USPresidents")) set y=nullxref for i=1:1 set y=$order(@z@(1,y)) quit:""=y
 	. do assert(3=i),assert(21=@z@(-2*$random(2)-1,nullxref)),assert(1=@z@(-1,nullxref_"Martin")),assert(1=@z@(-3,nullxref_"Buren")),assert(1=@z@(-1,nullxref_"William")),assert(1=@z@(-3,nullxref_"Harrison"))
 	. do UNXREFDATA^%YDBAIM
@@ -1850,7 +1843,6 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	.. do assert(@aimgbl@(-1,nullxref_"dc")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Add data and make sure triggers works
 	. ; Now set one of the .1 nodes to be non-existent on a new entry
@@ -1866,11 +1858,9 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	.. do assert(@aimgbl@(-1,nullxref)=3)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=19) ; Total entries
 	.. kill ^ORD(100.01,101,0)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=18) ; Total entries
 	.. do assert(@aimgbl@(-1,nullxref)=2)
 	. ;
 	. ; Set the .1 node to some data on entry 100
@@ -1894,7 +1884,6 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	.. do assert('$data(@aimgbl@(-1,nullxref_"ju")))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill the parent entry node by node
 	. new %1,%2 set (%1,%2)=$name(^ORD(100.01,1))
@@ -1907,13 +1896,11 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	.. do assert('$data(@aimgbl@(-1,nullxref_"dc")))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge @%2=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,nullxref_"dc",1)))
 	. if stat=2 do
 	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
-	.. do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill parent entry all at once
 	. new keepme merge keepme=^ORD(100.01,1)
@@ -1924,13 +1911,11 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	.. do assert('$data(@aimgbl@(-1,nullxref_"dc")))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge ^ORD(100.01,1)=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,nullxref_"dc")))
 	. if stat=2 do
 	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
-	.. do assert(@aimgbl@(11)=17) ; Total entries
 	.
 	. ; Remove all data in ^ORD(101.01)
 	. new keepme merge keepme=^ORD(100.01)
@@ -1940,7 +1925,6 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	.. do assert($data(@aimgbl@(-1))[0)
 	.. if stat=2 do
 	... do assert('$data(@aimgbl@(-1))) ; Distinct entries
-	... do assert('@aimgbl@(11)) ; Total entries
 	. merge ^ORD(100.01)=keepme
 	. ;
 	. ; Remove an existing sub entry. Should have same number of entries, but 2 null
@@ -1955,7 +1939,6 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	.. do assert(@aimgbl@(-1,nullxref)=2)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ; Put back
 	. merge ^ORD(100.01,2,.1)=keepme
 	. do assert($$type1cd(aimgbl)=17)
@@ -1967,7 +1950,6 @@ v1type1 ; @TEST VistA type1 - Test triggers
 	.. do assert(@aimgbl@(-1,nullxref)=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
 
 v1type3 ; @TEST VistA type3 - Test triggers
@@ -1999,7 +1981,6 @@ v1type3 ; @TEST VistA type3 - Test triggers
 	.. do assert(@aimgbl@(-1,nullxref_"cd")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Add data and make sure triggers works
 	. ; Now set one of the .1 nodes to be non-existent on a new entry
@@ -2015,11 +1996,9 @@ v1type3 ; @TEST VistA type3 - Test triggers
 	.. do assert(@aimgbl@(-1,nullxref)=3)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=19) ; Total entries
 	.. kill ^ORD(100.01,101,0)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=18) ; Total entries
 	.. do assert(@aimgbl@(-1,nullxref)=2)
 	. ;
 	. ; Set the .1 node to some data on entry 100
@@ -2043,7 +2022,6 @@ v1type3 ; @TEST VistA type3 - Test triggers
 	.. do assert('$data(@aimgbl@(-1,nullxref_"ju")))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill the parent entry node by node
 	. new %1,%2 set (%1,%2)=$name(^ORD(100.01,1))
@@ -2056,13 +2034,11 @@ v1type3 ; @TEST VistA type3 - Test triggers
 	.. do assert('$data(@aimgbl@(-1,nullxref_"cd")))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge @%2=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,nullxref_"cd",1)))
 	. if stat=2 do
 	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
-	.. do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill parent entry all at once
 	. new keepme merge keepme=^ORD(100.01,1)
@@ -2073,13 +2049,11 @@ v1type3 ; @TEST VistA type3 - Test triggers
 	.. do assert('$data(@aimgbl@(-1,nullxref_"cd")))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge ^ORD(100.01,1)=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,nullxref_"cd")))
 	. if stat=2 do
 	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
-	.. do assert(@aimgbl@(11)=17) ; Total entries
 	.
 	. ; Remove all data in ^ORD(101.01)
 	. new keepme merge keepme=^ORD(100.01)
@@ -2089,7 +2063,6 @@ v1type3 ; @TEST VistA type3 - Test triggers
 	.. do assert($data(@aimgbl@(-1))[0)
 	.. if stat=2 do
 	... do assert('$data(@aimgbl@(-1))) ; Distinct entries
-	... do assert('@aimgbl@(11)) ; Total entries
 	. merge ^ORD(100.01)=keepme
 	. ;
 	. ; Remove an existing sub entry. Should have same number of entries, but 2 null
@@ -2104,7 +2077,6 @@ v1type3 ; @TEST VistA type3 - Test triggers
 	.. do assert(@aimgbl@(-1,nullxref)=2)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ; Put back
 	. merge ^ORD(100.01,2,.1)=keepme
 	. do assert($$type1cd(aimgbl)=17)
@@ -2116,7 +2088,6 @@ v1type3 ; @TEST VistA type3 - Test triggers
 	.. do assert(@aimgbl@(-1,nullxref)=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
 
 v2type1 ; @TEST VistA type1 - Initial data partly empty
@@ -2141,7 +2112,6 @@ v2type1 ; @TEST VistA type1 - Initial data partly empty
 	.. do assert(@aimgbl@(-1,nullxref_"dc")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ; Check that two null entry exists
 	. do assert($data(@aimgbl@(1,nullxref,2)))
 	. if stat do
@@ -2155,7 +2125,6 @@ v2type1 ; @TEST VistA type1 - Initial data partly empty
 	.. do assert(@aimgbl@(-1,nullxref_"c")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
 
 v2type3 ; @TEST VistA type3 - Initial data partly empty
@@ -2180,7 +2149,6 @@ v2type3 ; @TEST VistA type3 - Initial data partly empty
 	.. do assert(@aimgbl@(-1,nullxref_"cd")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ; Check that two null entry exists
 	. do assert($data(@aimgbl@(1,nullxref,2)))
 	. if stat do
@@ -2194,7 +2162,6 @@ v2type3 ; @TEST VistA type3 - Initial data partly empty
 	.. do assert(@aimgbl@(-1,nullxref_"c")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
 
 v1type0 ; @TEST Repeat VistA type 1 tests as type ""
@@ -2222,7 +2189,6 @@ v1type0 ; @TEST Repeat VistA type 1 tests as type ""
 	.. do assert(@aimgbl@(-1,nullxref_"dc")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	. ;
 	. ; Add data and make sure triggers works
 	. ; Now set one of the .1 nodes to be non-existent on a new entry
@@ -2238,11 +2204,9 @@ v1type0 ; @TEST Repeat VistA type 1 tests as type ""
 	.. do assert('$data(@aimgbl@(-1,nullxref)))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	.. kill ^ORD(100.01,101,0)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	.. do assert('$data(@aimgbl@(-1,nullxref)))
 	. ;
 	. ; Set the .1 node to some data on entry 100
@@ -2257,7 +2221,6 @@ v1type0 ; @TEST Repeat VistA type 1 tests as type ""
 	.. do assert(@aimgbl@(-1,nullxref_"ju")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Restore data to original
 	. kill ^ORD(100.01,100)
@@ -2269,7 +2232,6 @@ v1type0 ; @TEST Repeat VistA type 1 tests as type ""
 	.. do assert('$data(@aimgbl@(-1,nullxref_"ju")))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	. ;
 	. ; Kill the parent entry node by node
 	. new %1,%2 set (%1,%2)=$name(^ORD(100.01,1))
@@ -2282,13 +2244,11 @@ v1type0 ; @TEST Repeat VistA type 1 tests as type ""
 	.. do assert('$data(@aimgbl@(-1,nullxref_"dc")))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=15) ; Distinct entries
-	... do assert(@aimgbl@(11)=15) ; Total entries
 	. merge @%2=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,nullxref_"dc")))
 	. if stat=2 do
 	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
-	.. do assert(@aimgbl@(11)=16) ; Total entries
 	. ;
 	. ; Kill parent entry all at once
 	. new keepme merge keepme=^ORD(100.01,1)
@@ -2299,13 +2259,11 @@ v1type0 ; @TEST Repeat VistA type 1 tests as type ""
 	.. do assert('$data(@aimgbl@(-1,nullxref_"dc")))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=15) ; Distinct entries
-	... do assert(@aimgbl@(11)=15) ; Total entries
 	. merge ^ORD(100.01,1)=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,nullxref_"dc")))
 	. if stat=2 do
 	.. do assert(@aimgbl@(-1)=16) ; Distinct entries
-	.. do assert(@aimgbl@(11)=16) ; Total entries
 	.
 	. ; Remove all data in ^ORD(101.01)
 	. new keepme merge keepme=^ORD(100.01)
@@ -2315,7 +2273,6 @@ v1type0 ; @TEST Repeat VistA type 1 tests as type ""
 	.. do assert($data(@aimgbl@(-1))[0)
 	.. if stat=2 do
 	... do assert('$data(@aimgbl@(-1))) ; Distinct entries
-	... do assert('@aimgbl@(11)) ; Total entries
 	. merge ^ORD(100.01)=keepme
 	. ;
 	. ; Remove an existing sub entry. Should have 1 less entry.
@@ -2330,7 +2287,6 @@ v1type0 ; @TEST Repeat VistA type 1 tests as type ""
 	.. do assert('$data(@aimgbl@(-1,nullxref)))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=15) ; Distinct entries
-	... do assert(@aimgbl@(11)=15) ; Total entries
 	. ; Put back
 	. merge ^ORD(100.01,2,.1)=keepme
 	. do assert($$type1cd(aimgbl)=16)
@@ -2342,7 +2298,6 @@ v1type0 ; @TEST Repeat VistA type 1 tests as type ""
 	.. do assert('$data(@aimgbl@(-1,nullxref)))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	quit
 	;
 v2type0 ; @TEST VistA type 0 - Initial data partly empty
@@ -2367,7 +2322,6 @@ v2type0 ; @TEST VistA type 0 - Initial data partly empty
 	.. do assert(@aimgbl@(-1,nullxref_"dc")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=15) ; Distinct entries
-	... do assert(@aimgbl@(11)=15) ; Total entries
 	. ; Check that null entry doesn't exist
 	. do assert('$data(@aimgbl@(1,nullxref,2)))
 	. if stat do
@@ -2381,7 +2335,6 @@ v2type0 ; @TEST VistA type 0 - Initial data partly empty
 	.. do assert(@aimgbl@(-1,nullxref_"c")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	quit
 	;
 v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
@@ -2433,7 +2386,6 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	.. do assert(@aimgbl@(-1,nullxref_4500704)=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Add data and make sure triggers works
 	. ; Now set one of the .1 nodes to be non-existent on a new entry
@@ -2449,11 +2401,9 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	.. do assert(@aimgbl@(-1,nullxref)=3)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=19) ; Total entries
 	.. kill ^ORD(100.01,101,0)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=18) ; Total entries
 	.. do assert(@aimgbl@(-1,nullxref)=2)
 	. ;
 	. ; Set the VUID node to some data on entry 100
@@ -2477,7 +2427,6 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	.. do assert('$data(@aimgbl@(-1,nullxref_9999999)))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill the parent entry node by node
 	. new %1,%2 set (%1,%2)=$name(^ORD(100.01,1))
@@ -2490,13 +2439,11 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	.. do assert('$data(@aimgbl@(-1,nullxref_4500704)))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge @%2=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,nullxref_4500704,1)))
 	. if stat=2 do
 	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
-	.. do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill parent entry all at once
 	. new keepme merge keepme=^ORD(100.01,1)
@@ -2507,13 +2454,11 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	.. do assert('$data(@aimgbl@(-1,nullxref_4500704)))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge ^ORD(100.01,1)=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,nullxref_4500704)))
 	. if stat=2 do
 	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
-	.. do assert(@aimgbl@(11)=17) ; Total entries
 	.
 	. ; Remove all data in ^ORD(101.01)
 	. new keepme merge keepme=^ORD(100.01)
@@ -2523,7 +2468,6 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	.. do assert($data(@aimgbl@(-1))[0)
 	.. if stat=2 do
 	... do assert('$data(@aimgbl@(-1))) ; Distinct entries
-	... do assert('@aimgbl@(11)) ; Total entries
 	. merge ^ORD(100.01)=keepme
 	. ;
 	. ; Remove an existing sub entry. Should have same number of entries, but 1 null
@@ -2538,7 +2482,6 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	.. do assert(@aimgbl@(-1,nullxref)=2)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ; Put back
 	. merge ^ORD(100.01,2,"VUID")=keepme
 	. do assert($$type1cd(aimgbl)=17)
@@ -2550,7 +2493,6 @@ v1type1s ; @TEST VistA type1 - Test triggers with string subs in xsub
 	.. do assert(@aimgbl@(-1,nullxref)=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
 	;
 v1type3s ; @TEST VistA type3 - Test triggers with string subs in xsub
@@ -2582,7 +2524,6 @@ v1type3s ; @TEST VistA type3 - Test triggers with string subs in xsub
 	.. do assert(@aimgbl@(-1,4070054)=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Add data and make sure triggers works
 	. ; Now set one of the .1 nodes to be non-existent on a new entry
@@ -2598,11 +2539,9 @@ v1type3s ; @TEST VistA type3 - Test triggers with string subs in xsub
 	.. do assert(@aimgbl@(-1,nullxref)=3)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=19) ; Total entries
 	.. kill ^ORD(100.01,101,0)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=18) ; Total entries
 	.. do assert(@aimgbl@(-1,nullxref)=2)
 	. ;
 	. ; Set the VUID node to some data on entry 100
@@ -2626,7 +2565,6 @@ v1type3s ; @TEST VistA type3 - Test triggers with string subs in xsub
 	.. do assert('$data(@aimgbl@(-1,nullxref_9999999)))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill the parent entry node by node
 	. new %1,%2 set (%1,%2)=$name(^ORD(100.01,1))
@@ -2639,13 +2577,11 @@ v1type3s ; @TEST VistA type3 - Test triggers with string subs in xsub
 	.. do assert('$data(@aimgbl@(-1,4070054)))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge @%2=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,4070054,1)))
 	. if stat=2 do
 	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
-	.. do assert(@aimgbl@(11)=17) ; Total entries
 	. ;
 	. ; Kill parent entry all at once
 	. new keepme merge keepme=^ORD(100.01,1)
@@ -2656,13 +2592,11 @@ v1type3s ; @TEST VistA type3 - Test triggers with string subs in xsub
 	.. do assert('$data(@aimgbl@(-1,4070054)))
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=16) ; Total entries
 	. merge ^ORD(100.01,1)=keepme
 	. do assert($data(^ORD(100.01,1)))
 	. do assert($data(@aimgbl@(1,4070054)))
 	. if stat=2 do
 	.. do assert(@aimgbl@(-1)=17) ; Distinct entries
-	.. do assert(@aimgbl@(11)=17) ; Total entries
 	.
 	. ; Remove all data in ^ORD(101.01)
 	. new keepme merge keepme=^ORD(100.01)
@@ -2672,7 +2606,6 @@ v1type3s ; @TEST VistA type3 - Test triggers with string subs in xsub
 	.. do assert($data(@aimgbl@(-1))[0)
 	.. if stat=2 do
 	... do assert('$data(@aimgbl@(-1))) ; Distinct entries
-	... do assert('@aimgbl@(11)) ; Total entries
 	. merge ^ORD(100.01)=keepme
 	. ;
 	. ; Remove an existing sub entry. Should have same number of entries, but 1 null
@@ -2687,7 +2620,6 @@ v1type3s ; @TEST VistA type3 - Test triggers with string subs in xsub
 	.. do assert(@aimgbl@(-1,nullxref)=2)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ; Put back
 	. merge ^ORD(100.01,2,"VUID")=keepme
 	. do assert($$type1cd(aimgbl)=17)
@@ -2699,7 +2631,6 @@ v1type3s ; @TEST VistA type3 - Test triggers with string subs in xsub
 	.. do assert(@aimgbl@(-1,nullxref)=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
 	;
 v2type1s ; @TEST VistA type1 - Initial data partly empty
@@ -2722,7 +2653,6 @@ v2type1s ; @TEST VistA type1 - Initial data partly empty
 	.. do assert(@aimgbl@(-1,nullxref_"dc")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ; Check that null entry exists
 	. do assert($data(@aimgbl@(1,nullxref,2)))
 	. if stat do
@@ -2736,7 +2666,6 @@ v2type1s ; @TEST VistA type1 - Initial data partly empty
 	.. do assert(@aimgbl@(-1,nullxref_"c")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
 	;
 v2type3s ; @TEST VistA type3 - Initial data partly empty
@@ -2759,7 +2688,6 @@ v2type3s ; @TEST VistA type3 - Initial data partly empty
 	.. do assert(@aimgbl@(-1,nullxref_"cd")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=16) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	. ; Check that null entry exists
 	. do assert($data(@aimgbl@(1,nullxref,2)))
 	. if stat do
@@ -2773,7 +2701,6 @@ v2type3s ; @TEST VistA type3 - Initial data partly empty
 	.. do assert(@aimgbl@(-1,nullxref_"c")=1)
 	.. if stat=2 do
 	... do assert(@aimgbl@(-1)=17) ; Distinct entries
-	... do assert(@aimgbl@(11)=17) ; Total entries
 	quit
 	;
 type1cd(aimgbl) ; [type1t1, $$] Count data (including nulls)
