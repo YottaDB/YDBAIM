@@ -1,7 +1,7 @@
 #!/bin/bash
 #################################################################
 #								#
-# Copyright (c) 2021-2024 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2021-2025 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -50,6 +50,9 @@ source `pkg-config --variable=prefix yottadb`/ydb_env_set
 # Turn off journaling and use MM mode for faster execution
 mupip set -journal=disable -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
 mupip set -access_method=mm -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
+
+# Extend the database for octo1083 test
+mupip extend -blocks=3000000 DEFAULT
 
 echo "# Info: [ydb_dir = $ydb_dir]"
 echo "# Info: [ydb_gbldir = $ydb_gbldir]"
@@ -137,6 +140,27 @@ cp $script_dir/munit-tests/*.m $ydb_dir/r/
 cd $ydb_dir
 export script_dir	# used by "tbash" unit test to invoke bash test script "run_bash_tests.sh" and "ydbaim_test.sh"
 $ydb_dist/yottadb -r %YDBAIMTEST | tee -a test_output.txt
+
+# Create smaller block AIM region needed to create error TRANS2BIG (otherwise will take too long)
+# unset needed because rundown fails otherwise if these are present
+unset ydb_repl_instance gtm_repl_instance
+$ydb_dist/mupip rundown -r '*'
+# rm AIM database files as we need to adjust values down (if we adjust them up, we can use mupip set)
+rm ./r*/g/%ydbaim*
+$ydb_dist/yottadb -r GDE << GDE_EOF
+change -region YDBAIM -key_size=984 -nojournal
+change -segment YDBAIM -block_size=1024
+exit
+GDE_EOF
+mupip create -region YDBAIM
+
+options=("bg" "mm")
+bg_or_mm="${options[RANDOM % ${#options[@]}]}"
+echo "Choosing BG or MM randomly: choosing $bg_or_mm for this run"
+mupip set -access_method=$bg_or_mm -region YDBAIM
+
+# Run special test
+$ydb_dist/yottadb -r OCTOTEST1083 | tee -a test_output.txt
 
 set +e # grep will have status of 1 if no lines are found, and that will exit the script!
 grep -B1 -F '[FAIL]' $ydb_dir/test_output.txt
