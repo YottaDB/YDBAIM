@@ -143,24 +143,28 @@ $ydb_dist/yottadb -r %YDBAIMTEST | tee -a test_output.txt
 
 # Create smaller block AIM region needed to create error TRANS2BIG (otherwise will take too long)
 # unset needed because rundown fails otherwise if these are present
-unset ydb_repl_instance gtm_repl_instance
-$ydb_dist/mupip rundown -r '*'
-# rm AIM database files as we need to adjust values down (if we adjust them up, we can use mupip set)
-rm ./r*/g/%ydbaim*
-$ydb_dist/yottadb -r GDE << GDE_EOF
-change -region YDBAIM -key_size=984 -nojournal
-change -segment YDBAIM -block_size=1024
-exit
+# This test runs only on the pipeline because it's outside of the main test suite
+# that is used for development; so having it run during development is not ideal
+if [ ! -z ${CI_PIPELINE_ID} ]; then
+	unset ydb_repl_instance gtm_repl_instance
+	$ydb_dist/mupip rundown -r '*'
+	# rm AIM database files as we need to adjust values down (if we adjust them up, we can use mupip set)
+	rm ./r*/g/%ydbaim*
+	$ydb_dist/yottadb -r GDE << GDE_EOF
+	change -region YDBAIM -key_size=984 -nojournal
+	change -segment YDBAIM -block_size=1024
+	exit
 GDE_EOF
-mupip create -region YDBAIM
+	mupip create -region YDBAIM
 
-options=("bg" "mm")
-bg_or_mm="${options[RANDOM % ${#options[@]}]}"
-echo "Choosing BG or MM randomly: choosing $bg_or_mm for this run"
-mupip set -access_method=$bg_or_mm -region YDBAIM
+	options=("bg" "mm")
+	bg_or_mm="${options[RANDOM % ${#options[@]}]}"
+	echo "Choosing BG or MM randomly: choosing $bg_or_mm for this run"
+	mupip set -access_method=$bg_or_mm -region YDBAIM
 
-# Run special test
-$ydb_dist/yottadb -r OCTOTEST1083 | tee -a test_output.txt
+	# Run special test
+	$ydb_dist/yottadb -r OCTOTEST1083 | tee -a test_output.txt
+fi
 
 set +e # grep will have status of 1 if no lines are found, and that will exit the script!
 grep -B1 -F '[FAIL]' $ydb_dir/test_output.txt
