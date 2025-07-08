@@ -1,6 +1,6 @@
 #################################################################
 #								#
-# Copyright (c) 2021-2024 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2021-2025 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -17,7 +17,7 @@ services:
   - docker:dind
 
 commit-verify:
-  image: ubuntu:22.04
+  image: ubuntu:24.04
   stage: build
   before_script:
     - apt-get update -qq && apt-get install -y -qq git wget gnupg
