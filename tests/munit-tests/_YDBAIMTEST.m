@@ -1,4 +1,4 @@
-g	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;								;
 	; Copyright (c) 2021-2025 YottaDB LLC and/or its subsidiaries.	;
 	; All rights reserved.						;
@@ -3664,4 +3664,14 @@ jobintrestore(type) ; [job target for tintrestore] - type is XREFSUB() test
 	set ^tintrestore("after")=$zinterrupt
 	quit
 intintrestore ; [no op interrupt; not a typo]
+	quit
+	;
+version ; @TEST Test that VERSION() returns correct versions
+	do assert(2.1=$$VERSION^%YDBAIM("DATA"))
+	do assert(2.1=$$VERSION^%YDBAIM("data"))
+	do assert(1.1=$$VERSION^%YDBAIM("SUB"))
+	do assert(1.1=$$VERSION^%YDBAIM("sub"))
+	do assert(3.1=$$VERSION^%YDBAIM)
+	do assert(3.1=$$VERSION^%YDBAIM())
+	do assert(3.1=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
 	quit

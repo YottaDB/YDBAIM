@@ -23,11 +23,31 @@ FetchContent_MakeAvailable(YDBCMake)
 message(STATUS "YDBCMake Source Directory: ${ydbcmake_SOURCE_DIR}")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ydbcmake_SOURCE_DIR}/ydbcmake/")
 
-project(YDBAIM M)
+# Get user presentable version number
+# Algorithm is:
+# - Major = XREFDATA + XREFSUB
+# - Minor = %YDBAIM
+file(STRINGS _YDBAIM.m XREFDATA REGEX "^XREFDATA\\(")
+file(STRINGS _YDBAIM.m XREFSUB REGEX "^XREFSUB\\(")
+file(STRINGS _YDBAIM.m _YDBAIM REGEX "^%YDBAIM")
+string(REGEX MATCH ";([0-9]+)" _ ${XREFDATA})
+set(XREFDATA_VER ${CMAKE_MATCH_1})
+string(REGEX MATCH ";([0-9]+)" _ ${XREFSUB})
+set(XREFSUB_VER ${CMAKE_MATCH_1})
+string(REGEX MATCH ";([0-9]+)" _ ${_YDBAIM})
+set(AIM_MINOR_VERSION ${CMAKE_MATCH_1})
+math(EXPR AIM_MAJOR_VERSION "${XREFDATA_VER} + ${XREFSUB_VER}")
 
-# Find YottaDB and print Install Destination
+project(YDBAIM
+	LANGUAGES M
+	VERSION "${AIM_MAJOR_VERSION}.${AIM_MINOR_VERSION}")
+
+configure_file(_ydbaim.manifest.json.in _ydbaim.manifest.json @ONLY)
+
+# Find YottaDB and print install destination & current version
 find_package(YOTTADB REQUIRED)
 message(STATUS "Install Location: ${YOTTADB_PLUGIN_PREFIX}")
+message(STATUS "YDBAIM Version: ${YDBAIM_VERSION}")
 
 # Add library
 add_ydb_library(_ydbaim SOURCES _YDBAIM.m)
@@ -38,3 +58,9 @@ install_ydb_library(_ydbaim)
 # Install Sources
 install(FILES _YDBAIM.m
 	DESTINATION ${YOTTADB_PLUGIN_PREFIX}/r/)
+
+# Install Manifest file
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/_ydbaim.manifest.json DESTINATION ${YOTTADB_M_PLUGIN_DIR})
+if(ydb_icu_version)
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/_ydbaim.manifest.json DESTINATION ${YOTTADB_M_PLUGIN_DIR}/utf8)
+endif()

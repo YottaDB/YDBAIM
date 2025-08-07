@@ -17,8 +17,8 @@
 ; - Optionally, statistics on the count of each value and the number of
 ;   distinct values
 ;
-; The number in the comment after the %YDBAIM label is a version number of the
-; metadata format.
+; The number in the comment is a minor version number for the software.
+; Refer to comments before the VERSION() label.
 %YDBAIM;1
 	; Top level entry not supported
 	new $etrap,io do etrap
@@ -187,6 +187,29 @@ UNXREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force)
 	. else  do unxref($$XREFSUB(gbl,.xsub,snum,1,$get(omitfix,1),$get(stat),$get(type),$get(force)))
 	quit:$quit "" quit
 
+; Per the guidelines at https://semver.org/, a version number has three period seoarated parts:
+; - major version, a change in which indicates a breaking change,
+; - minor version, a change in which indidates an upward-compatible (non-breaking) change, and
+; - patch level.
+; VERSION() interprets these as follows:
+; - The major version corresponds to the cross reference schema. Since there are separate schemas
+;   for data and for subscripts, there are separate major versions for the two. These major
+;   numbers are in the comment following the XREFDATA() and XREFSUB() labels. Note that
+;   functional changes to trigger code potentially change the metadata schem. When VERSION()
+;   is called without an argument, or an argument other than case-insensitive "DATA" or "SUB",
+;   it reports the sum of the two major version numbers.
+; - The minor version is in the comment following the %YDBAIM label, and should be updated for
+;   every upward compatible software change (like a bug fix, or new feature).
+; - No patch level is reported as it cannot be reliably detetmined owing to the variety of ways
+;   in which %YDBAIM can be installed and executed.
+VERSION(type)
+	new dver,loctype,majver,minver,sver
+	set loctype=$zconvert($get(type),"u")
+	set dver=$zpiece($text(XREFDATA^%YDBAIM),";",2)
+	set sver=$zpiece($text(XREFSUB^%YDBAIM),";",2)
+	set minver=$zpiece($text(%YDBAIM^%YDBAIM),";",2)
+	set majver=$select("DATA"=loctype:dver,"SUB"=loctype:sver,1:dver+sver)
+	quit majver_"."_minver
 
 ; XREFDATA() and XREFSUB() create triggers that maintain cross references and then
 ; compute cross references for existing global nodes. This allows them to run concurrently
@@ -196,14 +219,15 @@ UNXREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force)
 ;
 ; Note that for historical reasons, variables whose names suggest they are
 ; relevant just to type=1, e.g., type1last, are also relevant to type=3,
-; i.e., to Fileman globals.
-XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
+; i.e., to Fileman globals. The number in the comment is the major version
+; for data metadata. Refer to comments before the VERSION() label.
+XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force);2
 	new $etrap,io do etrap
 	new altlastsub,altsub,asciisep,constlist,currlck,fullsub,fullsubprnt
 	new fulltrigsub,gblind,gblindtype1,i,j,killtrg,lastfullsub
 	new lastsub,lastsubind,lastvarsub,locxsub,modflag,name,nameind,newpnum
 	new newpstr,pieces,nsubs,nullsub,omitflag,oldpstr,stacklvl1,sub,subary
-	new suffix,tlevel,tmp,trigdel,trigdelx,type1last,trigprefix
+	new suffix,swver,tlevel,tmp,trigdel,trigdelx,type1last,trigprefix
 	new trigset,trigsub,ttprfx,valcntind,xfnp1,xfnp2,xfntest,xrefind
 	new xrefindtype1,z,zintrptsav,zlsep,ztout,zyintrsig
 	set stacklvl1=$stack	; required by premature termination
@@ -323,7 +347,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	. . do xrefdatajobs(nsubs)
 	. . ; Update metadata to indicate completion
 	. . tstart ():transactionid="batch"
-	. . set @name=gbl,@name@(0)=$zut_" "_$job_" "_$zyrelease_" "_$zpiece($text(%YDBAIM),";",2),^(1)=nsubs,^(2)=sep
+	. . set @name=gbl,@name@(0)=$zut_" "_$job_" "_$zyrelease_" "_swver,^(1)=nsubs,^(2)=sep
 	. . set oldpstr=$get(^(3),"#")
 	. . for i=2:1:$zlength(newpstr) set $zextract(oldpstr,i)=$select(+$zextract(newpstr,i):1,1:+$zextract(oldpstr,i))
 	. . set ^(3)=oldpstr
@@ -362,7 +386,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	. do xrefdatajobs(nsubs)
 	. ; Add metadata to indicate completion
 	. tstart ():transactionid="batch"
-	. set @name@(0)=$zut_" "_$job_" "_$zyrelease_" "_$zpiece($text(%YDBAIM),";",2),^(1)=nsubs,(^(2),^(3),^(4),^(5))=""
+	. set @name@(0)=$zut_" "_$job_" "_$zyrelease_" "_swver,^(1)=nsubs,(^(2),^(3),^(4),^(5))=""
 	. tcommit
 	; label to which premature termination of xrefdatajobs() does ZGOTO
 XREFDATAQUIT
@@ -373,13 +397,15 @@ XREFDATAQUIT
 	set $zinterrupt=zintrptsav
 	quit:$quit name quit
 
-; XREFSUB() cross references metadata of subscripts
-XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force)
+; XREFSUB() cross references metadata of subscripts.  The number in the comment is
+; the major version for subscript metadata. Refer to comments before the VERSION()
+; label.
+XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force);1
 	new $etrap,io do etrap
 	new constlist,currlck,fullsub,fullsubprnt,fulltrigsub,gblind,i,j,killtrg
 	new lastfullsub,lastsub,lastsubind,lastvarsub,locxsub,locsnum,modflag,name
 	new nameind,newsbits,nsnum,nsubs,nullsub,oldsbits,omitflag,stacklvl1,sub,subary
-	new suffix,tlevel,tmp,trigdel,trigdelx,trigprefix,trigset,trigsub,ttprfx
+	new suffix,swver,tlevel,tmp,trigdel,trigdelx,trigprefix,trigset,trigsub,ttprfx
 	new valcntind,xrefind,zintrptsav,ztout
 	set stacklvl1=$stack	; required by premature termination
 	set tlevel=$tlevel	; required by error trap to rollback/unwind
@@ -466,7 +492,7 @@ XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force)
 	. do xrefsubjobs(nsubs)
 	. ; Update metadata to indicate completion
 	. tstart ():transactionid="batch"
-	. set @name@(0)=$zut_" "_$job_" "_$zyrelease_" "_$zpiece($text(%YDBAIM),";",2),^(1)=nsubs,^(3)=$zbitor($get(^(3),$zbitstr(nsubs)),newsbits)
+	. set @name@(0)=$zut_" "_$job_" "_$zyrelease_" "_swver,^(1)=nsubs,^(3)=$zbitor($get(^(3),$zbitstr(nsubs)),newsbits)
 	. tcommit
 	; label to which premature termination of xrefsubjobs() does ZGOTO
 XREFSUBQUIT
@@ -586,10 +612,13 @@ lsxref:(lvn,xref)
 ; Initialization common to XREFDATA() and XREFSUB()
 ; References or modifies caller's local variables:
 ;  constlist,currlck,force,fullsub,fulltrigsub,gbl,lastfullsub,locxsub,
-;  name,nsubs,nullsub,omitfix,omitflag,sub,trigsub,type,xsub,zintrptsav
+;  name,nsubs,nullsub,omitfix,omitflag,sub,swver,trigsub,type,xsub,zintrptsav
 initxref:
-	new i,tmp
+	new i,lab,rtn,tmp
 	set zintrptsav=$zinterrupt
+	set tmp=$stack($stack-1,"place")
+	set lab=$zpiece(tmp,"+",1),rtn=$zpiece(tmp,"^",2)
+	set swver=$zpiece($text(@(lab_"^"_rtn)),";",2)_"."_$zpiece($text(@(rtn_"^"_rtn)),";",2)
 	do snaplck(.currlck)
 	set:'$data(gbl) $ecode=",U252,"
 	; Extended references are not supported

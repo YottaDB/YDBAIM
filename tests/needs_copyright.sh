@@ -2,7 +2,7 @@
 
 #################################################################
 #								#
-# Copyright (c) 2021 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2021-2025 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -40,7 +40,7 @@ fi
 
 # Determines whether a file should need a copyright by its name
 # Returns 0 if it needs a copyright and 1 otherwise.
-skiplist="COPYING README.md LICENSE .gitignore"
+skiplist="COPYING README.md LICENSE .gitignore _ydbaim.manifest.json.in"
 for skipfile in $skiplist; do
 	if [ "$file" = "$skipfile" ]; then
 		exit 1

@@ -1,6 +1,6 @@
 #################################################################
 #								#
-# Copyright (c) 2022 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2022-2025 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -14,7 +14,7 @@ WORKDIR /YDBAIM
 ENV DEBIAN_FRONTEND=noninteractive
 RUN ln -fs /usr/share/zoneinfo/US/Eastern /etc/localtime
 RUN apt-get update -qq && apt-get install -y -qq build-essential cmake git curl pkg-config libicu-dev
-ADD CMakeLists.txt _YDBAIM.m ./
+ADD CMakeLists.txt _YDBAIM.m _ydbaim.manifest.json.in ./
 ADD tests tests
 RUN mkdir /build && cd /build && cmake /YDBAIM && make && make install
 ENTRYPOINT ./tests/test.sh

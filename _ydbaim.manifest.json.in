@@ -1,0 +1,5 @@
+{
+  "description": "YottaDB Application Independent Metadata Library",
+  "version": "@YDBAIM_VERSION@",
+  "vendor": "YottaDB"
+}
