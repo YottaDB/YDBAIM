@@ -389,6 +389,36 @@ aim77	; @Test for YDBAIM77 - transformation functions
 	;
 aim77neg(val,ignore)	quit $select($zlength(val):-val,1:"")	;transformation function negative of value
 	;
+aim82	; @TEST Test xtratrig for higher level KILLs
+	new aimgbl
+	do aim82init set aimgbl=$$XREFDATA^%YDBAIM("^X",2,"|",2)
+	do assert($data(@aimgbl@(2,"d",1,2)))
+	kill ^X(1) ; kill higer level global
+	do assert('$data(@aimgbl@(2,"d",1,2)))
+	do assert($data(@aimgbl@(2,"d",2,2)))
+	kill ^X; kill entire global
+	do assert('$data(@aimgbl@(2,"d",2,2)))
+	do UNXREFDATA^%YDBAIM(aimgbl)
+	do aim82init set aimgbl=$$XREFDATA^%YDBAIM("^X",2)
+	do assert($data(@aimgbl@(0,"c|d",1,2)))
+	kill ^X(1)
+	do assert('$data(@aimgbl@(0,"c|d",1,2)))
+	do assert($data(@aimgbl@(0,"c|d",2,2)))
+	kill ^X
+	do assert('$data(@aimgbl@(0,"c|d",2,2)))
+	do aim82init set aimgbl=$$XREFSUB^%YDBAIM("^X",2,2)
+	do assert($data(@aimgbl@(2,2,1)))
+	kill ^X(1)
+	do assert('$data(@aimgbl@(2,2,1)))
+	do assert($data(@aimgbl@(2,2,2)))
+	kill ^X
+	do assert('$data(@aimgbl@(2,2,2)))
+	quit
+aim82init	; private for aim82 test
+	new i,j
+	for i=1,2 set ^X(i)="a|b" for j=1,2 set ^X(i,j)="c|d"
+	quit
+	;
 tinv1	; @TEST Invalid Input: Global without ^
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
