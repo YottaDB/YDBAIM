@@ -419,6 +419,16 @@ aim82init	; private for aim82 test
 	for i=1,2 set ^X(i)="a|b" for j=1,2 set ^X(i,j)="c|d"
 	quit
 	;
+aim89	; @TEST Test comment parameter
+	; No need to test absence of comment as all other tests do that
+	new aimgbl,comment
+	set comment=$stack($stack,"mcode"),aimgbl=$$XREFDATA^%YDBAIM("^USPresidents",2,,,,,,,,,comment)
+	do assert(comment=@aimgbl@(11))
+	set comment=$stack($stack,"mcode"),aimgbl=$$XREFDATA^%YDBAIM("^USPresidents",2,"|",2,,,,,,,comment)
+	do assert(comment=@aimgbl@(11))
+	set comment=$stack($stack,"mcode"),aimgbl=$$XREFSUB^%YDBAIM("^USPresidents",2,1,,,,,,comment)
+	do assert(comment=@aimgbl@(11))
+	quit
 tinv1	; @TEST Invalid Input: Global without ^
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
@@ -3697,11 +3707,11 @@ intintrestore ; [no op interrupt; not a typo]
 	quit
 	;
 version ; @TEST Test that VERSION() returns correct versions
-	do assert(2.1=$$VERSION^%YDBAIM("DATA"))
-	do assert(2.1=$$VERSION^%YDBAIM("data"))
-	do assert(1.1=$$VERSION^%YDBAIM("SUB"))
-	do assert(1.1=$$VERSION^%YDBAIM("sub"))
-	do assert(3.1=$$VERSION^%YDBAIM)
-	do assert(3.1=$$VERSION^%YDBAIM())
-	do assert(3.1=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
+	do assert(3.1=$$VERSION^%YDBAIM("DATA"))
+	do assert(3.1=$$VERSION^%YDBAIM("data"))
+	do assert(2.1=$$VERSION^%YDBAIM("SUB"))
+	do assert(2.1=$$VERSION^%YDBAIM("sub"))
+	do assert(5.1=$$VERSION^%YDBAIM)
+	do assert(5.1=$$VERSION^%YDBAIM())
+	do assert(5.1=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
 	quit

@@ -221,7 +221,7 @@ VERSION(type)
 ; relevant just to type=1, e.g., type1last, are also relevant to type=3,
 ; i.e., to Fileman globals. The number in the comment is the major version
 ; for data metadata. Refer to comments before the VERSION() label.
-XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force);2
+XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment);3
 	new $etrap,io do etrap
 	new altlastsub,altsub,asciisep,constlist,currlck,fullsub,fullsubprnt
 	new fulltrigsub,gblind,gblindtype1,i,j,killtrg,lastfullsub
@@ -332,6 +332,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force);2
 	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl(ttprfx_"ZKp2")
 	. . else  set $ecode=",U241,"
 	. . set @name=gbl,@name@(4)=newpstr,^(5)=z,^(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
+	. . set:$zlength($get(comment)) ^(11)=comment
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. . do xtratrig		; set additional triggers for higher levels in the tree
 	. . set ^%ydbAIMDxref(gbl,name)=""
@@ -376,6 +377,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force);2
 	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl(ttprfx_"ZKe2")
 	. . else  set $ecode=",U241,"
 	. . set @name=gbl,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
+	. . set:$zlength($get(comment)) ^(11)=comment
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. . do xtratrig		; set additional triggers for higher level nodes
 	. . set ^%ydbAIMDxref(gbl,name)=""
@@ -400,7 +402,7 @@ XREFDATAQUIT
 ; XREFSUB() cross references metadata of subscripts.  The number in the comment is
 ; the major version for subscript metadata. Refer to comments before the VERSION()
 ; label.
-XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force);1
+XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment);2
 	new $etrap,io do etrap
 	new constlist,currlck,fullsub,fullsubprnt,fulltrigsub,gblind,i,j,killtrg
 	new lastfullsub,lastsub,lastsubind,lastvarsub,locxsub,locsnum,modflag,name
@@ -480,6 +482,7 @@ XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force);1
 	. . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl(ttprfx_"ZK2")
 	. else  set $ecode=",U241"
 	. set @name=gbl,@name@(4)=newsbits,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
+	. set:$zlength($get(comment)) ^(11)=comment
 	. set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. do xtratrig		; set additional triggers for higher level nodes
 	. set ^%ydbAIMSxref(gbl,name)=""
