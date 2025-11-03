@@ -3544,7 +3544,15 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	do assert(^tsigusr(7)=999378)
 	;
 	; Counts should be non-zero and increasing monotonically
-	for i=1:1:6 do assert(^tsigusr(i)),assert(^tsigusr(i)<^tsigusr(i+1))
+	;
+	; In AIM jobs we have seen though that sometimes the last 3 counts are
+	; the same which means that we finished early. So assert instead that
+	; 3 counts of 6 are increasing monotonically.
+	new increasedCount set increasedCount=0
+	for i=1:1:6 do
+	. do assert(^tsigusr(i))
+	. if ^tsigusr(i)<^tsigusr(i+1) set increasedCount=increasedCount+1
+	do assert(increasedCount>2)
 	quit
 	;
 tsigusr2 ; @TEST Interrupt using SIGUSR2
