@@ -951,7 +951,7 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1),(flag,rangeflag)=1
 	. . . else  set rangebegin="",flag=nullsub
 	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1),rangeflag=1
-	. . . else  set rangeend="",flag=1
+	. . . else  set rangeend="",flag=nullsub
 	. . . set subary(sublvl)=$select(1=dir:rangebegin,1:rangeend)
 	. . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl),dir) quit:'$zlength(tmp2)!(rangeflag&$select(1=dir:$select($zlength(piece2):tmp2]]rangeend,1:0),1:rangebegin]]tmp2))
 	. . . tstart (j,k):transactionid="batch"
