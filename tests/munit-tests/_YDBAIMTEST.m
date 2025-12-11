@@ -3519,6 +3519,10 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	;
 	; Wait till interrupt is processed
 	for  quit:$zsearch("tsigusr1.jobexam")'=""  hang .01
+	; Setting ^tsigusr happens inside of a transaction. In rare cases the interrupt
+	; may successfully run (creating tsigusr1.jobexam), but ^tsigusr may be
+	; still uncommitted at that point. That's why we check for it separately.
+	for  quit:$get(^tsigusr)'=""  hang .01
 	;
 	; Count data six times. Each count should be greater than the previous one.
 	do sigusrcount(1,aimgbl,1) h .001
@@ -3584,6 +3588,8 @@ tsigusr2 ; @TEST Interrupt using SIGUSR2
 	;
 	; Wait till interrupt is processed
 	for  quit:$zsearch("tsigusr2.jobexam")'=""  hang .01
+	; See comments in tsigusr1 test for why the next line is necessary
+	for  quit:$get(^tsigusr)'=""  hang .01
 	;
 	; Count data six times. The counts should all the same, as we stopped indexing.
 	do sigusrcount(1,aimgbl) h .001

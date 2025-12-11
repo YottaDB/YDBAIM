@@ -174,7 +174,8 @@ set -e
 #Set-up artifacts directory
 if [ ! -z ${CI_PIPELINE_ID} ]; then
 	mkdir -p /artifacts/tmp/
-	cp $ydb_dir/test_output.txt /artifacts/
+	# See https://superuser.com/questions/1751578/linux-cp-current-directory-level-only for why true is needed.
+	cp $ydb_dir/* /artifacts/ || true
 	cp -r /tmp/* /artifacts/tmp/
 fi
 
