@@ -1,6 +1,6 @@
  	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;								;
-	; Copyright (c) 2021-2025 YottaDB LLC and/or its subsidiaries.	;
+	; Copyright (c) 2021-2026 YottaDB LLC and/or its subsidiaries.	;
 	; All rights reserved.						;
 	;								;
 	;	This source code contains the intellectual property	;
@@ -89,6 +89,8 @@ assert:(boolexpr,msg) ; [private] shortcut to tf^%ut
 	;
 	if $get(msg)="" set msg="Error from "_$stack($stack-1,"place")_": "_$stack($stack-1,"mcode")
 	do tf^%ut(boolexpr,$get(msg))
+	; Only produce jobexam file if the assert failed
+	if 'boolexpr,$zjobexam($stack($stack-1,"place")_"."_$zut_".jobexam")
 	quit
 	;
 trigout:(lines,patt) ; [private] output triggers into .lines
