@@ -1,6 +1,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;								;
-; Copyright (c) 2021-2025 YottaDB LLC and/or its subsidiaries.	;
+; Copyright (c) 2021-2026 YottaDB LLC and/or its subsidiaries.	;
 ; All rights reserved.						;
 ;								;
 ;	This source code contains the intellectual property	;
@@ -826,7 +826,7 @@ unxref:(xrefgbl)
 ;   name, nameind, newpstr, nullsub, omitfix, stacklvl1, stacklvl2, stat, subary,
 ;   tick, type, type1last, valcntind, xfnp1, xfnp2, xrefind, xrefindtype1, zpiece
 xrefdata(nsubsxref,dir,ppid)
-	new flag,i,j,k,nodelen1,nodeval,nranges,piece2,piece2,pieceval,quitflag
+	new flag,i,j,k,nodelen1,nodeval,nranges,piece1,piece2,pieceval,quitflag
 	new rangebegin,rangeend,rangefirst,rangeflag,rangelast,sublvl,thisrange,tmp1,tmp2
 	; As noted in xrefdatajobs() there is a small window during which if an
 	; interrupt is received before the pid of the child process is captured
