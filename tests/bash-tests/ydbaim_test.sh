@@ -1,7 +1,7 @@
 #!/bin/bash
 #################################################################
 #								#
-# Copyright (c) 2021-2025 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2021-2026 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -33,8 +33,6 @@ run_test NOTAGBL2 'write $$XREFSUB^%YDBAIM'
 run_test NOPIECE 'write $$XREFDATA^%YDBAIM("^abcd",1,"|")'
 run_test CANTADDSTAT1 'write $$XREFDATA^%YDBAIM("^abcd",1,"|",1),!,$$XREFDATA^%YDBAIM("^abcd",1,"|",1,,,,2)'
 run_test CANTADDSTAT2 'write $$XREFSUB^%YDBAIM("^abcd",1,1,,,1),!,$$XREFSUB^%YDBAIM("^abcd",1,1,,,2)'
-run_test NOEXTREF1 'write $$XREFDATA^%YDBAIM("^|""x.gld""|x")'
-run_test NOEXTREF2 'write $$XREFSUB^%YDBAIM("^|""x.gld""|x")'
 run_test INVPIECE 'set subs(1)="1:2:3" write $$XREFDATA^%YDBAIM("^x",.subs)'
 run_test INVPNUMSEP 'kill ^x set ^x(1)="a1|b1",^x(2)="a2|",^x(3)="|b3",subs(1)="*" write $$XREFDATA^%YDBAIM("^x",.subs,"|","1:2:3")'
 run_test INVSNUM1 'set x=$$XREFSUB^%YDBAIM("^x",2,0)'

@@ -431,6 +431,97 @@ aim89	; @TEST Test comment parameter
 	set comment=$stack($stack,"mcode"),aimgbl=$$XREFSUB^%YDBAIM("^USPresidents",2,1,,,,,,comment)
 	do assert(comment=@aimgbl@(11))
 	quit
+	;
+aim93	; @TEST Test Extended Reference
+	new aimgbl,currgld,envgld,i,io,lsxref,testdat,testdir,testgbl,testgld,tmp,xrefgbl
+	do aim93init
+	set testgbl="^|"""_testgld_"""|USPresidents"
+	;
+	; Test data cross referencing
+	set aimgbl=$$XREFDATA^%YDBAIM(testgbl,2)
+	do assert(aimgbl=$$XREFDATA^%YDBAIM(testgbl,2,,,1),"nmonly returns the same name")
+	set xrefgbl="^"_$zpiece(aimgbl,"|",3)	; aimgbl without extended reference
+	do assert($data(@aimgbl),"Cross created in extended reference database")
+	do assert('$data(@xrefgbl),"Cross reference not created in this database")
+	do assert($data(@aimgbl@(0,"Jimmy||Carter",1977,1981)),"President Carter record exists")
+	set $zgbldir=testgld
+	for i=1:1 set tmp=$zpiece($text(NotUSPresidents+i),";",2) quit:""=tmp  set @tmp
+	set $zgbldir=currgld
+	do assert($data(@aimgbl@(0,"Zaphod||Beeblebrox",1837,42)),"Cross reference created for Zaphod Beeblebrox")
+	do assert($data(@aimgbl@(0,"Ford||Prefect",1837,-42)),"Cross reference created for Ford Prefect")
+	set $zgbldir=testgld
+	zkill @xrefgbl@(0,"Zaphod||Beeblebrox",1837,42) kill @xrefgbl@(0,"Ford||Prefect")
+	set $zgbldir=currgld
+	do assert('$data(@aimgbl@(0,"Zaphod||Beeblebrox",1837,42)),"Cross reference deleted for Zaphod Beeblebrox")
+	do assert('$data(@aimgbl@(0,"Ford||Prefect",1837,-42)),"Cross reference deleted for Ford Prefect")
+	do LSXREFDATA^%YDBAIM(.lsxref,testgbl)
+	do assert($data(lsxref),"lsxref has data")
+	do UNXREFDATA^%YDBAIM(aimgbl)
+	do assert('$data(@aimgbl),"UNXREFDATA works as advertised")
+	kill lsxref
+	;
+	; Test subscript cross referencing
+	set aimgbl=$$XREFSUB^%YDBAIM(testgbl,2,2)
+	do assert(aimgbl=$$XREFSUB^%YDBAIM(testgbl,2,2,1),"nmonly returns the same name")
+	set xrefgbl="^"_$zpiece(aimgbl,"|",3)	; aimgbl without extended reference
+	do assert($data(@aimgbl),"Cross created in extended reference database")
+	do assert('$data(@xrefgbl),"Cross reference not created in this database")
+	do assert($data(@aimgbl@(2,1981,1977)),"President Carter record exists")
+	set $zgbldir=testgld
+	for i=1:1 set tmp=$zpiece($text(NotUSPresidents+i),";",2) quit:""=tmp  set @tmp
+	set $zgbldir=currgld
+	do assert($data(@aimgbl@(2,42,1837)),"Cross reference created for Zaphod Beeblebrox")
+	do assert($data(@aimgbl@(2,-42,1837)),"Cross reference created for Ford Prefect")
+	set $zgbldir=testgld
+	zkill @xrefgbl@(2,42,1837) kill @xrefgbl@(2,-42)
+	set $zgbldir=currgld
+	do assert('$data(@aimgbl@(2,42,1837)),"Cross reference deleted for Zaphod Beeblebrox")
+	do assert('$data(@aimgbl@(2,-42,1837)),"Cross reference deleted for Ford Prefect")
+	do LSXREFSUB^%YDBAIM(.lsxref,testgbl)
+	do assert($data(lsxref),"lsxref has data")
+	do UNXREFSUB^%YDBAIM(aimgbl)
+	do assert('$data(@aimgbl),"UNXREFDATA works as advertised")
+	;
+	do aim93exit
+	quit
+	;
+aim93init	; private for aim93
+	; Create a temporary database to access with extended references
+	new gdeerr,gdein,gdeout,i,tmp
+	set io=$io
+	; Save $zgbldir and relevant environment variables if set
+	set currgld=$zgbldir
+	set envgld=$ztrnlnm("ydb_gbldir")
+	set tmp=$ztrnlnm("ydb_tmp")
+	set testdir=$select($zlength(tmp):tmp,1:"/tmp")_"/"_$text(+0)_"_"_$job_"_"_$zut
+	set gdeerr=testdir_"/gde.err"
+	set gdein=testdir_"/gde.in"
+	set gdeout=testdir_"/gde.out"
+	set testdat=testdir_"/yottadb.dat"
+	set testgld=testdir_"/yottadb.gld"
+	view "setenv":"ydb_gbldir":testgld,"setenv":"gtmgbldir":testgld
+	zsystem "mkdir -p "_testdir
+	open gdein:newversion use gdein
+	write "change -region DEFAULT -autodb -key_size=",1019," -record_size=",1048576," -null_subscripts=always",!
+	write "change -segment DEFAULT -file_name=""",testdat,"""",!
+	write "exit",!
+	use io close gdein
+	zsystem "$ydb_dist/yottadb -run GDE 2>"_gdeerr_"1>"_gdeout_" <"_gdein
+	do assert($zlength($zsearch(testgld,-1)),"Global directory created for test")
+	set $zgbldir=testgld
+	for i=1:1 set tmp=$zpiece($text(USPresidents+i),";",2) quit:""=tmp  set @tmp
+	set $zgbldir=currgld
+	quit
+	;
+aim93exit	; private for aim 93
+	; Restore $zgbldir and environment variable if set
+	set $zgbldir=currgld
+	open "pipe":(shell="/bin/sh":command="rm -rf "_testdir:writeonly:readonly:independent)::"pipe"
+	close "pipe"
+	if $zlength(envgld) view "setenv":"ydb_gbldir":envgld,"setenv":"gtmgbldir":envgld
+	else  view "unsetenv":"ydb_gbldir","unsetenv":"gtmgbldir"
+	quit
+	;
 tinv1	; @TEST Invalid Input: Global without ^
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
@@ -2385,6 +2476,9 @@ ttype1	; @TEST test type1 application global variables
 	. do UNXREFDATA^%YDBAIM
 	quit
 
+; If you update this list of US Presidents to make it current, you must also
+; update various statistics used to test for correctness. It's best to leave
+; this reference dataset unmodified.
 USPresidents	; former US Presidents with first and last years in office
 	;^USPresidents(1789,1797)="George||Washington"
 	;^USPresidents(1797,1801)="John||Adams"
@@ -3723,11 +3817,11 @@ intintrestore ; [no op interrupt; not a typo]
 	quit
 	;
 version ; @TEST Test that VERSION() returns correct versions
-	do assert(3.1=$$VERSION^%YDBAIM("DATA"))
-	do assert(3.1=$$VERSION^%YDBAIM("data"))
-	do assert(2.1=$$VERSION^%YDBAIM("SUB"))
-	do assert(2.1=$$VERSION^%YDBAIM("sub"))
-	do assert(5.1=$$VERSION^%YDBAIM)
-	do assert(5.1=$$VERSION^%YDBAIM())
-	do assert(5.1=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
+	do assert(3.2=$$VERSION^%YDBAIM("DATA"))
+	do assert(3.2=$$VERSION^%YDBAIM("data"))
+	do assert(2.2=$$VERSION^%YDBAIM("SUB"))
+	do assert(2.2=$$VERSION^%YDBAIM("sub"))
+	do assert(5.2=$$VERSION^%YDBAIM)
+	do assert(5.2=$$VERSION^%YDBAIM())
+	do assert(5.2=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
 	quit

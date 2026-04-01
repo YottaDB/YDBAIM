@@ -19,7 +19,7 @@
 ;
 ; The number in the comment is a minor version number for the software.
 ; Refer to comments before the VERSION() label.
-%YDBAIM;1
+%YDBAIM;2
 	; Top level entry not supported
 	new $etrap,io do etrap
 	set $ecode=",U255,"	; top level entry not supported
@@ -70,6 +70,7 @@ err	; Primary Error Handler
 	; Now that primary error handling is done, switch to different handler to rethrow error in caller AIM frames.
 	; The rethrow will cause a different $etrap to be invoked in the first non-AIM caller frame (because AIM
 	; did a "new $etrap" at entry).
+	do:$data(currgld) resetgbldir
 	set $etrap="quit:$quit """" quit"
 	use io
 	quit:$quit "" quit
@@ -78,30 +79,36 @@ err	; Primary Error Handler
 ; global variable, or all data cross references
 LSXREFDATA(lvn,gbl)
 	new $etrap,io do etrap
-	new currlck,tlevel,xrefvar
+	new currgld,currlck,envgld,extgld,tlevel,xrefvar
 	set tlevel=$tlevel
+	set gbl=$get(gbl)
+	do:gbl?1"^|".E1"|"1(1"%",1AN).AN setgbldir
 	do snaplck(.currlck)
-	if '$zlength($get(gbl)) do
+	if '$zlength(gbl) do
 	. set gbl="" for  set gbl=$order(^%ydbAIMDxref(gbl)) quit:'$zlength(gbl)  do
 	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do lsxref(.lvn,xrefvar)
 	else  if gbl'?1"^%ydbAIMD".E do
 	. set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do lsxref(.lvn,xrefvar)
 	else  do lsxref(.lvn,gbl)
+	do:$data(currgld) resetgbldir
 	quit
 
 ; List metadata for a subscript cross reference , all subscript cross references for
 ; a global variable, or all subscript cross references
 LSXREFSUB(lvn,gbl)
 	new $etrap do etrap
-	new currlck,tlevel,xrefvar
+	new currgld,currlck,envgld,extgld,tlevel,xrefvar
 	set tlevel=$tlevel
+	set gbl=$get(gbl)
+	do:gbl?1"^|".E1"|"1(1"%",1AN).AN setgbldir
 	do snaplck(.currlck)
-	if '$zlength($get(gbl)) do
+	if '$zlength(gbl) do
 	. set gbl="" for  set gbl=$order(^%ydbAIMSxref(gbl)) quit:'$zlength(gbl)  do
 	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMSxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do lsxref(.lvn,xrefvar)
 	else  if gbl'?1"^%ydbAIMS".E do
 	. set xrefvar="" for  set xrefvar=$order(^%ydbAIMSxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do lsxref(.lvn,xrefvar)
 	else  do lsxref(.lvn,gbl)
+	do:$data(currgld) resetgbldir
 	quit
 
 ; Remove triggers and cross references for a specified global, or all globals.
@@ -110,13 +117,14 @@ LSXREFSUB(lvn,gbl)
 ; not required and are therefore ignored.
 UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	new $etrap,io do etrap
-	new currlck,i,nsubs,tlevel,xrefvar
+	new currgld,currlck,envgld,extgld,i,nsubs,tlevel,xrefvar
 	set tlevel=$tlevel
 	; Ensure type & force have values and convert 0 to "" for backward compatibility
 	if '$data(type)!(0=type) set type=""
 	if '$data(force)!(0=force) set force=""
-	do snaplck(.currlck)
 	set gbl=$get(gbl)
+	do:gbl?1"^|".E1"|"1(1"%",1AN).AN setgbldir
+	do snaplck(.currlck)
 	if gbl?1"^%ydbAIMD".22AN do
 	. tstart (gbl,xrefvar):transactionid="batch"
 	. if $data(@gbl) set xrefvar=gbl,gbl=@xrefvar do unxref(xrefvar)
@@ -144,6 +152,7 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do unxref(xrefvar)
 	. . lock -^%ydbAIMD(gbl)
 	. else  do unxref($$XREFDATA(gbl,.xsub,$get(sep),,1,$get(zpiece),$get(omitfix,1),$get(stat,0),type,force))
+	do:$data(currgld) resetgbldir
 	quit:$quit "" quit
 
 ; Remove triggers and cross references for a specified global, or all globals.
@@ -152,12 +161,13 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 ; not required and are therefore ignored.
 UNXREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force)
 	new etrap do etrap
-	new currlck,i,nsubs,tlevel,xrefvar
+	new currgld,currlck,envgld,extgld,i,nsubs,tlevel,xrefvar
 	set tlevel=$tlevel
 	; Ensure force has a value and convert 0 to "" for backward compatibility
 	if '$data(force)!(0=force) set force=""
-	do snaplck(.currlck)
 	set gbl=$get(gbl)
+	do:gbl?1"^|".E1"|"1(1"%",1AN).AN setgbldir
+	do snaplck(.currlck)
 	if gbl?1"^%ydbAIMS".22AN do
 	. tstart (gbl,xrefvar):transactionid="batch"
 	. if $data(@gbl) set xrefvar=gbl,gbl=@xrefvar do unxref(xrefvar)
@@ -185,6 +195,7 @@ UNXREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force)
 	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMSxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do unxref(xrefvar)
 	. . lock -^%ydbAIMS(gbl)
 	. else  do unxref($$XREFSUB(gbl,.xsub,snum,1,$get(omitfix,1),$get(stat),$get(type),$get(force)))
+	do:$data(currgld) resetgbldir
 	quit:$quit "" quit
 
 ; Per the guidelines at https://semver.org/, a version number has three period seoarated parts:
@@ -223,13 +234,14 @@ VERSION(type)
 ; for data metadata. Refer to comments before the VERSION() label.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment);3
 	new $etrap,io do etrap
-	new altlastsub,altsub,asciisep,constlist,currlck,fullsub,fullsubprnt
-	new fulltrigsub,gblind,gblindtype1,i,j,killtrg,lastfullsub
-	new lastsub,lastsubind,lastvarsub,locxsub,modflag,name,nameind,newpnum
-	new newpstr,pieces,nsubs,nullsub,omitflag,oldpstr,stacklvl1,sub,subary
-	new suffix,swver,tlevel,tmp,trigdel,trigdelx,type1last,trigprefix
-	new trigset,trigsub,ttprfx,valcntind,xfnp1,xfnp2,xfntest,xrefind
-	new xrefindtype1,z,zintrptsav,zlsep,ztout,zyintrsig
+	new altlastsub,altsub,asciisep,constlist,currgld,currlck,envgld,extgld
+	new fullsub,fullsubprnt,fulltrigsub,gblind,gblindtype1,i,j,killtrg
+	new lastfullsub,lastsub,lastsubind,lastvarsub,locxsub,modflag,name
+	new nameind,newpnum,newpstr,pieces,nsubs,nullsub,omitflag,oldpstr
+	new stacklvl1,sub,subary,suffix,swver,tlevel,tmp,trigdel,trigdelx
+	new type1last,trigprefix,trigset,trigsub,ttprfx,valcntind,xfnp1
+	new xfnp2,xfntest,xrefind,xrefindtype1,z,zintrptsav,zlsep,ztout
+	new zyintrsig
 	set stacklvl1=$stack	; required by premature termination
 	set tlevel=$tlevel	; required by error trap to rollback/unwind
 	do initxref		; initialization shared with XREFSUB()
@@ -270,7 +282,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment);3
 	; name requires that XREFDATA() be called as a function that returns
 	; a value, as calling it as a routine asking for a name is a
 	; meaningless operation that is likely an application program bug.
-	quit:+$get(nmonly) name
+	if +$get(nmonly) do:$data(currgld) resetgbldir quit name
 	; For Fileman application globals need to search all subtrees at bottom
 	; level when other subscripts match. Note that these application globals
 	; have at least two subscripts.
@@ -396,6 +408,7 @@ XREFDATAQUIT
 	lock:$data(name) -@name@($job)
 	lock:$data(gbl) -^%ydbAIMD(gbl,$job)
 	lock -^%ydbAIMD($job)
+	do:$data(currgld) resetgbldir
 	set $zinterrupt=zintrptsav
 	quit:$quit name quit
 
@@ -404,11 +417,12 @@ XREFDATAQUIT
 ; label.
 XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment);2
 	new $etrap,io do etrap
-	new constlist,currlck,fullsub,fullsubprnt,fulltrigsub,gblind,i,j,killtrg
-	new lastfullsub,lastsub,lastsubind,lastvarsub,locxsub,locsnum,modflag,name
-	new nameind,newsbits,nsnum,nsubs,nullsub,oldsbits,omitflag,stacklvl1,sub,subary
-	new suffix,swver,tlevel,tmp,trigdel,trigdelx,trigprefix,trigset,trigsub,ttprfx
-	new valcntind,xrefind,zintrptsav,ztout
+	new constlist,currgld,currlck,envgld,extgld,fullsub,fullsubprnt,fulltrigsub
+	new gblind,i,j,killtrg,lastfullsub,lastsub,lastsubind,lastvarsub,locxsub
+	new locsnum,modflag,name,nameind,newsbits,nsnum,nsubs,nullsub,oldsbits
+	new omitflag,stacklvl1,sub,subary,suffix,swver,tlevel,tmp,trigdel,trigdelx
+	new trigprefix,trigset,trigsub,ttprfx,valcntind,xrefind,zintrptsav,ztout
+	new zyintrsig
 	set stacklvl1=$stack	; required by premature termination
 	set tlevel=$tlevel	; required by error trap to rollback/unwind
 	do initxref		; initialization code shared with XREFDATA()
@@ -438,7 +452,7 @@ XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment);2
 	; name requires that XREFSUB() be called as a function that returns
 	; a value, as calling it as a routine asking for a name is a
 	; meaningless operation that is likely an application program bug.
-	quit:+$get(nmonly) name
+	if +$get(nmonly) do:$data(currgld) resetgbldir quit name
 	; Generate enumerated list of subscripts to be cross referenced
 	set:'$zlength($get(snum)) $ecode=",U228,"
 	set locsnum=""
@@ -503,6 +517,7 @@ XREFSUBQUIT
 	lock:$data(name) -@name@($job)
 	lock:$data(gbl) -^%ydbAIMS(gbl,$job)
 	lock -^%ydbAIMS($job)
+	do:$data(currgld) resetgbldir
 	set $zinterrupt=zintrptsav
 	quit:$quit name quit
 
@@ -600,6 +615,10 @@ exptempl:(lab)
 	. set tmp=",sub"_num
 	. set prefix=prefix_$zpiece(outstr,tmp,1),outstr=$zpiece(outstr,tmp,2,$zlength(outstr,tmp))
 	set:$zlength(prefix) outstr=prefix_outstr
+	do:$data(extgld)	; Triggers should use extended references to match global variable
+	. set tmp=$zextract(name,2,$zlength(name)),str=$zpiece(outstr,name,1)
+	. for i=2:1:$zlength(outstr,name) set str=str_"^|"""_extgld_"""|"_tmp_$zpiece(outstr,name,i)
+	. set outstr=str
 	quit $select(multiline:"<<"_$char(10)_outstr_$c(10),1:$zwrite(outstr))
 
 ; Output metadata for a specific xref variable.
@@ -614,18 +633,18 @@ lsxref:(lvn,xref)
 
 ; Initialization common to XREFDATA() and XREFSUB()
 ; References or modifies caller's local variables:
-;  constlist,currlck,force,fullsub,fulltrigsub,gbl,lastfullsub,locxsub,
-;  name,nsubs,nullsub,omitfix,omitflag,sub,swver,trigsub,type,xsub,zintrptsav
+;  constlist,currgld,currlck,extgld,force,fullsub,fulltrigsub,gbl,lastfullsub,
+;  locxsub,name,nsubs,nullsub,omitfix,omitflag,sub,swver,trigsub,type,xsub,
+;  zintrptsav
 initxref:
 	new i,lab,rtn,tmp
 	set zintrptsav=$zinterrupt
 	set tmp=$stack($stack-1,"place")
-	set lab=$zpiece(tmp,"+",1),rtn=$zpiece(tmp,"^",2)
+	set lab=$zpiece($zpiece(tmp,"^",1),"+",1),rtn=$zpiece(tmp,"^",2)
 	set swver=$zpiece($text(@(lab_"^"_rtn)),";",2)_"."_$zpiece($text(@(rtn_"^"_rtn)),";",2)
-	do snaplck(.currlck)
 	set:'$data(gbl) $ecode=",U252,"
-	; Extended references are not supported
-	set:""'=$qsubscript(gbl,-1) $ecode=",U254,"
+	do:gbl?1"^|".E1"|"1(1"%",1AN).AN setgbldir
+	do snaplck(.currlck)
 	; Xrefs are only supported for valid global variables other than AIM global variables
 	set:gbl'?1"^"1(1"%",1AN).AN!(32<$zlength(gbl)) $ecode=",U252,"
 	set:gbl?1"^%ydbAIM".AN $ecode=",U243,"
@@ -735,6 +754,40 @@ ravel:(pstr)
 	set newpspec=""
 	for i=2:1:$zlength(pstr) if $zextract(pstr,i) set newpspec=newpspec_(i-1)_","
 	quit $zextract(newpspec,1,$zlength(newpspec)-1)
+
+; If original global reference was an extended reference, restore the
+; global directory and environment variable (if set). It is assumed
+; that the global variable (gbl) is passed by value, and therefore
+; does not need to be restored. The returned name needs to have the
+; directory of the extended reference.
+; References or modifies the caller's local variables:
+;  envgld,name
+resetgbldir:
+	new tmp
+	; Add the extended reference to the cross reference name if it exists
+	; (name is undefined for UNXREF* labels)
+	set:$data(name) name="^|"""_$zgbldir_"""|"_$zpiece(name,"^",2)
+	set $zgbldir=currgld
+	if $data(envgld) set tmp=$order(envgld("")) view "setenv":tmp:envgld(tmp)
+	else  view "unsetenv":"ydb_gbldir"
+	quit
+
+; If gbl is an extended reference, save the current global directory,
+; the ydb_gbldir/gtmgbldir environment variables, if set (they might
+; not be set), switch global directories, and make gbl a normal
+; global variable, i.e., not an extended reference.
+; References or modifies the caller's local variables:
+;  currgld,envgld,extgld,gbl
+setgbldir:
+	new tmp
+	set tmp=$select($zlength($ztrnlnm("ydb_gbldir")):"ydb_gbldir",$zlength($ztrnlnm("gtmgbldir")):"gtmgbldir",1:"")
+	set:$zlength(tmp) envgld(tmp)=$ztrnlnm(tmp)
+	set extgld=$zsearch($select(""""=$zextract(gbl,3):$zwrite($zpiece(gbl,"|",2),1),1:$zpiece(gbl,"|",2)),-1)
+	set:'$zlength(extgld) $ecode=",U227,"
+	set currgld=$zgbldir,$zgbldir=extgld	; global directory for this process
+	view "setenv":"ydb_gbldir":$zgbldir	; global directory for JOB'd processes
+	set gbl="^"_$zpiece(gbl,"|",3)	; with $zgbldir set, no need for extended reference
+	quit
 
 ; Snapshots state of locks. Parameter must be passed by reference.
 snaplck:(snap)
@@ -1578,6 +1631,7 @@ tts2S2	;set tmp=@xfnp1sub@locsnum@xfnp2 if '$data(@name(@locsnum,tmp,@sub)) set 
 tts2ZK2	;set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkill ^(@lastsubind) if 1>$increment(@name(-@locsnum,tmp),-1) zkill ^(tmp) zkill:1>$increment(@name(-@locsnum),-1) ^(-@locsnum)
 
 ;	Error message texts
+U227	;"-F-BADEXTREF Extended reference "_$zpiece(gbl,"""|""",2)_" is not a valid filename"
 U228	;"-F-INVSNUM snum="_$get(snum)_" includes subscript numbers that cannot be cross referenced"
 U229	;"-F-BADTRANSFORM  with type>1, force="""_$get(force)_""" is not a valid function entryref"
 U230	;"-F-ALLCONST Cross referencing a subscript requires at least one non-constant subscript; No of subscripts="_nsubs
@@ -1604,5 +1658,4 @@ U250	;"-F-NOPIECE Piece separator """_$get(sep)_""" specified, but no piece numb
 U251	;"-F-INCONSISTENTNULL Regions "_$get(tmp)_" for global variable "_$get(gbl)_" are inconsistent with regard to null subscripts"
 U252	;"-F-NOTAGBL Variable """_$get(gbl)_""" is not a valid global variable name"
 U253	;"-F-NOSUBS Need at least 1 subscript to cross reference default type, 2 for type=1; nsubs="_nsubs
-U254	;"-F-NOEXTREF Extended reference in "_$get(gbl)_" is not supported"
 U255	;"-F-BADINVOCATION Top level invocation of "_$text(+0)_" not supported; must invoke a label"
