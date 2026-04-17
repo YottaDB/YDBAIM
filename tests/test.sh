@@ -1,7 +1,7 @@
 #!/bin/bash
 #################################################################
 #								#
-# Copyright (c) 2021-2025 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2021-2026 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -32,36 +32,75 @@ if [[ -v CI_PIPELINE_ID ]]; then
 	set -x
 fi
 
-
 for e in `env | grep -E '^(ydb|gtm)' | cut -d= -f1`; do unset $e; done
 
 # Create db into db directory
 script_dir=$(realpath $(dirname "${BASH_SOURCE[0]}"))
-# Keep test output in "db" directory and not in /tmp/yottadb/... (set by "ydb_env_set") as it is easy
-# as it seems /tmp contents cannot be later downloaded as pipeline artifacts.
-ydb_dir=$(realpath "$script_dir/../db/")
-export ydb_dir
+export ydb_dir1=$(realpath "$script_dir/../db/")
+export ydb_dir2=$(realpath "$script_dir/../db2/")
 if [ "$1" = "clean" ]; then
-	rm -rf $ydb_dir
+	rm -rf $ydb_dir1
+	rm -rf $ydb_dir2
 	rm -rf $script_dir/downloads/
 fi
-source `pkg-config --variable=prefix yottadb`/ydb_env_set
 
+# Keep test output in "db" directory and not in /tmp/yottadb/... (set by "ydb_env_set") as it is easy
+# as it seems /tmp contents cannot be later downloaded as pipeline artifacts.
 # Turn off journaling and use MM mode for faster execution
+export ydb_dir=$ydb_dir1
+source `pkg-config --variable=prefix yottadb`/ydb_env_set
 mupip set -journal=disable -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
 mupip set -access_method=mm -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
+export ydb_gbldir1=$ydb_gbldir
+source `pkg-config --variable=prefix yottadb`/ydb_env_unset
+
+# Extended refs database
+export ydb_dir=$ydb_dir2
+source `pkg-config --variable=prefix yottadb`/ydb_env_set
+mupip set -journal=disable -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
+mupip set -access_method=mm -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
+export ydb_gbldir2=$ydb_gbldir
+source `pkg-config --variable=prefix yottadb`/ydb_env_unset
+
+export ydb_dir=$(realpath "$script_dir/../db/")
+source `pkg-config --variable=prefix yottadb`/ydb_env_set
+
+ydb_gbldirs=($ydb_gbldir1 $ydb_gbldir2)
+ydb_dirs=($ydb_dir1 $ydb_dir2)
 
 echo "# Info: [ydb_dir = $ydb_dir]"
 echo "# Info: [ydb_gbldir = $ydb_gbldir]"
+echo "# Info: [Extended ydb_gbldir = $ydb_gbldir2]"
 echo "# Info: [ydb_routines = $ydb_routines]"
 
 # Remove files we created in prior test runs. But do not delete subdirectory structure
 # (e.g. "$ydb_dir/r") that ydb_env_set created as it is later needed to copy over some files.
-find $ydb_dir -maxdepth 1 -type f -delete
+find $ydb_dir $ydb_dir2 -maxdepth 1 -type f -delete
 
 # Don't recreate database if it already exists... so that we can re-run faster
 if [ ! -f $ydb_dir/r/_ut.m ]; then
-	$ydb_dist/yottadb -r ^GDE <<END &> $ydb_dir/$ydb_rel/g/db.gde.out
+	# Load test data.
+	# 5200 rows of VistA Data (50.6+VA GENERIC)
+	# A small VistA file (vista-mini.zwr)
+	# Sample Octo Postgres Tables data (octo-seed.zwr)
+	#
+	# Also download M Unit
+	mkdir -p $script_dir/downloads
+	pushd $script_dir/downloads
+	rm -f *
+	# Single curl command to take advantage of HTTP/2 and HTTP pipelining
+	curl -s \
+	 -LO https://raw.githubusercontent.com/WorldVistA/VistA-M/master/Packages/National%20Drug%20File/Globals/50.6%2BVA%20GENERIC.zwr \
+	 -LO https://gitlab.com/YottaDB/DBMS/YDBOcto/-/raw/master/tests/fixtures/vista-mini.zwr \
+	 -LO https://gitlab.com/YottaDB/DBMS/YDBOcto/-/raw/master/tests/fixtures/octo-seed.zwr \
+	 -LO https://raw.githubusercontent.com/ChristopherEdwards/M-Unit/master/Routines/_ut.m \
+	 -LO https://raw.githubusercontent.com/ChristopherEdwards/M-Unit/master/Routines/_ut1.m
+	popd
+
+	for i in "${!ydb_gbldirs[@]}"; do
+		export ydb_gbldir="${ydb_gbldirs[i]}"
+		export ydb_dir="${ydb_dirs[i]}"
+		$ydb_dist/yottadb -r ^GDE <<END &> $ydb_dir/$ydb_rel/g/db.gde.out
 ! Add null region for global ^null to test null subscripting
 add -segment NULLSEG -file="$ydb_dir/$ydb_rel/g/null.dat"
 add -region  NULLREG -null_subscripts=true -dyn=NULLSEG -autodb
@@ -93,31 +132,19 @@ change -segment YDBOCTO -file="$ydb_dir/$ydb_rel/g/%ydbocto.dat"
 show -a
 END
 
-	# Load test data.
-	# 5200 rows of VistA Data (50.6+VA GENERIC)
-	# A small VistA file (vista-mini.zwr)
-	# Sample Octo Postgres Tables data (octo-seed.zwr)
-	#
-	# Also download M Unit
-	mkdir -p $script_dir/downloads
-	pushd $script_dir/downloads
-	rm -f *
-	# Single curl command to take advantage of HTTP/2 and HTTP pipelining
-	curl -s \
-	 -LO https://raw.githubusercontent.com/WorldVistA/VistA-M/master/Packages/National%20Drug%20File/Globals/50.6%2BVA%20GENERIC.zwr \
-	 -LO https://gitlab.com/YottaDB/DBMS/YDBOcto/-/raw/master/tests/fixtures/vista-mini.zwr \
-	 -LO https://gitlab.com/YottaDB/DBMS/YDBOcto/-/raw/master/tests/fixtures/octo-seed.zwr \
-	 -LO https://raw.githubusercontent.com/ChristopherEdwards/M-Unit/master/Routines/_ut.m \
-	 -LO https://raw.githubusercontent.com/ChristopherEdwards/M-Unit/master/Routines/_ut1.m
-	popd
+		# Load the external and internal zwr files
+		pushd $script_dir/downloads
+		$ydb_dist/mupip load -ignorechset 50.6%2BVA%20GENERIC.zwr &> /dev/null
+		$ydb_dist/mupip load -ignorechset vista-mini.zwr &> /dev/null
+		$ydb_dist/mupip load -ignorechset octo-seed.zwr &> /dev/null
+		popd
+	done
 
-	# Load the external and internal zwr files
-	pushd $script_dir/downloads
-	$ydb_dist/mupip load -ignorechset 50.6%2BVA%20GENERIC.zwr &> /dev/null
-	$ydb_dist/mupip load -ignorechset vista-mini.zwr &> /dev/null
-	$ydb_dist/mupip load -ignorechset octo-seed.zwr &> /dev/null
-	popd
-
+	# We loaded the data into both databases
+	# The tests only run on db, not db2, so switch back to db
+	# db2 is only used for extended references
+	export ydb_gbldir="${ydb_gbldirs[0]}"
+	export ydb_dir="${ydb_dirs[0]}"
 	# Get and Compile M Unit routines
 	pushd $ydb_dir/r/
 	cp $script_dir/downloads/_ut*.m .
@@ -136,7 +163,12 @@ cp $script_dir/munit-tests/*.m $ydb_dir/r/
 # Run tests
 cd $ydb_dir
 export script_dir	# used by "tbash" unit test to invoke bash test script "run_bash_tests.sh" and "ydbaim_test.sh"
-$ydb_dist/yottadb -r %YDBAIMTEST | tee -a test_output.txt
+echo "--- Running in NORMAL mode ---"
+$ydb_dist/yottadb -r %XCMD 'DO ^%YDBAIMTEST(0)' | tee -a test_output.txt
+echo
+echo
+echo "--- Running in EXTENDED REFERENCES mode ---"
+$ydb_dist/yottadb -r %XCMD 'DO ^%YDBAIMTEST(1)' | tee -a test_output.txt
 
 # Create smaller block AIM region needed to create error TRANS2BIG (otherwise will take too long)
 # unset needed because rundown fails otherwise if these are present

@@ -619,6 +619,10 @@ exptempl:(lab)
 	. set tmp=$zextract(name,2,$zlength(name)),str=$zpiece(outstr,name,1)
 	. for i=2:1:$zlength(outstr,name) set str=str_"^|"""_extgld_"""|"_tmp_$zpiece(outstr,name,i)
 	. set outstr=str
+	. ; Also prefix source global (gbl) references in trigger body so they hit extended db (used by tt1/tt3 templates)
+	. set tmp=$zextract(gbl,2,$zlength(gbl)),str=$zpiece(outstr,gbl,1)
+	. for i=2:1:$zlength(outstr,gbl) set str=str_"^|"""_extgld_"""|"_tmp_$zpiece(outstr,gbl,i)
+	. set outstr=str
 	quit $select(multiline:"<<"_$char(10)_outstr_$c(10),1:$zwrite(outstr))
 
 ; Output metadata for a specific xref variable.
@@ -1065,7 +1069,7 @@ xrefdatajobs:(nsubs)
 	. job @cmd
 	. if $zjob set xrefproc(i)=$zjob set $zpiece(^%ydbAIMtmp($text(+0),$job,0),",",$select(1=i:1,1:2))=$zjob
 	. else  set $ecode=",U234,"
-	set $zinterrupt="set zyintrsig=$zyintrsig zgoto:""SIGUSR2""=$zyintrsig stacklvl2:xrefjobsterm xecute zintrptsav"
+	set $zinterrupt="do ZINTERRUPT^%YDBAIM"
 	if $zlength(intdefer),$zsigproc($job,intdefer)	; throw any deferred interrupts
 	; - check whether processes have crossed, if processes have crossed, terminate one process
 	; - if one process has terminated, because it was terminated or completed the scan, terminate the other process
@@ -1089,6 +1093,15 @@ xrefdatajobs:(nsubs)
 	. . use err(i)
 	. use io close err(i):delete
 	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear subprocess metadata on clean exit
+	quit
+	;
+ZINTERRUPT ;
+	set zyintrsig=$zyintrsig
+	zgoto:"SIGUSR2"=$zyintrsig stacklvl2:xrefjobsterm
+	; switch global directories back to original one while doing interrupt
+	set:$data(currgld) $zgbldir=currgld
+	xecute zintrptsav
+	set:$data(extgld) $zgbldir=extgld
 	quit
 
 ; Kill child processes and handle an interrrupt
@@ -1235,7 +1248,7 @@ xrefsubjobs:(nsubs)
 	. job @cmd
 	. if $zjob set xrefproc(i)=$zjob set $zpiece(^%ydbAIMtmp($text(+0),$job,0),",",$select(1=i:1,1:2))=$zjob
 	. else  set $ecode=",U234,"
-	set $zinterrupt="set zyintrsig=$zyintrsig zgoto:""SIGUSR2""=$zyintrsig stacklvl2:xrefjobsterm xecute zintrptsav"
+	set $zinterrupt="do ZINTERRUPT^%YDBAIM"
 	if $zlength(intdefer),$zsigproc($job,intdefer)	; throw any deferred interrupts
 	for  do  quit:'$data(xrefproc)  hang .01
 	. if $$xrefjobsckdone set i=$order(xrefproc("")) kill:$zlength(i)&('$zsigproc(xrefproc(i),"term")) xrefproc(i)
