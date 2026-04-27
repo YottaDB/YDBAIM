@@ -948,10 +948,14 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . . set thisrange=$piece(locxsub(sublvl),";",i)
 	. . . . set piece1=$piece(thisrange,":",1),piece2=$piece(thisrange,":",$length(thisrange,":"))
 	. . . set rangeflag=0
-	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1),(flag,rangeflag)=1
-	. . . else  set rangebegin="",flag=nullsub
+	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1),rangeflag=1
+	. . . else  set rangebegin=""
 	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1),rangeflag=1
-	. . . else  set rangeend="",flag=nullsub
+	. . . else  set rangeend=""
+	. . . ; flag=1 means the for-loop below processes subary's starting value before $order'ing onward.
+	. . . ; Set it only when subary starts on a real bounded subscript (piece1 for fwd, piece2 for bwd);
+	. . . ; otherwise subary="" is just a walk sentinel -- defer to nullsub for fwd, never for bwd.
+	. . . set flag=$select(1=dir:$select($zlength(piece1):1,1:nullsub),1:$select($zlength(piece2):1,1:0))
 	. . . set subary(sublvl)=$select(1=dir:rangebegin,1:rangeend)
 	. . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl),dir) quit:'$zlength(tmp2)!(rangeflag&$select(1=dir:$select($zlength(piece2):tmp2]]rangeend,1:0),1:rangebegin]]tmp2))
 	. . . tstart (j,k):transactionid="batch"

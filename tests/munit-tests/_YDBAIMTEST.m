@@ -120,7 +120,7 @@ aim72	; @TEST YDBAIM#72 - cross referencing continues after first value of lowes
 	; Test that cross referencing continues after first value of lowest level subscript if xsub
 	; has range syntax with empty range-end
 	new i,j,s,x
-	do assert('$data(^x))
+	kill ^x
 	set s(1)="2:"
 	for i=1:1:5 set ^x(i)="abcd|efgh"
 	set x=$$XREFDATA^%YDBAIM("^x",.s,"|",1)
