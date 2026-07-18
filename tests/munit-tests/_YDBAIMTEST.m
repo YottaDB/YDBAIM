@@ -574,10 +574,197 @@ aim93exit	; private for aim 93
 	else  view "unsetenv":"ydb_gbldir","unsetenv":"gtmgbldir"
 	quit
 	;
+aim98	; @TEST AIM#98 - a transformation-function xref represents a missing node's NULL using transformation
+	;
+	; WHAT #98 CHANGED
+	; forceStr is just the built-in string transform x->"#"_x, so #98 makes a type=3 cross reference
+	; (transform + index-missing-nodes-as-NULL) represent a missing node's NULL the same way: as the
+	; transform applied to "", not as a hardcoded bare "". The transform here is $$aim98pfx, which
+	; returns "#"_val -- so transform("")="#", like Octo's strcolval2aimsubs. Every NULL row must
+	; therefore sit at the "#" subscript and never at a bare "" (this transform never returns "").
+	; omitfix=1 is used (the fully transform-converted path, as Octo uses); the non-omitfix forward
+	; index is a follow-up.
+	;
+	; WHAT EACH stat LEVEL MAINTAINS -- each assertion is gated to the levels whose nodes exist:
+	;   stat 0,1,2   index                 @x@(fwd,value,id)   the NULL marker itself
+	;   stat 1,2     count node            @x@(cnt,value)      how many rows hold that value
+	;   stat 2       distinct-value total  @x@(cnt)            STRUCTURAL -- it counts values rather
+	;                                                          than being keyed by one, so it stays
+	;                                                          bare and must NOT move to "#"
+	;
+	; (fwd,cnt) is (0,"") for the whole-node index and (pnum,-pnum) for the piece index. At stat=0
+	; the count-node checks are skipped: those nodes do not exist at that level, so asserting their
+	; absence would pass vacuously and prove nothing.
+	;
+	; TEST DATA -- FileMan style: the 0 node always exists, the 9 node is optional. The cross
+	; reference is on the (optional) 9 node, so an id whose 9 node is absent is a NULL row, held in
+	; the tree by its 0 node:
+	;   id 1 -> "Alpha"   id 2 -> "Bravo"   id 3 -> absent (NULL)
+	;   id 4 -> "Alpha"   id 5 -> absent (NULL)
+	new g set g="^"_$select(xdref:xdrefloc,1:"")_"aim98"
+	new m,s,stat,x,xfn
+	set xfn="$$aim98pfx^%YDBAIMTEST()"
+	set s(1)=":",s(2)=9		; fixed last subscript 9 = the indexed (optional) node
+	;
+	; ---- whole-node index: index @x@(0,value,id), counts @x@("",value), total @x@("") ----
+	for stat=0,1,2 do
+	. do aim98dat(g,"")
+	. set x=$$XREFDATA^%YDBAIM(g,.s,,,,,1,stat,3,xfn)
+	. ;
+	. ; initial build:  #Alpha={1,4}  #Bravo={2}  #={3,5}  -- 3 distinct values
+	. set m="whole-node stat "_stat_", initial build: "
+	. do assert($data(@x@(0,"#Alpha",1)),m_"id 1 is indexed under #Alpha")
+	. do assert($data(@x@(0,"#Alpha",4)),m_"id 4 is indexed under #Alpha")
+	. do assert($data(@x@(0,"#Bravo",2)),m_"id 2 is indexed under #Bravo")
+	. do assert($data(@x@(0,"#",3)),m_"id 3 has no 9 node, so it is indexed as NULL under #")
+	. do assert($data(@x@(0,"#",5)),m_"id 5 has no 9 node, so it is indexed as NULL under #")
+	. do assert('$data(@x@(0,"")),m_"no NULL row sits at a bare empty subscript -- this is what #98 fixed")
+	. do:stat assert(2=@x@("","#Alpha"),m_"count node for #Alpha is 2 (ids 1 and 4)")
+	. do:stat assert(1=@x@("","#Bravo"),m_"count node for #Bravo is 1 (id 2)")
+	. do:stat assert(2=@x@("","#"),m_"count node for NULL is 2 (ids 3 and 5)")
+	. do:stat assert('$data(@x@("","")),m_"no count node sits at a bare empty subscript -- this is what #98 fixed")
+	. do:stat=2 assert(3=@x@(""),m_"3 distinct values: #Alpha, #Bravo, #")
+	. ;
+	. ; KILL trigger -- id 1 loses its 9 node (its 0 node keeps it in the tree) -> becomes a NULL row
+	. ;   now:  #Alpha={4}  #Bravo={2}  #={1,3,5}  -- still 3 distinct values
+	. zkill @g@(1,9)
+	. set m="whole-node stat "_stat_", after KILL of id 1's 9 node: "
+	. do assert($data(@x@(0,"#",1)),m_"id 1 is now a NULL row under #")
+	. do assert('$data(@x@(0,"#Alpha",1)),m_"id 1 no longer sits under its old value #Alpha")
+	. do assert('$data(@x@(0,"")),m_"the KILL trigger did not put the NULL row at a bare empty subscript")
+	. do:stat assert(1=@x@("","#Alpha"),m_"count node for #Alpha drops to 1 (only id 4 left)")
+	. do:stat assert(3=@x@("","#"),m_"count node for NULL rises to 3 (ids 1, 3 and 5)")
+	. do:stat assert('$data(@x@("","")),m_"the KILL trigger did not put a count node at a bare empty subscript")
+	. do:stat=2 assert(3=@x@(""),m_"still 3 distinct values -- #Alpha survives on id 4")
+	. ;
+	. ; SET trigger -- id 3 gains a 9 node -> its NULL row becomes a value row
+	. ;   now:  #Alpha={4}  #Bravo={2}  #Charlie={3}  #={1,5}  -- 4 distinct values
+	. set @g@(3,9)="Charlie"
+	. set m="whole-node stat "_stat_", after SET of id 3's 9 node: "
+	. do assert($data(@x@(0,"#Charlie",3)),m_"id 3 is now indexed under #Charlie")
+	. do assert('$data(@x@(0,"#",3)),m_"id 3 is no longer a NULL row")
+	. do assert('$data(@x@(0,"")),m_"the SET trigger did not leave a NULL row at a bare empty subscript")
+	. do:stat assert(1=@x@("","#Charlie"),m_"count node for #Charlie is 1 (id 3)")
+	. do:stat assert(2=@x@("","#"),m_"count node for NULL drops to 2 (ids 1 and 5)")
+	. do:stat assert('$data(@x@("","")),m_"the SET trigger did not leave a count node at a bare empty subscript")
+	. do:stat=2 assert(4=@x@(""),m_"4 distinct values: #Alpha, #Bravo, #, #Charlie")
+	. ;
+	. do UNXREFDATA^%YDBAIM(x)
+	;
+	; ---- piece index (pnum 1): index @x@(1,value,id), counts @x@(-1,value), total @x@(-1) ----
+	; Same data (with a trailing "|z" piece) and the same three phases; this exercises the
+	; tt3Sp0/ZKp0/Sp1/ZKp1/Sp2/ZKp2 templates rather than the whole-node tt3Se*/ZKe* ones.
+	for stat=0,1,2 do
+	. do aim98dat(g,"|z")
+	. set x=$$XREFDATA^%YDBAIM(g,.s,"|",1,,,1,stat,3,xfn)
+	. ;
+	. ; initial build:  #Alpha={1,4}  #Bravo={2}  #={3,5}  -- 3 distinct values
+	. set m="piece stat "_stat_", initial build: "
+	. do assert($data(@x@(1,"#Alpha",1)),m_"piece 1 of id 1 is indexed under #Alpha")
+	. do assert($data(@x@(1,"#Alpha",4)),m_"piece 1 of id 4 is indexed under #Alpha")
+	. do assert($data(@x@(1,"#Bravo",2)),m_"piece 1 of id 2 is indexed under #Bravo")
+	. do assert($data(@x@(1,"#",3)),m_"id 3 has no 9 node, so it is indexed as NULL under #")
+	. do assert($data(@x@(1,"#",5)),m_"id 5 has no 9 node, so it is indexed as NULL under #")
+	. do assert('$data(@x@(1,"")),m_"no NULL row sits at a bare empty subscript -- this is what #98 fixed")
+	. do:stat assert(2=@x@(-1,"#Alpha"),m_"count node for #Alpha is 2 (ids 1 and 4)")
+	. do:stat assert(1=@x@(-1,"#Bravo"),m_"count node for #Bravo is 1 (id 2)")
+	. do:stat assert(2=@x@(-1,"#"),m_"count node for NULL is 2 (ids 3 and 5)")
+	. do:stat assert('$data(@x@(-1,"")),m_"no count node sits at a bare empty subscript -- this is what #98 fixed")
+	. do:stat=2 assert(3=@x@(-1),m_"3 distinct values: #Alpha, #Bravo, #")
+	. ;
+	. ; KILL trigger -- id 1 becomes a NULL row
+	. ;   now:  #Alpha={4}  #Bravo={2}  #={1,3,5}  -- still 3 distinct values
+	. zkill @g@(1,9)
+	. set m="piece stat "_stat_", after KILL of id 1's 9 node: "
+	. do assert($data(@x@(1,"#",1)),m_"id 1 is now a NULL row under #")
+	. do assert('$data(@x@(1,"#Alpha",1)),m_"id 1 no longer sits under its old value #Alpha")
+	. do assert('$data(@x@(1,"")),m_"the KILL trigger did not put the NULL row at a bare empty subscript")
+	. do:stat assert(1=@x@(-1,"#Alpha"),m_"count node for #Alpha drops to 1 (only id 4 left)")
+	. do:stat assert(3=@x@(-1,"#"),m_"count node for NULL rises to 3 (ids 1, 3 and 5)")
+	. do:stat assert('$data(@x@(-1,"")),m_"the KILL trigger did not put a count node at a bare empty subscript")
+	. do:stat=2 assert(3=@x@(-1),m_"still 3 distinct values -- #Alpha survives on id 4")
+	. ;
+	. ; SET trigger -- id 3 becomes a value row
+	. ;   now:  #Alpha={4}  #Bravo={2}  #Charlie={3}  #={1,5}  -- 4 distinct values
+	. set @g@(3,9)="Charlie|z"
+	. set m="piece stat "_stat_", after SET of id 3's 9 node: "
+	. do assert($data(@x@(1,"#Charlie",3)),m_"piece 1 of id 3 is now indexed under #Charlie")
+	. do assert('$data(@x@(1,"#",3)),m_"id 3 is no longer a NULL row")
+	. do assert('$data(@x@(1,"")),m_"the SET trigger did not leave a NULL row at a bare empty subscript")
+	. do:stat assert(1=@x@(-1,"#Charlie"),m_"count node for #Charlie is 1 (id 3)")
+	. do:stat assert(2=@x@(-1,"#"),m_"count node for NULL drops to 2 (ids 1 and 5)")
+	. do:stat assert('$data(@x@(-1,"")),m_"the SET trigger did not leave a count node at a bare empty subscript")
+	. do:stat=2 assert(4=@x@(-1),m_"4 distinct values: #Alpha, #Bravo, #, #Charlie")
+	. ;
+	. do UNXREFDATA^%YDBAIM(x)
+	;
+	; ---- disjoint-namespace transform: prove the NULL marker is EXACTLY transform("") ----
+	; aim98pfx above makes NULL ("#") and a value ("#Alpha") share the "#" prefix, so it cannot
+	; distinguish "NULL is indexed at transform("")" from the weaker "NULL happens to share a
+	; prefix with values". aim98dist maps values to a "regular transform->..." namespace but ""
+	; to the unrelated marker "null transform", so the two namespaces are disjoint. A NULL row
+	; must sit at exactly transform("") -- not at a bare "" (the old hardcode) and not at the
+	; naive value-of-empty subscript "regular transform->". Run at every stat level like the
+	; sections above: the index at all stats, the count node at stat=1/2, the distinct total at
+	; stat=2. nullmark = transform("") is computed in the test itself and stat-independent.
+	new nullmark set nullmark=$$aim98dist^%YDBAIMTEST(""),xfn="$$aim98dist^%YDBAIMTEST()"
+	for stat=0,1,2 do
+	. do aim98dat(g,"")
+	. set x=$$XREFDATA^%YDBAIM(g,.s,,,,,1,stat,3,xfn)
+	. ;
+	. ; initial build:  regular transform->Alpha={1,4}  regular transform->Bravo={2}  null transform={3,5}
+	. set m="disjoint-namespace stat "_stat_", initial build: "
+	. do assert($data(@x@(0,nullmark,3)),m_"id 3's NULL is indexed at exactly transform("""") = "_nullmark)
+	. do assert($data(@x@(0,nullmark,5)),m_"id 5's NULL is indexed at exactly transform("""")")
+	. do assert($data(@x@(0,"regular transform->Alpha",1)),m_"id 1's value sits in the regular namespace")
+	. do assert('$data(@x@(0,"")),m_"no NULL sits at a bare empty subscript -- the old hardcode")
+	. do assert('$data(@x@(0,"regular transform->")),m_"no NULL landed at the naive value-of-empty subscript")
+	. do:stat assert(2=@x@("",nullmark),m_"count node for NULL is keyed by transform("""") (ids 3 and 5)")
+	. do:stat=2 assert(3=@x@(""),m_"3 distinct markers: two regular + one null")
+	. ;
+	. ; KILL -- id 1 loses its 9 node -> its value row must migrate into the disjoint null namespace
+	. zkill @g@(1,9)
+	. set m="disjoint-namespace stat "_stat_", after KILL of id 1's 9 node: "
+	. do assert($data(@x@(0,nullmark,1)),m_"id 1 now sits at transform("""")")
+	. do assert('$data(@x@(0,"regular transform->Alpha",1)),m_"id 1 left its regular-namespace marker")
+	. do:stat assert(3=@x@("",nullmark),m_"NULL count rises to 3 (ids 1, 3 and 5)")
+	. ;
+	. ; SET -- id 3 gains a 9 node -> its NULL row must leave the disjoint null namespace
+	. set @g@(3,9)="Charlie"
+	. set m="disjoint-namespace stat "_stat_", after SET of id 3's 9 node: "
+	. do assert($data(@x@(0,"regular transform->Charlie",3)),m_"id 3 now sits in the regular namespace")
+	. do assert('$data(@x@(0,nullmark,3)),m_"id 3 left the disjoint null marker")
+	. do:stat assert(2=@x@("",nullmark),m_"NULL count drops to 2 (ids 1 and 5)")
+	. ;
+	. do UNXREFDATA^%YDBAIM(x)
+	kill @g
+	quit
+	;
+aim98dat(g,sfx)	; [private] #98 - (re)load the test global for one iteration
+	; FileMan style: the 0 node always exists; the indexed 9 node is optional and is absent for
+	; ids 3 and 5, which are therefore the NULL rows.
+	kill @g
+	set @g@(1,0)="anchor",@g@(1,9)="Alpha"_sfx
+	set @g@(2,0)="anchor",@g@(2,9)="Bravo"_sfx
+	set @g@(3,0)="anchor"			; 9 node absent -> NULL row
+	set @g@(4,0)="anchor",@g@(4,9)="Alpha"_sfx
+	set @g@(5,0)="anchor"			; 9 node absent -> NULL row
+	quit
+	;
+aim98pfx(val)	; [private] #98 transformation function: force-string ("#") prefix, like Octo's strcolval2aimsubs
+	quit "#"_val
+	;
+aim98dist(val)	; [private] #98 distinguishing transform: value -> "regular transform->"_val, "" -> "null transform"
+	; Unlike aim98pfx (where NULL "#" and a value "#Alpha" share the "#" prefix), here transform("")
+	; shares no prefix with any value's transform, so a NULL row and a value row land in completely
+	; disjoint subscript namespaces. This proves a NULL is indexed at exactly transform(""), and is
+	; neither a bare "" (the old hardcode) nor anything derivable from a value.
+	quit $select(val'="":"regular transform->"_val,1:"null transform")
+	;
 tinv1	; @TEST Invalid Input: Global without ^
 	new g set g=""_$select(xdref:xdrefloc,1:"")_"ORD"
 	new ecodetest
-	new $etrap,$estack set $etrap="goto err^"_$T(+0)
+	new $etrap,$estack set $etrap="do err^"_$T(+0)
 	if $$XREFDATA^%YDBAIM(g,3,"^",2)
 	do assert(ecodetest="U252")
 	; Test XREFSUB()
@@ -750,6 +937,46 @@ tinv12	; @TEST index spanning regions where null setting differs
 	do assert(xref="")
 	do assert(ecodetest="U251")
 	quit
+	;
+tinv13	; @TEST AIM#99 - omitfix=0 with type 1 or 3 is rejected (U254), not silently built as an empty index
+	new g set g="^"_$select(xdref:xdrefloc,1:"")_"aim99"
+	new s,x,ecodetest,xfn
+	set xfn="$$aim98pfx^%YDBAIMTEST()"
+	set s(1)=":",s(2)=9
+	kill @g
+	set @g@(1,0)="anchor",@g@(1,9)="Alpha"	; present value
+	set @g@(2,0)="anchor"			; 9 node absent -> NULL row
+	new $etrap,$estack set $etrap="goto err^"_$T(+0)
+	;
+	; type=1, omitfix=0 -> U254
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,.s,,,,,0,0,1,1)
+	do assert(ecodetest="U254","type=1 omitfix=0 must be rejected with U254")
+	;
+	; type=3, omitfix=0 -> U254
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,.s,,,,,0,0,3,xfn)
+	do assert(ecodetest="U254","type=3 omitfix=0 must be rejected with U254")
+	;
+	; control: type=1, omitfix=1 still builds and indexes (value and missing-node NULL)
+	do
+	. set ecodetest="",x=$$XREFDATA^%YDBAIM(g,.s,,,,,1,0,1,1)
+	do assert(ecodetest="","type=1 omitfix=1 must not error")
+	do assert($data(@x@(0,"#Alpha",1)),"type=1 omitfix=1 indexes id1 under #Alpha")
+	do assert($data(@x@(0,"#",2)),"type=1 omitfix=1 indexes id2's missing 9 node as NULL under #")
+	;
+	do UNXREFDATA^%YDBAIM(x)
+	;
+	; control: type=3, omitfix=1 still builds
+	do
+	. set ecodetest="",x=$$XREFDATA^%YDBAIM(g,.s,,,,,1,0,3,xfn)
+	do assert(ecodetest="","type=3 omitfix=1 must not error")
+	do assert($data(@x@(0,"#Alpha",1)),"type=3 omitfix=1 indexes id1 under #Alpha")
+	do assert($data(@x@(0,"#",2)),"type=3 omitfix=1 indexes id2's missing 9 node as NULL under #")
+	do UNXREFDATA^%YDBAIM(x)
+	kill @g
+	quit
+	;
 	;
 err	; Error trap for tinv* tests
 	; Capture $ecode, strip commas, clear
@@ -4047,12 +4274,12 @@ intintrestore ; [no op interrupt; not a typo]
 	quit
 	;
 version ; @TEST Test that VERSION() returns correct versions
-	do assert(3.2=$$VERSION^%YDBAIM("DATA"))
-	do assert(3.2=$$VERSION^%YDBAIM("data"))
+	do assert(4.2=$$VERSION^%YDBAIM("DATA"))
+	do assert(4.2=$$VERSION^%YDBAIM("data"))
 	do assert(2.2=$$VERSION^%YDBAIM("SUB"))
 	do assert(2.2=$$VERSION^%YDBAIM("sub"))
-	do assert(5.2=$$VERSION^%YDBAIM)
-	do assert(5.2=$$VERSION^%YDBAIM())
-	do assert(5.2=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
+	do assert(6.2=$$VERSION^%YDBAIM)
+	do assert(6.2=$$VERSION^%YDBAIM())
+	do assert(6.2=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
 	quit
 	;
