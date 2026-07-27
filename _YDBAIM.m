@@ -500,7 +500,7 @@ XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment);2
 	. . set trigset=trigprefix_"set -name=%ydb"_suffix_"S -xecute="_$$exptempl(ttprfx_"S2")
 	. . set trigdel=trigprefix_"kill -name=%ydb"_suffix_"K -xecute="_$$exptempl(killtrg)
 	. . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl(ttprfx_"ZK2")
-	. else  set $ecode=",U241"
+	. else  set $ecode=",U241,"
 	. set @name=gbl,@name@(4)=newsbits,@name@(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
 	. set:$zlength($get(comment)) ^(11)=comment
 	. set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"

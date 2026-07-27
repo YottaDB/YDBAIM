@@ -764,11 +764,13 @@ aim98dist(val)	; [private] #98 distinguishing transform: value -> "regular trans
 tinv1	; @TEST Invalid Input: Global without ^
 	new g set g=""_$select(xdref:xdrefloc,1:"")_"ORD"
 	new ecodetest
-	new $etrap,$estack set $etrap="do err^"_$T(+0)
-	if $$XREFDATA^%YDBAIM(g,3,"^",2)
+	new $etrap,$estack set $etrap="goto err^"_$T(+0)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,3,"^",2)
 	do assert(ecodetest="U252")
 	; Test XREFSUB()
-	if $$XREFSUB^%YDBAIM(g,3,1+$random(3))
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,3,1+$random(3))
 	do assert(ecodetest="U252")
 	quit
 	;
@@ -776,10 +778,12 @@ tinv2	; @TEST Invalid Input: Global including subscripts
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"ORD(100.01)"
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
-	if $$XREFDATA^%YDBAIM(g,2,"^",2)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,2,"^",2)
 	do assert(ecodetest="U252")
 	; Test XREFSUB()
-	if $$XREFSUB^%YDBAIM(g,2,"1:2")
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,2,"1:2")
 	do assert(ecodetest="U252")
 	quit
 	;
@@ -787,16 +791,18 @@ tinv3	; @TEST Invalid Input: Bad Level
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"ORD"
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
-	if $$XREFDATA^%YDBAIM(g,0,"^",2)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,0,"^",2)
 	do assert(ecodetest="U253")
-	new ecodetest
-	if $$XREFDATA^%YDBAIM(g,-1,"^",2)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,-1,"^",2)
 	do assert(ecodetest="U253")
 	; Test XREFSUB()
-	if $$XREFSUB^%YDBAIM(g,0)
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,0)
 	do assert(ecodetest="U253")
-	new ecodetest
-	if $$XREFSUB^%YDBAIM(g,-1,1)
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,-1,1)
 	do assert(ecodetest="U253")
 	quit
 	;
@@ -804,15 +810,18 @@ tinv4	; @TEST Invalid Input: Bad Piece Number
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"ORD"
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
-	if $$XREFDATA^%YDBAIM(g,3,"^",0)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,3,"^",0)
 	do assert(ecodetest="U248")
-	if $$XREFSUB^%YDBAIM(g,3,0)
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,3,0)
 	do assert(ecodetest="U228")
 	; Test XREFSUB()
-	new ecodetest
-	if $$XREFDATA^%YDBAIM(g,3,"^",-1)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,3,"^",-1)
 	do assert(ecodetest="U248")
-	if $$XREFSUB^%YDBAIM(g,3,-1)
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,3,-1)
 	do assert(ecodetest="U228")
 	quit
 	;
@@ -822,21 +831,26 @@ tinv5	; @TEST Invalid Input: More subs than the number in top node
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
 	new subs set subs=1,subs(1)="""""",subs(2)="A"
-	if $$XREFDATA^%YDBAIM(g,.subs)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,.subs)
 	do assert(ecodetest="U244")
 	; Test XREFSUB()
-	if $$XREFSUB^%YDBAIM(g,.subs)
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,.subs)
 	do assert(ecodetest="U230")
 	quit
 	;
 tinv6	; @TEST Invalid Input: subs contains negative subscripts
+	new g set g="^"_$select(xdref:xdrefloc,1:"")_"null"
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
 	new subs set subs=1,subs(-1)="""""",subs(-2)="A"
-	if $$XREFDATA^%YDBAIM(g,.subs)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,.subs)
 	do assert(ecodetest="U247")
 	; Test XREFSUB()
-	if $$XREFSUB^%YDBAIM(g,.subs)
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,.subs)
 	do assert(ecodetest="U247")
 	quit
 	;
@@ -845,11 +859,14 @@ tinv7	; @TEST Invalid Input: one of the subs is an empty string
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
 	new subs set subs(1)=100.01,subs(2)="",subs(3)=0
-	if $$XREFDATA^%YDBAIM(g,.subs,"^",2)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,.subs,"^",2)
 	do assert(ecodetest="U244")
-	; Test XREFSUB()
-	if $$XREFSUB^%YDBAIM(g,.subs)
-	do assert(ecodetest="U244")
+	; Test XREFSUB(). Same underlying condition (no varying subscript left to
+	; index), but XREFSUB() reports it as U230/ALLCONST rather than U244/NEEDSUB.
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,.subs)
+	do assert(ecodetest="U230")
 	quit
 	;
 tinv8	; @TEST Test interaction of separators vs pieces
@@ -858,12 +875,13 @@ tinv8	; @TEST Test interaction of separators vs pieces
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"customers"
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
-	if $$XREFDATA^%YDBAIM(g,1,"§")
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,1,"§")
 	do assert(ecodetest="U250")
 	;
 	; piece without separator
-	new ecodetest
-	if $$XREFDATA^%YDBAIM(g,1,"",2)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,1,"",2)
 	do assert(ecodetest="U238")
 	quit
 	;
@@ -872,12 +890,14 @@ tinv9	; @TEST Request a higher level of stat after a lower level
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$T(+0)
 	if $$XREFDATA^%YDBAIM(g,1,"§",1,0,,,1)
-	if $$XREFDATA^%YDBAIM(g,1,"§",1,0,,,2)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,1,"§",1,0,,,2)
 	do assert(ecodetest="U240")
 	; Test XREFSUB()
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"names3"
 	if $$XREFSUB^%YDBAIM(g,2,1,,,1)
-	if $$XREFSUB^%YDBAIM(g,2,1,,,2)
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,2,1,,,2)
 	do assert(ecodetest="U240")
 	quit
 	;
@@ -887,18 +907,18 @@ tinv10	; @TEST invalid stat parameter value
 	new gn set gn="^"_$select(xdref:xdrefloc,1:"")_"names3"
 	new ecodetest
 	new $etrap,$estack set $etrap="goto err^"_$text(+0)
-	if $$XREFDATA^%YDBAIM(gc,1,"§",1,0,,,-1)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(gc,1,"§",1,0,,,-1)
 	do assert(ecodetest="U241")
-	kill ecodetest
-	if $$XREFSUB^%YDBAIM(gn,2,1,,,-1)
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(gn,2,1,,,-1)
 	do assert(ecodetest="U241")
-	kill ecodetest
-	if $$XREFDATA^%YDBAIM(gc,1,"§",1,0,,,5)
+	do
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(gc,1,"§",1,0,,,5)
 	do assert(ecodetest="U241")
-	kill ecodetest
-	if $$XREFSUB^%YDBAIM(gn,2,1,,,5)
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(gn,2,1,,,5)
 	do assert(ecodetest="U241")
-	kill ecodetest
 	quit
 	;
 tinv11	; @TEST indexing invalid repeated subscripts
@@ -908,32 +928,38 @@ tinv11	; @TEST indexing invalid repeated subscripts
 	kill @g
 	set @g@(1)="abcd",@g@(2)=""
 	new subs,xref
-	set subs(1)="1:1" set xref=$$XREFDATA^%YDBAIM(g,.subs)
+	set subs(1)="1:1"
+	do
+	. set ecodetest="",xref="" set xref=$$XREFDATA^%YDBAIM(g,.subs)
 	do assert(ecodetest="U244")
-	; Test XREFSUB()
-	kill ecodetest
-	set xref=$$XREFSUB^%YDBAIM(g,.subs,1)
-	do assert(ecodetest="U244")
+	; Test XREFSUB(). "1:1" is a degenerate range, so every subscript is constant;
+	; XREFSUB() reports that as U230/ALLCONST rather than U244/NEEDSUB.
+	do
+	. set ecodetest="",xref="" set xref=$$XREFSUB^%YDBAIM(g,.subs,1)
+	do assert(ecodetest="U230")
 	quit
 	;
 tinv12	; @TEST index spanning regions where null setting differs
 	; Detailed discussion located at https://gitlab.com/YottaDB/Util/YDBAIM/-/merge_requests/29#note_654447677
 	; Test XREFSUB() alongside XREFDATA()
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"sameset"
-	new ecodetest
+	new ecodetest,xref
 	new $etrap,$estack set $etrap="goto err^"_$text(+0)
 	; This should not issue an error as the null setting is the same across regions
-	new xref set xref=$$XREFDATA^%YDBAIM(g,2)
+	do
+	. set ecodetest="",xref="" set xref=$$XREFDATA^%YDBAIM(g,2)
 	do assert($data(@xref@(0,"test1",1,"")))
-	new xref set xref=$$XREFSUB^%YDBAIM(g,2,1)
+	do
+	. set ecodetest="",xref="" set xref=$$XREFSUB^%YDBAIM(g,2,1)
 	do assert(10=$data(@xref@(1,1)))
 	; This should issue an error
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"diffset"
-	new xref set xref=$$XREFDATA^%YDBAIM(g,2)
+	do
+	. set ecodetest="",xref="" set xref=$$XREFDATA^%YDBAIM(g,2)
 	do assert(xref="")
 	do assert(ecodetest="U251")
-	kill ecodetest
-	new xref set xref=$$XREFSUB^%YDBAIM(g,2,1)
+	do
+	. set ecodetest="",xref="" set xref=$$XREFSUB^%YDBAIM(g,2,1)
 	do assert(xref="")
 	do assert(ecodetest="U251")
 	quit
