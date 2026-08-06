@@ -574,7 +574,162 @@ aim93exit	; private for aim 93
 	else  view "unsetenv":"ydb_gbldir","unsetenv":"gtmgbldir"
 	quit
 	;
-aim98	; @TEST AIM#98 - a transformation-function xref represents a missing node's NULL using transformation
+aim97	; @TEST AIM#97 - the initial scan divides the global variable among several processes
+	;
+	; AIM divides the subscripts at one subscript level into ranges, and the
+	; JOB'd processes scan a range each. The cross reference must come out the
+	; same however many processes produced it, so each case below builds one
+	; cross reference at several process counts and compares the whole index,
+	; node by node, with the index a single process builds. Comparing the whole
+	; index rather than sampling it is what tests the division: a range that
+	; starts past subscripts, or repeats subscripts and so miscounts at
+	; stat=1/2, differs from the single process index.
+	;
+	; The cases cover where the divided level sits and what its subscripts look
+	; like: the last subscript level, with nothing below it to recurse into; an
+	; intermediate level, with constant levels above and below it; an explicit
+	; range instead of "*", which the ranges must stay inside and whose
+	; endpoints they must keep; subscripts holding ":" and ";", at which a range
+	; cannot end; a null subscript, which only the first range may scan; levels
+	; above the divided one that are "*" but hold one subscript each, which AIM
+	; pins so that the division happens at the level that has the subscripts,
+	; with and without a constant level in between, and with only constants
+	; below, where there is nothing to descend to; and a single node, where the
+	; walk cuts no range at all and one process scans everything while the rest
+	; find nothing to claim.
+	new g,gd,gn,go,i,subs
+	set g="^"_$select(xdref:xdrefloc,1:"")_"aim97"
+	set gd="^"_$select(xdref:xdrefloc,1:"")_"deepaim97"
+	set gn="^"_$select(xdref:xdrefloc,1:"")_"nullaim97"
+	set go="^"_$select(xdref:xdrefloc,1:"")_"oneaim97"
+	kill @g,@gd,@gn,@go
+	; Enough subscripts that the range size doubles at least once
+	for i=1:1:3000 set @g@(i)="v"_(i#37)_"|p"_(i#11)
+	for i=1:1:800 set @g@("fix",i,0)="n"_(i#23)_"|q"_(i#7)
+	; Subscripts holding ":" and ";". Those characters separate a subscript
+	; specification into ranges, so a subscript holding either cannot be written
+	; into one, and AIM cannot end a range of subscripts to scan at it
+	for i=1:1:500 set @g@("s","k"_i_$select(0=i#7:":x",0=i#11:";y",1:""))="s"_(i#13)_"|r"
+	; One subscript at each of the outer levels, which are specified as "*"
+	for i=1:1:600 set @gd@("only",7,i)="d"_(i#19)_"|e"_(i#5)
+	; A null subscript, in the region that permits them
+	for i=1:1:200 set @gn@(i)="z"_(i#5)_"|w"
+	set @gn@("")="znull|w"
+	; A single node
+	set @go@(1)="o|p"
+	;
+	kill subs set subs(1)="*"			; last level, "*"
+	do aim97cmp(g,.subs,"last level")
+	kill subs set subs(1)="""fix""",subs(2)="*",subs(3)=0	; intermediate level
+	do aim97cmp(g,.subs,"intermediate level")
+	kill subs set subs(1)="200:1700"		; explicit range
+	do aim97cmp(g,.subs,"explicit range")
+	kill subs set subs(1)="""s""",subs(2)="*"	; ":" and ";" in subscripts
+	do aim97cmp(g,.subs,"delimiters in subscripts")
+	kill subs set subs(1)="*",subs(2)="*",subs(3)="*"	; one subscript above
+	do aim97cmp(gd,.subs,"single subscript levels above")
+	kill subs set subs(1)="*",subs(2)=7,subs(3)="*"	; and with a constant between
+	do aim97cmp(gd,.subs,"single subscript level above a constant")
+	kill subs set subs(1)="*",subs(2)=7,subs(3)=1	; nothing below to divide
+	do aim97cmp(gd,.subs,"single subscript level, constants below")
+	kill subs set subs(1)="*"			; null subscript
+	do aim97cmp(gn,.subs,"null subscript")
+	kill subs set subs(1)="*"			; a single node
+	do aim97cmp(go,.subs,"single node")
+	;
+	; A global variable with no nodes at all. Every process finds nothing to
+	; claim, and the cross reference is still created and recorded complete
+	; rather than raising SCANINCOMPLETE.
+	new c,ge,s,x
+	set ge="^"_$select(xdref:xdrefloc,1:"")_"emptyaim97"
+	kill @ge
+	kill subs set subs(1)="*"
+	for i=1,2,9 do
+	. view "setenv":"ydb_aim_nproc":i
+	. set x=$$XREFDATA^%YDBAIM(ge,.subs,"|",1)
+	. do assert($data(@x),"empty global variable: nproc="_i_" created no cross reference")
+	. set c=0,s=x
+	. for  set s=$query(@s) quit:'$zlength(s)  if 1'=$qlength(s),$increment(c)
+	. do assert('c,"empty global variable: nproc="_i_" cross referenced "_c_" nodes")
+	. do UNXREFDATA^%YDBAIM(x)
+	view "unsetenv":"ydb_aim_nproc"
+	;
+	; A ydb_aim_nproc that is not a positive integer is rejected, by XREFSUB()
+	; as well as XREFDATA(). The rejection has to happen before the cross
+	; reference is created, since the scan runs after the triggers are set and
+	; the cross reference registered; a rejection during the scan would leave a
+	; registered cross reference that was never scanned behind.
+	new ecodetest
+	set x=$$XREFDATA^%YDBAIM(g,1,"|",1,1)		; nmonly, creates nothing
+	view "setenv":"ydb_aim_nproc":"two"
+	do
+	. new $etrap set $etrap="goto err^"_$text(+0)
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,1,"|",1)
+	do assert(ecodetest="U225")
+	do assert('$data(@x))
+	view "setenv":"ydb_aim_nproc":"0"
+	do
+	. new $etrap set $etrap="goto err^"_$text(+0)
+	. set ecodetest="" if $$XREFDATA^%YDBAIM(g,1,"|",1)
+	do assert(ecodetest="U225")
+	do assert('$data(@x))
+	do
+	. new $etrap set $etrap="goto err^"_$text(+0)
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,1,1)
+	do assert(ecodetest="U225")
+	view "unsetenv":"ydb_aim_nproc"
+	do assert('$data(@$$XREFSUB^%YDBAIM(g,1,1,1)))
+	kill @g,@gd,@gn,@go
+	quit
+	;
+aim97cmp(g,subs,what)	; [private] #97 - same cross reference, several process counts
+	new n,ref,x
+	; 1 is the reference the rest are compared against.
+	for n=1,2,3,8,17 do
+	. view "setenv":"ydb_aim_nproc":n
+	. set x=$$XREFDATA^%YDBAIM(g,.subs,"|",1)
+	. do aim97chk(x,.ref,n,what_", XREFDATA()")
+	. do UNXREFDATA^%YDBAIM(x)
+	kill ref
+	for n=1,4,11 do
+	. view "setenv":"ydb_aim_nproc":n
+	. set x=$$XREFDATA^%YDBAIM(g,.subs,"|",1,,,,2)	; also at stat=2
+	. do aim97chk(x,.ref,n,what_", XREFDATA() stat=2")
+	. do UNXREFDATA^%YDBAIM(x)
+	kill ref
+	for n=1,2,8 do
+	. view "setenv":"ydb_aim_nproc":n
+	. set x=$$XREFSUB^%YDBAIM(g,.subs,1)
+	. do aim97chk(x,.ref,n,what_", XREFSUB()")
+	. do UNXREFSUB^%YDBAIM(x)
+	view "unsetenv":"ydb_aim_nproc"
+	quit
+	;
+aim97chk(x,ref,n,what)	; [private] #97 - capture an index, and compare it with the one a single process built
+	; The index built at ydb_aim_nproc=n is captured into ref(n) as text, and
+	; compared with ref(1), the index the same call built with one process.
+	; That the index has the rows the data calls for is what the rest of this
+	; test suite covers; what is checked here is that however many processes
+	; divided the scan, the index is the one a single process produces.
+	new c,s,z
+	set (c,z)="",s=x
+	; $QUERY() does not leave the global variable it starts in, so the walk ends
+	; of its own accord at the last node of this cross reference
+	for  set s=$query(@s) quit:'$zlength(s)  do
+	. ; AIM's own control nodes are the single subscripted ones; one of them
+	. ; holds the time of the scan, which of course differs between scans
+	. quit:1=$qlength(s)
+	. set c=c+1,z=z_s_"="_@s_$char(10)
+	set ref(n)=z
+	; Every case must produce a non-empty index, else the comparisons below
+	; would pass by comparing nothing
+	do assert(0<c)
+	; ref(1) is the index a single process built, and every other process count
+	; is asserted to have produced exactly that. n=1 is the pass that records
+	; it, so it has nothing to compare itself with.
+	do:1'=n assert(ref(1)=ref(n),what_": nproc="_n_" index differs from nproc=1")
+	quit
+	;
 	;
 	; WHAT #98 CHANGED
 	; forceStr is just the built-in string transform x->"#"_x, so #98 makes a type=3 cross reference
@@ -2737,7 +2892,7 @@ gvsuboflowhelper:	;	Test is meaningful only if key size is less than maximum (i.
 	. set aimglobal=$$XREFDATA^%YDBAIM("^x",1)
 	. zwrite aimglobal	; this line should not be reached as GVSUBOFLOW error should transfer control in previous line
 	else  do	;	else fake expected error message
-	. write "Error occurred: 150372986,xrefdata+137^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, ",$c(9,9),"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*",!
+	. write "Error occurred: 150372986,xrefdata+122^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, ",$c(9,9),"Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*",!
 	. write "aimglobal=""^%ydbAIMDgFr8HZY2gJsda6acj41uCE""",!
 	quit
 	;
@@ -4000,6 +4155,16 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"PSNDF"
 	new aimtmp set aimtmp="^"_$select(xdref:xdrefloc,1:"")_"%ydbAIMtmp"
 	view "setenv":"ydb_zinterrupt":"do sigusrint^"_$text(+0),"jobpid":1
+	; This test needs the scan to still be running when the signal below is
+	; delivered: it waits for the interrupt to be processed, and then requires
+	; the index to grow between six samples. Since AIM#97 the scan of this
+	; global variable is several times faster, so the number of processes is
+	; pinned here rather than left to the environment, which on a machine with
+	; many CPUs would leave nothing to interrupt. Three rather than one, so that
+	; the interrupt is delivered to a scan that is actually divided. tsigusr2
+	; and tresume interrupt a scan that runs with as many processes as the
+	; environment gives it.
+	view "setenv":"ydb_aim_nproc":"3"
 	;
 	; delete old data generated from interrupt (in case of re-runs)
 	zsy "rm -f tsigusr1.jobexam"
@@ -4012,22 +4177,40 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	; Job off AIM jobs that will be signaled
 	new jobpid job jobsigusr:passcurlvn set jobpid=$zjob
 	;
+	; Every wait below is bounded. Each of them is waiting on the JOB'd process
+	; to reach a particular point, and if it never does, an unbounded wait hangs
+	; the whole test suite with no indication of what it was waiting for. A
+	; bounded one fails the test and says so.
+	new deadline
+	;
 	; Wait till the parallel process children show up
-	for  quit:$data(@aimtmp@("%YDBAIM",jobpid,0))  hang .01
+	set deadline=$zut+60E6
+	for  quit:$data(@aimtmp@("%YDBAIM",jobpid,0))!($zut>deadline)  hang .01
+	do assert($data(@aimtmp@("%YDBAIM",jobpid,0)),"the JOB'd process recorded no scanning processes within 60 seconds")
 	;
 	; give it some time to index
-	for  quit:$data(@aimgbl@(1,"A"))  hang .0001
+	set deadline=$zut+60E6
+	for  quit:$data(@aimgbl@(1,"A"))!($zut>deadline)  hang .0001
+	do assert($data(@aimgbl@(1,"A")),"nothing was indexed within 60 seconds; there was nothing to interrupt")
 	;
 	; Interrupt with USR1
 	if $ZSIGPROC(jobpid,"SIGUSR1")
 	;
-	; Wait till interrupt is processed
-	for  quit:$zsearch("tsigusr1.jobexam")'=""  hang .01
+	; Wait till interrupt is processed. $ZSEARCH returns the successive matches
+	; for a search argument and then the empty string, so the match is captured
+	; here rather than searched for a second time afterwards, which would report
+	; the file as absent when it exists.
+	new jobexam set jobexam="",deadline=$zut+60E6
+	for  set jobexam=$zsearch("tsigusr1.jobexam") quit:$zlength(jobexam)!($zut>deadline)  hang .01
+	do assert($zlength(jobexam),"the interrupt was not processed within 60 seconds; the scan may have finished before the signal arrived")
+	quit:'$zlength(jobexam)		; nothing below can succeed without it
 	;
 	; Setting ^tsigusr happens inside of a transaction. In rare cases the interrupt
 	; may successfully run (creating tsigusr1.jobexam), but ^tsigusr may be
 	; still uncommitted at that point. That's why we check for it separately.
-	for  quit:$get(^tsigusr)'=""  hang .01
+	set deadline=$zut+60E6
+	for  quit:($get(^tsigusr)'="")!($zut>deadline)  hang .01
+	do assert($get(^tsigusr)'="","the interrupt handler did not commit ^tsigusr within 60 seconds")
 	;
 	; Count data six times. Each count should be greater than the previous one.
 	do sigusrcount(1,aimgbl) h .001
@@ -4041,7 +4224,9 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	do assert(^tsigusr="SIGUSR1")
 	;
 	; Wait for AIM job to die (this takes a while as we are still indexing)
-	for  quit:'$zgetjpi(jobpid,"ISPROCALIVE")  hang 0.01
+	set deadline=$zut+120E6
+	for  quit:'$zgetjpi(jobpid,"ISPROCALIVE")!($zut>deadline)  hang 0.01
+	do assert('$zgetjpi(jobpid,"ISPROCALIVE"),"the JOB'd process was still running 120 seconds after being interrupted")
 	;
 	; Final count
 	do sigusrcount(7,aimgbl)
@@ -4111,10 +4296,13 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	do assert(^tsigusr="SIGUSR1")
 	;
 	; Wait for AIM job to die (this takes a while as we are still indexing)
-	for  quit:'$zgetjpi(jobpid,"ISPROCALIVE")  hang 0.01
+	set deadline=$zut+120E6
+	for  quit:'$zgetjpi(jobpid,"ISPROCALIVE")!($zut>deadline)  hang 0.01
+	do assert('$zgetjpi(jobpid,"ISPROCALIVE"),"the JOB'd process was still running 120 seconds after being interrupted")
 	;
 	; Reset envionment
 	view "unsetenv":"ydb_zinterrupt"
+	view "unsetenv":"ydb_aim_nproc"
 	;
 	; Final count
 	do sigusrcount(7,aimgbl,1)

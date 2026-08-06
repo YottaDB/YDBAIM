@@ -30,12 +30,12 @@ Error occurred: 150379506,XREFSUBQUIT+156^%YDBAIM,%YDBAIM-F-BADTRANSFORM  with t
 ---------------
 
 NOSUBS1 write $$XREFDATA^%YDBAIM("^abcd")
-Error occurred: 150379506,XREFSUBQUIT+173^%YDBAIM,%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference default type, 2 for type=1; nsubs=0
+Error occurred: 150379506,XREFSUBQUIT+179^%YDBAIM,%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference default type, 2 for type=1; nsubs=0
 242
 ---------------
 
 NOSUBS2 write $$XREFSUB^%YDBAIM("^abcd")
-Error occurred: 150379506,XREFSUBQUIT+173^%YDBAIM,%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference default type, 2 for type=1; nsubs=0
+Error occurred: 150379506,XREFSUBQUIT+179^%YDBAIM,%YDBAIM-F-NOSUBS Need at least 1 subscript to cross reference default type, 2 for type=1; nsubs=0
 242
 ---------------
 
@@ -72,7 +72,7 @@ Error occurred: 150379506,XREFSUBQUIT+42^%YDBAIM,%YDBAIM-F-INVPIECE Range "1:2:3
 ---------------
 
 INVPNUMSEP kill ^x set ^x(1)="a1|b1",^x(2)="a2|",^x(3)="|b3",subs(1)="*" write $$XREFDATA^%YDBAIM("^x",.subs,"|","1:2:3")
-Error occurred: 150379506,XREFSUBQUIT+319^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
+Error occurred: 150379506,XREFSUBQUIT+325^%YDBAIM,%YDBAIM-F-INVPNUMSEP Range specification 1 ("1:2:3") has 3 ":" separated pieces, invalid
 242
 ---------------
 
@@ -147,13 +147,13 @@ Error occurred: 150379506,UNXREFSUB+20^%YDBAIM,%YDBAIM-F-NOTAGBL Variable "^xy12
 ---------------
 
 GVSUBOFLOW0 do gvsuboflow^%YDBAIMTEST(0)
-Error occurred: 150372986,xrefdata+137^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, 		Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*
+Error occurred: 150372986,xrefdata+122^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, 		Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*
 aimglobal="^%ydbAIMDgFr8HZY2gJsda6acj41uCE"
 0
 ---------------
 
 GVSUBOFLOW1 do gvsuboflow^%YDBAIMTEST(1)
-Error occurred: 150372986,xrefdata+137^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, 		Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*
+Error occurred: 150372986,xrefdata+122^%YDBAIM,%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded,%YDB-I-GVIS, 		Global variable: ^%ydbAIMDgFr8HZY2gJsda6acj41uCE(0*
 aimglobal="^%ydbAIMDgFr8HZY2gJsda6acj41uCE"
 0
 ---------------

@@ -64,9 +64,8 @@ err	; Primary Error Handler
 	view:$data(ztout) "ztrigger_output":ztout
 	; Release locks obtained inside AIM
 	do unsnaplck(.currlck)
-	; Terminate any JOB'd xrefdata() processes
-	if $data(xrefproc(1)),'$zsigproc(xrefproc(1),"term") zkill xrefproc(1)
-	if $data(xrefproc(-1)),'$zsigproc(xrefproc(-1),"term") zkill xrefproc(-1)
+	; Terminate any JOB'd xrefdata()/xrefsub() worker processes
+	do:$data(xrefproc) xrefjobskill
 	; Now that primary error handling is done, switch to different handler to rethrow error in caller AIM frames.
 	; The rethrow will cause a different $etrap to be invoked in the first non-AIM caller frame (because AIM
 	; did a "new $etrap" at entry).
@@ -232,6 +231,13 @@ VERSION(type)
 ; relevant just to type=1, e.g., type1last, are also relevant to type=3,
 ; i.e., to Fileman globals. The number in the comment is the major version
 ; for data metadata. Refer to comments before the VERSION() label.
+;
+; The initial scan of existing nodes divides them among several processes. How
+; many is the ydb_aim_nproc environment variable if defined, and otherwise one
+; less than the number of online CPUs (one on a single CPU machine), the parent
+; needing a CPU for the walk that writes the ranges those processes scan. It
+; does not affect the cross reference produced, only how long producing it
+; takes, and is not part of the cross reference name.
 XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment);4
 	new $etrap,io do etrap
 	new altlastsub,altsub,asciisep,constlist,currgld,currlck,envgld,extgld
@@ -420,7 +426,7 @@ XREFDATAQUIT
 
 ; XREFSUB() cross references metadata of subscripts.  The number in the comment is
 ; the major version for subscript metadata. Refer to comments before the VERSION()
-; label.
+; label. The initial scan uses several processes, as described for XREFDATA().
 XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment);2
 	new $etrap,io do etrap
 	new constlist,currgld,currlck,envgld,extgld,fullsub,fullsubprnt,fulltrigsub
@@ -691,6 +697,12 @@ initxref:
 	. set i=$order(locxsub(""),-1)
 	. set:i>nsubs nsubs=i
 	set:nsubs\1'=nsubs!(29<nsubs) $ecode=",U247,"
+	; Reject an invalid number of processes here, before anything is created.
+	; The scan runs after the triggers are set and the cross reference is
+	; registered, so an error raised there would leave a cross reference that
+	; is registered but was never scanned. xrefnproc() resolves this value.
+	set tmp=$ztrnlnm("ydb_aim_nproc")
+	set:$zlength(tmp)&((tmp'?1.N)!('tmp)) $ecode=",U225,"
 	set:$select(1=type:2,1:1)>nsubs $ecode=",U253,"
 	for i=1:1:nsubs set:'$data(locxsub(i)) locxsub(i)="*",constlist(i)=0
 	; Determine whether application global permits null subscripts. For a
@@ -895,49 +907,41 @@ unxref:(xrefgbl)
 ; References variables defined in parent or passed through from XREFDATA():
 ;   constlist, force, gbl, gblind, gblindtype1, lastsubind, lastvarsub, locxsub,
 ;   name, nameind, newpstr, nullsub, omitfix, stacklvl1, stacklvl2, stat, subary,
-;   tick, type, type1last, valcntind, xfnp1, xfnp2, xrefind, xrefindtype1, zpiece
-xrefdata(nsubsxref,dir,ppid)
+;   type, type1last, valcntind, xfnp1, xfnp2, xrefind, xrefindtype1, zpiece
+; xrefwork() calls this once for each range of subscripts it claims, with
+; locxsub(chunklvl) set to that range.
+xrefdata(nsubsxref,ppid)
 	new flag,i,j,k,nodelen1,nodeval,nranges,piece1,piece2,pieceval,quitflag
-	new rangebegin,rangeend,rangefirst,rangeflag,rangelast,sublvl,thisrange,tmp1,tmp2
-	; As noted in xrefdatajobs() there is a small window during which if an
-	; interrupt is received before the pid of the child process is captured
-	; the child process pid may not be captured, resulting in an interrupt
-	; not terminating a child process. By having the child process record
-	; its pid, the window is made even smaller, although it cannot be
-	; eliminated entirely.
-	set:nsubsxref=nsubs $zpiece(^%ydbAIMtmp($text(+0),ppid,0),",",$select(1=dir:1,1:2))=$job
+	new rangebegin,rangeend,sublvl,thisrange,tmp1,tmp2
 	; If nsubsxref>1 it means call the function recursively for the next
 	; subscript level.
 	set flag=nullsub
 	set sublvl=$order(locxsub(""),-1)-nsubsxref+1
 	set subary(sublvl)=""
 	if nsubsxref>1 do
-	. if "*"=locxsub(sublvl) for  do:flag  set flag=1,subary(sublvl)=$order(@gblind(sublvl),dir) quit:'$zlength(subary(sublvl))
-	. . do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,dir,ppid)
-	. else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,dir,ppid)
+	. if "*"=locxsub(sublvl) for  do:flag  set flag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:'$zlength(subary(sublvl))
+	. . do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,ppid)
+	. else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,ppid)
 	. else  do
 	. . set nranges=$select(zpiece:$zlength(locxsub(sublvl),";"),1:$length(locxsub(sublvl),";"))
-	. . if 1=dir set rangefirst=1,rangelast=nranges
-	. . else  set rangefirst=nranges,rangelast=1
-	. . for i=rangefirst:dir:rangelast do
+	. . for i=1:1:nranges do
 	. . . if zpiece do
 	. . . . set thisrange=$zpiece(locxsub(sublvl),";",i)
 	. . . . set piece1=$zpiece(thisrange,":",1),piece2=$zpiece(thisrange,":",$zlength(thisrange,":"))
 	. . . else  do
 	. . . . set thisrange=$piece(locxsub(sublvl),";",i)
 	. . . . set piece1=$piece(thisrange,":",1),piece2=$piece(thisrange,":",$length(thisrange,":"))
-	. . . set rangeflag=0
-	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1),rangeflag=1
+	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1)
 	. . . else  set rangebegin=""
-	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1),rangeflag=1
+	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1)
 	. . . else  set rangeend=""
-	. . . set flag=$select(1=dir:$select($zlength(piece1):1,1:nullsub),1:$select($zlength(piece2):1,1:0))
-	. . . set subary(sublvl)=$select(1=dir:rangebegin,1:rangeend)
-	. . . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl),dir) quit:'$zlength(tmp2)!(rangeflag&$select(1=dir:$select($zlength(piece2):tmp2]]rangeend,1:0),1:rangebegin]]tmp2))
+	. . . set flag=$select($zlength(piece1):1,1:nullsub)
+	. . . set subary(sublvl)=rangebegin
+	. . . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl)) quit:'$zlength(tmp2)!($zlength(piece2)&(tmp2]]rangeend))
 	. . . . if (type#2)&(2=nsubsxref) do
 	. . . . . tstart ():transactionid="batch"
 	. . . . . set tmp1=$data(@gblind(sublvl))
-	. . . . . if tmp1\10 do xrefdata(nsubsxref-1,dir,ppid)
+	. . . . . if tmp1\10 do xrefdata(nsubsxref-1,ppid)
 	. . . . . else  do:tmp1#10
 	. . . . . . set nodeval=""
 	. . . . . . if $zlength(sep) do
@@ -951,8 +955,7 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . . . . . set ^(@lastsubind)=""
 	. . . . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . . . . tcommit
-	. . . . . if $zut-tick\1E4 do xrefjobsrec(nsubsxref) set tick=$zut
-	. . . . else  do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,dir,ppid)
+	. . . . else  do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,ppid)
 	; if nsubsxref=1 (the rest of the code below) the traversal has reached the
 	; subscript level at which globals are to have metadata
 	; computed. Compute metadata per subscript and metadata type
@@ -987,7 +990,6 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
 	. . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. tcommit
-	. if $zut-tick\1E4 do xrefjobsrec(nsubsxref) set tick=$zut
 	else  if constlist(sublvl) do
 	. tstart ():transactionid="batch"
 	. if $data(@gblind(sublvl))#10 do
@@ -1003,14 +1005,11 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
 	. . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. tcommit
-	. if $zut-tick\1E4 do xrefjobsrec(nsubsxref) set tick=$zut
 	else  do	; not Fileman or a constant subscript specification
 	. set nranges=$select(zpiece:$zlength(locxsub(sublvl),";"),1:$length(locxsub(sublvl),";"))
-	. if 1=dir set rangefirst=1,rangelast=nranges
-	. else  set rangefirst=nranges,rangelast=1
-	. for i=rangefirst:dir:rangelast do
+	. for i=1:1:nranges do
 	. . if "*"=locxsub(sublvl) do
-	. . . set (piece2,rangebegin,rangeend,subary(sublvl))="",flag=nullsub,rangeflag=0
+	. . . set (piece2,rangebegin,rangeend,subary(sublvl))="",flag=nullsub
 	. . else  do
 	. . . if zpiece do
 	. . . . set thisrange=$zpiece(locxsub(sublvl),";",i)
@@ -1018,17 +1017,17 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . else  do
 	. . . . set thisrange=$piece(locxsub(sublvl),";",i)
 	. . . . set piece1=$piece(thisrange,":",1),piece2=$piece(thisrange,":",$length(thisrange,":"))
-	. . . set rangeflag=0
-	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1),rangeflag=1
+	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1)
 	. . . else  set rangebegin=""
-	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1),rangeflag=1
+	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1)
 	. . . else  set rangeend=""
 	. . . ; flag=1 means the for-loop below processes subary's starting value before $order'ing onward.
-	. . . ; Set it only when subary starts on a real bounded subscript (piece1 for fwd, piece2 for bwd);
-	. . . ; otherwise subary="" is just a walk sentinel -- defer to nullsub for fwd, never for bwd.
-	. . . set flag=$select(1=dir:$select($zlength(piece1):1,1:nullsub),1:$select($zlength(piece2):1,1:0))
-	. . . set subary(sublvl)=$select(1=dir:rangebegin,1:rangeend)
-	. . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl),dir) quit:'$zlength(tmp2)!(rangeflag&$select(1=dir:$select($zlength(piece2):tmp2]]rangeend,1:0),1:rangebegin]]tmp2))
+	. . . ; Set it only when subary starts on a real bounded subscript, i.e. when the range has a
+	. . . ; lower bound; otherwise subary="" is just a walk sentinel, and only a database that
+	. . . ; permits null subscripts has a subscript there to process.
+	. . . set flag=$select($zlength(piece1):1,1:nullsub)
+	. . . set subary(sublvl)=rangebegin
+	. . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl)) quit:'$zlength(tmp2)!($zlength(piece2)&(tmp2]]rangeend))
 	. . . tstart (j,k):transactionid="batch"
 	. . . do:$data(@gblind(sublvl))#10
 	. . . . set nodeval=@gblind(sublvl)
@@ -1039,30 +1038,69 @@ xrefdata(nsubsxref,dir,ppid)
 	. . . . . . if '($data(@xrefind)#10) set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . . . else  if '($data(@xrefind)#10) set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . . tcommit
-	. if $zut-tick\1E4 do xrefjobsrec(nsubsxref) set tick=$zut
 	quit
 
-; JOB two processes for xrefdata(); one to scan the global subscripts in the
-; forward direction, and one to scan in the reverse direction. The scan can be
-; terminated when either of the followiing conditions are met:
-; - Either process terminates: Since either process completing means that the
-;   the metadata computation is complete, the other process can be terminated.
-; - For all non-constant subscript specifications in nsubs-1 subscripts, the
-;   process scanning in the forward direction is scanning subscripts that
-;   collate after subscripts the other process is scanning. In other words,
-;   since they are both scanning data that has already been scanned, they can
-;   both be terminated.
+; The JOB'd process that scans. It repeatedly takes the next unclaimed range of
+; subscripts at level chunklvl, which the parent writes to
+; ^%ydbAIMtmp($text(+0),ppid,"q",n), assigns that range to locxsub(chunklvl),
+; and calls xrefdata() (issub=0, for XREFDATA()) or xrefsub() (issub=1, for
+; XREFSUB()) to scan it. Ranges are claimed with $INCREMENT() on "take", so each
+; range is scanned by exactly one process.
+;
+; "n" is how many ranges the parent has written so far and "end" means it has
+; written the last one. A process whose claim is beyond "n" waits, since the
+; parent may not have written that range yet, and stops when "end" shows none
+; are coming or when the parent is no longer alive. The parent sets "end" after
+; the last "n", so re-reading "n" after seeing "end" reads its final value.
+;
+; The pid is recorded first and the completion flag last. The first narrows the
+; window described in xrefdatajobs(); the second is how the parent knows this
+; process scanned every range it claimed, which no other process covers.
+; Local variables come from the parent through passcurlvn.
+xrefwork(ppid,wnum,issub)
+	new more,seq
+	set ^%ydbAIMtmp($text(+0),ppid,0,$job)=""
+	for  do  quit:'more
+	. set seq=$increment(^%ydbAIMtmp($text(+0),ppid,"take")),more=1
+	. for  quit:seq'>+$get(^%ydbAIMtmp($text(+0),ppid,"n"))  do  quit:'more
+	. . if $data(^%ydbAIMtmp($text(+0),ppid,"end")),seq>+$get(^%ydbAIMtmp($text(+0),ppid,"n")) set more=0 quit
+	. . ; The parent produces the queue, so if it is gone there will never be
+	. . ; a chunk with this ticket, and nothing is left to report to.
+	. . if '$zgetjpi(ppid,"isprocalive") set more=0 quit
+	. . hang .001
+	. do:more
+	. . set:chunklvl locxsub(chunklvl)=^%ydbAIMtmp($text(+0),ppid,"q",seq)
+	. . ; Postconditionals rather than IF/ELSE: the scan does not restore $TEST
+	. . do:issub xrefsub(nsubs,ppid)
+	. . do:'issub xrefdata(nsubs,ppid)
+	set ^%ydbAIMtmp($text(+0),ppid,"done",wnum)=""
+	quit
+
+; JOB nworkers processes to scan the global variable, and write the ranges of
+; subscripts they scan. Each process is numbered 1 through nworkers, and scans
+; only the ranges it claims, so the scan is complete only when all of them have
+; finished; U226 if any did not.
+;
+; The parent writes the ranges itself rather than JOBing a process to do it. The
+; walk is $ORDER() over one subscript level with none of the $DATA(), SET and TP
+; the scan does, so it costs far less, and it overlaps with the scanning because
+; the JOB'd processes start on the first ranges while the parent is still
+; walking. The parent therefore does not notice a process dying until the walk
+; is done. That delays the error but cannot produce an incomplete cross
+; reference, because the completion flags are checked before XREFDATA() records
+; the cross reference as complete.
 ; xrefdatajobs() cleans up stdout and stderr files of the JOB'd processes.
 ; Comments preceding xrefdata() list local variables passed through
 xrefdatajobs:(nsubs)
-	new cmd,err,i,intdefer,io,j,k,line,msgprefix,out,prefix,stacklvl2,tick,tmp,totcnt,val,xrefproc
+	new chunklvl,cmd,err,i,io,issub,j,jobby,k,line,msgprefix,njobbed,nworkers,out,prefix,stacklvl2,tmp,totcnt,val,xrefproc
 	set io=$io
 	set msgprefix=$ztrnlnm("ydb_msgprefix")
 	set:'$zlength(msgprefix) msgprefix="YDB"
 	set prefix="/tmp/xrefdata^"_$text(+0)_"_"_$job_"_"_($zut\1E6)_"_"
 	set stacklvl2=$stack	; required by premature termination
-	set tick=$zut
-	; Job the two processes and record their pids so that they can be
+	set chunklvl=$$xrefchunklvl,nworkers=$select(chunklvl:$$xrefnproc,1:1)
+	set:1<nworkers nworkers=$$xrefcapworkers(nworkers)
+	; Job the worker processes and record their pids so that they can be
 	; subsequently identified, e.g., to terminate them. Since JOB'd
 	; processes sever all ties with the parent process, if a terminating
 	; interrupt is received after a JOB command executes, but before the
@@ -1073,28 +1111,21 @@ xrefdatajobs:(nsubs)
 	; has been terminated, the parent temporarily ignores interrupts
 	; until it records the JOB'd pids. Once it records those pids
 	; it sets the interrupt handler to terminate them, and itself in
-	; response to an interrupt.
-	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear any prior subprocess metadata
-	set intdefer="",$zinterrupt="set intdefer=$zyintrsig"	; defer interrupts temporarily
-	for i=1,-1 do
-	. set err(i)=prefix_i_".err"
-	. set out(i)=prefix_i_".out"
-	. set cmd="xrefdata(nsubs,i,$job):(passcurlvn:error="""_err(i)_""":output="""_out(i)_""")"
-	. job @cmd
-	. if $zjob set xrefproc(i)=$zjob set $zpiece(^%ydbAIMtmp($text(+0),$job,0),",",$select(1=i:1,1:2))=$zjob
-	. else  set $ecode=",U234,"
-	set $zinterrupt="do ZINTERRUPT^%YDBAIM"
-	if $zlength(intdefer),$zsigproc($job,intdefer)	; throw any deferred interrupts
-	; - check whether processes have crossed, if processes have crossed, terminate one process
-	; - if one process has terminated, because it was terminated or completed the scan, terminate the other process
-	for  do  quit:'$data(xrefproc)  hang .01
-	. if $$xrefjobsckdone set i=$order(xrefproc("")) kill:$zlength(i)&('$zsigproc(xrefproc(i),"term")) xrefproc(i)
-	. set i="" for  set i=$order(xrefproc(i)) quit:'$zlength(i)  do:'$zgetjpi(xrefproc(i),"isprocalive")  quit:'$data(xrefproc)
-	. . if $data(xrefproc(-i)),$zsigproc(xrefproc(-i),"term")
-	. . kill xrefproc
+	; response to an interrupt. The pids are recorded as subscripts of
+	; ^%ydbAIMtmp($text(+0),$job,0) rather than as a list, so that a
+	; worker recording its own pid (see xrefwork()) and the parent
+	; recording it write the same node.
+	kill ^%ydbAIMtmp($text(+0),$job)	; Clear any prior subprocess metadata
+	set issub=0,njobbed=0,jobby=$zut+50000	; 50ms before recruiting the rest
+	do xrefjobmore(1)	; one to begin with; the rest only if the scan is long
+	do xrefqueue		; produce the chunks the workers scan
+	; Wait for every worker to finish, recruiting the rest along the way
+	for  do  quit:'$data(xrefproc)  hang .001
+	. do xrefrecruit
+	. set i="" for  set i=$order(xrefproc(i)) quit:'$zlength(i)  kill:'$zgetjpi(xrefproc(i),"isprocalive") xrefproc(i)
 	; quit		; uncomment for debugging
 	; Raise error if there is any non-information (-I-), non-success (S) message other than FORCEDHALT.
-	for i=1,-1 do
+	for i=1:1:njobbed do
 	. set out(i)=$zsearch(out(i)_"*") open out(i)
 	. for j=1:1 use out(i) read line quit:$zeof  if $zlength(line) use io write line,! use out(i)
 	. use io close out(i):delete
@@ -1106,7 +1137,11 @@ xrefdatajobs:(nsubs)
 	. . set:'($zfind(line,"FORCEDHALT")!(line?@((".E1"""_msgprefix_"""1""-""1(1""I"",1""S"")1""-"".E")))) $ecode=",U233,"
 	. . use err(i)
 	. use io close err(i):delete
-	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear subprocess metadata on clean exit
+	; Every worker must have recorded completion. A worker that ended without
+	; reporting an error, e.g. one that was killed, has left part of the
+	; global variable unscanned, and no other worker covers it.
+	for i=1:1:njobbed set:'$data(^%ydbAIMtmp($text(+0),$job,"done",i)) $ecode=",U226,"
+	kill ^%ydbAIMtmp($text(+0),$job)	; Clear subprocess metadata on clean exit
 	quit
 	;
 ZINTERRUPT ;
@@ -1122,8 +1157,8 @@ ZINTERRUPT ;
 ; Uses local variables from caller: stacklvl, stacklvl2, xrefproc, zintrptsav
 ; It tests for the existence of zpiece.
 xrefjobsterm
-	new i,proc
-	for i=1:1:2 set proc=+$zpiece(^%ydbAIMtmp($text(+0),$job,0),",",i) if proc,$zsigproc(proc,"TERM")
+	new proc
+	set proc="" for  set proc=$order(^%ydbAIMtmp($text(+0),$job,0,proc)) quit:'$zlength(proc)  if $zsigproc(proc,"TERM")
 	; As noted in xrefdatajobs, there is the potential for a child process
 	; to exist whose pid is not captured in ^%ydbAIMtmp($text(+0),$job,0).
 	; As this pid will be captured in $zjob, terminate that process if it
@@ -1143,27 +1178,278 @@ xrefjobsterm
 	set $ecode=",U232,"	; error - caller's $ZINTERRUPT returned control
 	zhalt 1			; should never get here
 
-; Check whether concurrent JOBs indexing existing data can be terminated because
-; the process scanning in the reverse direction is at subscripts in the global
-; variable tree that precede subscripts being scanned by the process scanning
-; in the forward direction.
-; Uses local variables from caller: constlist, nsubs, stacklvl1, stacklvl2
-xrefjobsckdone:()
-	new chk,flag,i
-	set (chk,flag)=0
-	for i=1:1:nsubs do:'constlist(i)  quit:flag
-	. tstart (chk,flag,i):transactionid="batch"
-	. if $data(^%ydbAIMtmp($text(+0),$job,i)),$data(^(-i)),$increment(chk) set:^(i)']]^(-i) flag=1
-	. tcommit
-	quit $select(flag!'chk:0,1:1)
+; JOB processes numbered njobbed+1 through "upto" and record their pids, so that
+; they can be identified later, e.g. to terminate them.
+;
+; Since JOB'd processes sever all ties with the parent process, if a terminating
+; interrupt is received after a JOB command executes, but before the pid is
+; captured from $ZJOB, there is potentially a JOB'd process that is not
+; reflected in ^%ydbAIMtmp($text(+0),$job,0). To avoid a scenario where the
+; parent is terminated, but a JOB'd process continues scanning and creating
+; cross references after the parent has been terminated, the parent temporarily
+; ignores interrupts until it records the JOB'd pids. Once it records those pids
+; it sets the interrupt handler to terminate them, and itself in response to an
+; interrupt. The pids are recorded as subscripts of
+; ^%ydbAIMtmp($text(+0),$job,0) rather than as a list, so that a worker
+; recording its own pid (see xrefwork()) and the parent recording it write the
+; same node.
+; Uses and updates local variables from caller: err, issub, njobbed, out,
+; prefix, xrefproc
+xrefjobmore:(upto)
+	new cmd,i,intdefer
+	quit:upto'>njobbed
+	set intdefer="",$zinterrupt="set intdefer=$zyintrsig"	; defer interrupts temporarily
+	for i=njobbed+1:1:upto do
+	. set err(i)=prefix_i_".err"
+	. set out(i)=prefix_i_".out"
+	. set cmd="xrefwork($job,i,"_issub_"):(passcurlvn:error="""_err(i)_""":output="""_out(i)_""")"
+	. job @cmd
+	. if $zjob set xrefproc(i)=$zjob,^%ydbAIMtmp($text(+0),$job,0,$zjob)=""
+	. else  set $ecode=",U234,"
+	set njobbed=upto
+	set $zinterrupt="do ZINTERRUPT^%YDBAIM"
+	if $zlength(intdefer),$zsigproc($job,intdefer)	; throw any deferred interrupts
+	quit
 
-; In JOB'd process, record the state of the current scanning process
-; Uses local variables from caller: constlist, dir, ppid, subary
-xrefjobsrec:(depth)
+; JOB the rest of the processes, but only once the scan has been running long
+; enough to be worth them and only while there are ranges nobody has claimed.
+;
+; A process costs a few milliseconds to JOB, which is more than the entire scan
+; of a small global variable takes, so a cross reference that is over quickly
+; must not pay for a process per CPU. How much data there is cannot be known
+; before scanning it: a level of a thousand subscripts may hold a thousand nodes
+; or a billion. Elapsed time is therefore the signal, and the one process JOB'd
+; at the outset is what produces it. A scan still going when jobby is reached,
+; 50ms after it started, has enough work left to be worth dividing further; one
+; that is over by then never JOBs anything else.
+;
+; There are two callers. One is the walk that writes the ranges, which catches a
+; scan made slow by a level with many subscripts. The other is the loop in which
+; the parent waits for the processes to finish, which catches a scan made slow by
+; the amount of data below those subscripts.
+; Uses local variables from caller: jobby, njobbed, nworkers
+xrefrecruit:
+	quit:njobbed'<nworkers
+	quit:$zut<jobby
+	quit:+$get(^%ydbAIMtmp($text(+0),$job,"take"))'<+$get(^%ydbAIMtmp($text(+0),$job,"n"))
+	do xrefjobmore(nworkers)
+	quit
+
+; The subscript level whose subscripts are divided among the JOB'd processes, or
+; 0 if there is none. It is the outermost level whose specification is not a
+; constant, except that a level holding exactly one subscript is pinned to that
+; subscript and the next level that is not a constant is taken instead. Levels
+; above the one returned are therefore either constants which
+; mkindxrefdata()/mkindxrefsub() have already built into gblind(), or levels
+; pinned here, so a range of this level identifies part of the global variable by
+; itself; levels below it are scanned in full for each subscript in the range.
+;
+; Descending past a level with one subscript is what lets a specification like
+; (*,*,*) over ^g(1,2,:) be divided at all: dividing the outermost level would
+; produce a single range covering everything, leaving one process to scan the
+; whole global variable, which is slower than the two process scan this
+; replaces. Pinning it costs two $ORDER()s and hands the division to the level
+; that has the subscripts. There is no descent when every level below is a
+; constant, since a constant level has no subscripts of its own to divide.
+;
+; It follows that no more processes can be kept busy than there are subscripts
+; at the level returned, whatever ydb_aim_nproc says. A specification of (*,*)
+; over a global variable with three first subscripts divides three ways.
+; Uses local variables from caller: constlist, gblind, locxsub, nsubs, nullsub,
+; subary. Pins a level by setting subary() and locxsub() for it.
+xrefchunklvl:()
+	new i,lvl,nxt
+	set lvl=0
+	for i=1:1:nsubs if '$get(constlist(i),0) set lvl=i quit
+	quit:'lvl 0
+	; Descend while this level holds one subscript and there is another level
+	; below it that is not a constant to divide instead. A constant level is
+	; skipped over rather than divided: mkindxrefdata()/mkindxrefsub() have
+	; already built it into gblind(), and it has no subscripts of its own to cut.
+	for  do  quit:'nxt
+	. set nxt=0
+	. for i=lvl+1:1:nsubs if '$get(constlist(i),0) set nxt=i quit
+	. quit:'nxt				; nothing below to divide instead
+	. if '$$xrefonesub(lvl) set nxt=0 quit	; more than one subscript; divide here
+	. set lvl=nxt
+	quit lvl
+
+; Pin level lvl if it holds exactly one subscript: set subary(lvl) to that
+; subscript, for the walk that writes ranges, and locxsub(lvl) to it in the
+; ZWRITE format a caller writes a specification in, for the scan the JOB'd
+; processes run, which parses it as a range whose ends are that one subscript.
+; Returns whether it did.
+;
+; Only a level specified as "*" is pinned. A caller's own range is left as
+; written, so its endpoints, and with them whether a null subscript at an open
+; start is scanned, are unchanged. A level that has a null subscript is left
+; alone as well: $ORDER() does not return one, so pinning would drop it. So is a
+; subscript whose ZWRITE representation holds ":" or ";", which cannot be
+; written into a specification, the restriction xrefqueue() observes in choosing
+; where to cut.
+;
+; A subscript that appears at a pinned level after this runs is not scanned, and
+; does not need to be: the triggers are in place before the scan starts, so
+; every node written from then on is cross referenced as it is written. This is
+; the same reason the ranges may be cut from the subscripts that exist at the
+; time of the walk.
+; Uses local variables from caller: gblind, locxsub, nullsub, subary
+xrefonesub:(lvl)
+	new sub,zw
+	quit:"*"'=locxsub(lvl) 0
+	set subary(lvl)=""
+	; Separate IF arguments, so that $DATA() is not evaluated, and NULSUBSC not
+	; raised, in a region that does not permit null subscripts
+	if nullsub,$data(@gblind(lvl)) quit 0
+	set sub=$order(@gblind(lvl))
+	quit:'$zlength(sub) 0		; no subscripts at all; nothing to divide either
+	set subary(lvl)=sub,zw=$zwrite(sub)
+	quit:$zfind(zw,":")!$zfind(zw,";") 0
+	quit:$zlength($order(@gblind(lvl))) 0	; more than one; this is the level to divide
+	set locxsub(lvl)=zw
+	quit 1
+
+;
+; How many processes to JOB: the ydb_aim_nproc environment variable if defined,
+; else one less than the number of CPUs, because the parent walks the level to
+; write the ranges while the JOB'd processes scan, and so needs a CPU of its
+; own. On a single CPU machine that leaves one process. initxref() has already
+; rejected a value that is not a positive integer.
+; Uses local variable io from caller, to restore $IO
+xrefnproc:()
+	new n
+	set n=$ztrnlnm("ydb_aim_nproc")
+	quit:$zlength(n) +n
+	set n=$$xrefcpus
+	quit:'n 2			; CPU count unavailable; the number AIM used before
+	quit $select(1<n:n-1,1:1)
+
+; No more processes than there are subscripts for them to divide. See
+; xrefrecruit() above for why a process with nothing to do is worth avoiding.
+;
+; At most nworkers subscripts are counted, so this walk costs no more than the
+; process count, whatever the size of the level. Only the first range of the
+; specification is counted: a specification with further ranges has at least as
+; many subscripts as its first, so counting that one is enough to decide whether
+; there are fewer subscripts than processes.
+;
+; A level whose subscripts cannot be counted this way, e.g. one holding only a
+; null subscript, which $ORDER() does not return, gives one process. That is a
+; performance choice and not a correctness one: the ranges cover the whole
+; specification whatever the process count, so fewer processes scan the same
+; nodes, more slowly.
+; Uses local variables from caller: chunklvl, gblind, locxsub, subary
+xrefcapworkers:(nworkers)
+	new cnt,piece1,piece2,rangeend,sub,tmp
+	if "*"=locxsub(chunklvl) set (piece1,piece2)=""
+	else  do
+	. set tmp=$zpiece(locxsub(chunklvl),";",1)
+	. set piece1=$zpiece(tmp,":",1),piece2=$zpiece(tmp,":",$zlength(tmp,":"))
+	set rangeend=$select($zlength(piece2):$zwrite(piece2,1),1:"")
+	set subary(chunklvl)=$select($zlength(piece1):$zwrite(piece1,1),1:"")
+	set cnt=0
+	for  set sub=$order(@gblind(chunklvl)) quit:'$zlength(sub)!($zlength(piece2)&(sub]]rangeend))  do  quit:cnt'<nworkers
+	. set subary(chunklvl)=sub,cnt=cnt+1
+	quit $select(cnt<nworkers:$select(cnt:cnt,1:1),1:nworkers)
+
+; Number of online CPUs, read from the file in which Linux reports them as a
+; comma separated list of CPU numbers and inclusive ranges, e.g. "0-3", "0,2-5"
+; or, on a single CPU machine, "0". Returns 0 if the file cannot be read, for
+; the caller to replace with a default; how many processes to use is a
+; performance choice, not a reason to fail a cross reference, so the error trap
+; returns 0 for anything the file access raises. Note that these are the CPUs
+; that are online, not necessarily those this process may run on.
+; Uses local variable io from caller, to restore $IO
+xrefcpus:()
+	new $etrap,i,line,n,tmp
+	set $etrap="use io close tmp set $ecode="""" quit 0"
+	set n=0,line="",tmp="/sys/devices/system/cpu/online"
+	open tmp:readonly use tmp read line use io close tmp
+	quit:'$zlength(line) 0
+	for i=1:1:$zlength(line,",") do
+	. set tmp=$zpiece(line,",",i)
+	. set n=n+$zpiece(tmp,"-",$zlength(tmp,"-"))-$zpiece(tmp,"-",1)+1
+	quit n
+
+; Write the ranges of subscripts that the JOB'd processes scan, by walking
+; level chunklvl and cutting its subscripts into groups. Each range is a
+; subscript specification for that level, in the ZWRITE format a caller uses,
+; e.g. 113:120, so that a JOB'd process scans one with no more than an
+; assignment to locxsub(chunklvl).
+;
+; The ranges abut: one ends at a subscript and the next starts at the subscript
+; after it. Together they therefore cover exactly the subscripts the caller's
+; specification selects, with none scanned twice and none missed. The first
+; range written for one of the caller's ranges starts where the caller's range
+; starts, and the last ends where it ends, so the caller's own endpoints, and
+; with them whether a null subscript at an open start is scanned, are unchanged.
+;
+; A subscript can end a range only if its ZWRITE representation contains no ":"
+; and no ";". Those are the characters that separate a subscript specification
+; into ranges, as in "a:b;c:d", so a subscript containing either cannot be
+; written into one. This is the same restriction a caller has in writing a
+; specification, YottaDB/DB/YDB#691. Cutting waits for the next subscript that
+; can be used, which only makes a range larger.
+;
+; A range holds one subscript to start with, and the number doubles every
+; nworkers*4 ranges to a maximum of 8192. How many subscripts the level has, and
+; how much of the global variable is below each of them, are not known until the
+; walk finishes. Small ranges at the start therefore get every process working
+; immediately, and divide a level that has hardly more subscripts than there are
+; processes; larger ones later keep down the cost of writing and claiming them.
+; Uses local variables from caller: chunklvl, gblind, locxsub, nworkers, subary
+xrefqueue:
+	new cnt,csize,i,nemit,nranges,ok,piece1,piece2,prevok,prevzw,rangeend,seq,start,sub,tmp,zw
+	set (cnt,nemit,seq)=0,csize=1
+	if 'chunklvl do  quit		; nothing to divide; one chunk scans it all
+	. set ^%ydbAIMtmp($text(+0),$job,"q",1)=""
+	. set ^%ydbAIMtmp($text(+0),$job,"n")=1
+	. set ^%ydbAIMtmp($text(+0),$job,"end")=1
+	set nranges=$select("*"=locxsub(chunklvl):1,1:$zlength(locxsub(chunklvl),";"))
+	for i=1:1:nranges do
+	. if "*"=locxsub(chunklvl) set (piece1,piece2)=""
+	. else  do
+	. . set tmp=$zpiece(locxsub(chunklvl),";",i)
+	. . set piece1=$zpiece(tmp,":",1),piece2=$zpiece(tmp,":",$zlength(tmp,":"))
+	. set rangeend=$select($zlength(piece2):$zwrite(piece2,1),1:"")
+	. set (prevok,prevzw)="",cnt=0,start=piece1
+	. set subary(chunklvl)=$select($zlength(piece1):$zwrite(piece1,1),1:"")
+	. for  set sub=$order(@gblind(chunklvl)) quit:'$zlength(sub)!($zlength(piece2)&(sub]]rangeend))  do
+	. . set subary(chunklvl)=sub,zw=$zwrite(sub)
+	. . set ok='($zfind(zw,":")!$zfind(zw,";"))
+	. . if cnt'<csize,ok,prevok do
+	. . . do xrefqemit(start_":"_prevzw)
+	. . . set start=zw,cnt=0
+	. . set cnt=cnt+1,prevzw=zw,prevok=ok
+	. do xrefqemit(start_":"_piece2)
+	set ^%ydbAIMtmp($text(+0),$job,"end")=1
+	quit
+
+; Write one range. "n" is set after the range itself, so a JOB'd process never
+; sees a count that includes a range that has not been written yet.
+; Uses and updates local variables from caller: csize, nemit, nworkers, seq
+xrefqemit:(chunk)
+	set ^%ydbAIMtmp($text(+0),$job,"q",$increment(seq))=chunk
+	set ^%ydbAIMtmp($text(+0),$job,"n")=seq
+	set:'($increment(nemit)#(nworkers*4))&(8192>csize) csize=csize+csize
+	do xrefrecruit
+	quit
+
+; Terminate every JOB'd process still running, and forget those that have
+; exited or have been sent the signal. One that can neither be signaled nor
+; shown to have exited stays in xrefproc for the caller's wait loop to retry.
+;
+; Testing whether the process is alive before signaling it narrows, but does not
+; close, the window in which its pid is reused between the test and the signal.
+; This is an acceptable risk, as Linux generates pids in order, rather than
+; randomly. So for this to terminate an unrelated process, the pids must cycle
+; between the two operations, and the target pid must have the same uid.
+; Uses and updates xrefproc from the caller.
+xrefjobskill:
 	new i
-	tstart ():transactionid="batch"
-	for i=1:1:depth set:'constlist(i) ^%ydbAIMtmp("%YDBAIM",ppid,dir*i)=subary(i)
-	tcommit
+	set i="" for  set i=$order(xrefproc(i)) quit:'$zlength(i)  do
+	. if '$zgetjpi(xrefproc(i),"isprocalive") kill xrefproc(i) quit
+	. kill:'$zsigproc(xrefproc(i),"term") xrefproc(i)
 	quit
 
 ; Child process to generate cross references for nodes starting with statistics
@@ -1171,38 +1457,34 @@ xrefjobsrec:(depth)
 ; requested) for nodes through the level nsubs. As this is modeled on xrefdata(),
 ; comments here are specific to xrefsub().
 ; References variables defined in parent or passed through from XREFSUB().
-;   locxsub,nameind,nsnum,nsubs,nullsub,subary,tick,xrefind
-xrefsub(nsubsxref,dir,ppid)
-	new i,j,nranges,flag,piece1,piece2,rangebegin,rangeend,rangefirst,rangeflag,rangelast,snum,sublvl,subval,thisrange
-	; Set pid of child process to allow parent process to terminate the
-	; child process.
-	set:nsubsxref=nsubs $zpiece(^%ydbAIMtmp($text(+0),ppid,0),",",$select(1=dir:1,1:2))=$job
+;   locxsub,nameind,nsnum,nsubs,nullsub,subary,xrefind
+; xrefwork() calls this once for each range of subscripts it claims, with
+; locxsub(chunklvl) set to that range.
+xrefsub(nsubsxref,ppid)
+	new i,j,nranges,flag,piece1,piece2,rangebegin,rangeend,snum,sublvl,subval,thisrange
 	set flag=nullsub
 	set sublvl=$order(locxsub(""),-1)-nsubsxref+1
 	set subary(sublvl)=""
 	if nsubsxref>1 do
-	. if "*"=locxsub(sublvl) for  do:flag  set flag=1,subary(sublvl)=$order(@gblind(sublvl),dir) quit:'$zlength(subary(sublvl))
-	. . do:$data(@gblind(sublvl))\10 xrefsub(nsubsxref-1,dir,ppid)
-	. else  if $get(constlist(sublvl),0),($data(@gblind(sublvl))\10) set subary(sublvl)=$zwrite(locxsub(sublvl),1) do xrefsub(nsubsxref-1,dir,ppid)
+	. if "*"=locxsub(sublvl) for  do:flag  set flag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:'$zlength(subary(sublvl))
+	. . do:$data(@gblind(sublvl))\10 xrefsub(nsubsxref-1,ppid)
+	. else  if $get(constlist(sublvl),0),($data(@gblind(sublvl))\10) set subary(sublvl)=$zwrite(locxsub(sublvl),1) do xrefsub(nsubsxref-1,ppid)
 	. else  do
 	. . set nranges=$zlength(locxsub(sublvl),";")
-	. . if 1=dir set rangefirst=1,rangelast=nranges
-	. . else  set rangefirst=nranges,rangelast=1
-	. . for i=rangefirst:dir:rangelast do
+	. . for i=1:1:nranges do
 	. . . set thisrange=$zpiece(locxsub(sublvl),";",i)
 	. . . set piece1=$zpiece(thisrange,":",1),piece2=$zpiece(thisrange,":",$zlength(thisrange,":"))
-	. . . set rangeflag=0
-	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1),rangeflag=1
+	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1)
 	. . . else  set rangebegin=""
-	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1),rangeflag=1
+	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1)
 	. . . else  set rangeend=""
-	. . . set flag=$select(1=dir:$select($zlength(piece1):1,1:nullsub),1:$select($zlength(piece2):1,1:0))
-	. . . set subary(sublvl)=$select(1=dir:rangebegin,1:rangeend)
-	. . . for  do:flag  set flag=1,(subary(sublvl),subval)=$order(@gblind(sublvl),dir) quit:'$zlength(subval)!(rangeflag&$select(1=dir:$select($zlength(piece2):subval]]rangeend,1:0),1:rangebegin]]subval))
-	. . . . do:$data(@gblind(sublvl))\10 xrefsub(nsubsxref-1,dir,ppid)
+	. . . set flag=$select($zlength(piece1):1,1:nullsub)
+	. . . set subary(sublvl)=rangebegin
+	. . . for  do:flag  set flag=1,(subary(sublvl),subval)=$order(@gblind(sublvl)) quit:'$zlength(subval)!($zlength(piece2)&(subval]]rangeend))
+	. . . . do:$data(@gblind(sublvl))\10 xrefsub(nsubsxref-1,ppid)
 	else  do	; lowest level subscript; cross referencing happens here
 	. set (subary(sublvl),subval)=""
-	. if "*"=locxsub(sublvl) for  do:flag  set flag=1,(subary(sublvl),subval)=$order(@gblind(sublvl),dir) quit:'$zlength(subval)
+	. if "*"=locxsub(sublvl) for  do:flag  set flag=1,(subary(sublvl),subval)=$order(@gblind(sublvl)) quit:'$zlength(subval)
 	. . tstart ():transactionid="batch"
 	. . do:$data(@gblind(sublvl))#10
 	. . .  for snum=1:1:nsnum do:'($data(@xrefind(snum))#10)
@@ -1219,59 +1501,47 @@ xrefsub(nsubsxref,dir,ppid)
 	. . tcommit
 	. else  do
 	. . set nranges=$zlength(locxsub(sublvl),";")
-	. . if 1=dir set rangefirst=1,rangelast=nranges
-	. . else  set rangefirst=nranges,rangelast=1
-	. . for i=rangefirst:dir:rangelast do
+	. . for i=1:1:nranges do
 	. . . set thisrange=$zpiece(locxsub(sublvl),";",i)
 	. . . set piece1=$zpiece(thisrange,":",1),piece2=$zpiece(thisrange,":",$zlength(thisrange,":"))
-	. . . set rangeflag=0
-	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1),(flag,rangeflag)=1
+	. . . if $zlength(piece1) set rangebegin=$zwrite(piece1,1),flag=1
 	. . . else  set rangebegin=""
-	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1),rangeflag=1
+	. . . if $zlength(piece2) set rangeend=$zwrite(piece2,1)
 	. . . else  set rangeend="",flag=1
-	. . . set flag=$select(1=dir:$select($zlength(piece1):1,1:nullsub),1:$select($zlength(piece2):1,1:0))
-	. . . set (subary(sublvl),subval)=$select(1=dir:rangebegin,1:rangeend)
-	. . . for  do:flag  set flag=1,(subary(sublvl),subval)=$order(@gblind(sublvl),dir) quit:'$zlength(subval)!(rangeflag&$select(1=dir:$select($zlength(piece2):subval]]rangeend,1:0),1:rangebegin]]subval))
+	. . . set flag=$select($zlength(piece1):1,1:nullsub)
+	. . . set (subary(sublvl),subval)=rangebegin
+	. . . for  do:flag  set flag=1,(subary(sublvl),subval)=$order(@gblind(sublvl)) quit:'$zlength(subval)!($zlength(piece2)&(subval]]rangeend))
 	. . . . tstart ():transactionid="batch"
 	. . . . do:$data(@gblind(sublvl))#10
 	. . . . . for snum=1:1:nsnum do:'($data(@xrefind(snum))#10)
 	. . . . . . set @xrefind(snum)=""
 	. . . . . . if stat,$increment(@nameind(snum)),(2=stat),1=@nameind(snum),$increment(@valcntind(snum))
 	. . . . tcommit
-	. if $zut-tick>1E4 do xrefjobsrec(sublvl) set tick=$zut
 	quit
 
-; JOB two xrefsub() processes, scanning global subscripts in the forward and
-; reverse directions. As xrefsubjobs() is modeled on xrefdatajobs(),
+; JOB nworkers processes to scan for XREFSUB(), and write the ranges of
+; subscripts they scan. As xrefsubjobs() is modeled on xrefdatajobs(),
 ; additional comments here are specific to xrefsub().
 ; Comments preceding xrefsub() list local variables passsed through.
 xrefsubjobs:(nsubs)
-	new cmd,err,i,intdefer,io,j,line,msgprefix,out,prefix,stacklvl2,tick,tmp,totcnt,val,xrefproc
+	new chunklvl,cmd,err,i,io,issub,j,jobby,line,msgprefix,njobbed,nworkers,out,prefix,stacklvl2,tmp,totcnt,val,xrefproc
 	set io=$io
 	set msgprefix=$ztrnlnm("ydb_msgprefix")
 	set:'$zlength(msgprefix) msgprefix="YDB"
 	set prefix="/tmp/xrefsub^"_$text(+0)_"_"_$job_"_"_($zut/1E6)_"_"
 	set stacklvl2=$stack
-	set tick=$zut
-	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)
-	set intdefer="",$zinterrupt="set intdefer=$zyintrsig"	; defer interrupts temporarily
-	for i=1,-1 do
-	. set err(i)=prefix_i_".err"
-	. set out(i)=prefix_i_".out"
-	. set cmd="xrefsub(nsubs,i,$job):(passcurlvn:error="""_err(i)_""":output="""_out(i)_""")"
-	. job @cmd
-	. if $zjob set xrefproc(i)=$zjob set $zpiece(^%ydbAIMtmp($text(+0),$job,0),",",$select(1=i:1,1:2))=$zjob
-	. else  set $ecode=",U234,"
-	set $zinterrupt="do ZINTERRUPT^%YDBAIM"
-	if $zlength(intdefer),$zsigproc($job,intdefer)	; throw any deferred interrupts
-	for  do  quit:'$data(xrefproc)  hang .01
-	. if $$xrefjobsckdone set i=$order(xrefproc("")) kill:$zlength(i)&('$zsigproc(xrefproc(i),"term")) xrefproc(i)
-	. set i="" for  set i=$order(xrefproc(i)) quit:'$zlength(i)  do:'$zgetjpi(xrefproc(i),"isprocalive")  quit:'$data(xrefproc)
-	. . if $data(xrefproc(-i)),$zsigproc(xrefproc(-i),"term")
-	. . kill xrefproc
+	set chunklvl=$$xrefchunklvl,nworkers=$select(chunklvl:$$xrefnproc,1:1)
+	set:1<nworkers nworkers=$$xrefcapworkers(nworkers)
+	kill ^%ydbAIMtmp($text(+0),$job)
+	set issub=1,njobbed=0,jobby=$zut+50000	; 50ms before recruiting the rest
+	do xrefjobmore(1)	; one to begin with; the rest only if the scan is long
+	do xrefqueue		; produce the chunks the workers scan
+	for  do  quit:'$data(xrefproc)  hang .001
+	. do xrefrecruit
+	. set i="" for  set i=$order(xrefproc(i)) quit:'$zlength(i)  kill:'$zgetjpi(xrefproc(i),"isprocalive") xrefproc(i)
 	; quit		; uncomment for debugging
 	; Raise error if there is any non-information (-I-), non-success (S) message other than FORCEDHALT.
-	for i=1,-1 do
+	for i=1:1:njobbed do
 	. set out(i)=$zsearch(out(i)_"*") open out(i) use out(i)
 	. for j=1:1 read line quit:$zeof  if $zlength(line) use io write line,! use out(i)
 	. use io close out(i):delete
@@ -1283,7 +1553,8 @@ xrefsubjobs:(nsubs)
 	. . set:'($zfind(line,"FORCEDHALT")!(line?@((".E1"""_msgprefix_"""1""-""1(1""I"",1""S"")1""-"".E")))) $ecode=",U233,"
 	. . use err(i)
 	. close err(i):delete
-	kill ^%ydbAIMtmp($text(+0),$job,0) for i=1:1:nsubs kill ^(i),^(-i)	; Clear subprocess metadata on clean exit
+	for i=1:1:njobbed set:'$data(^%ydbAIMtmp($text(+0),$job,"done",i)) $ecode=",U226,"
+	kill ^%ydbAIMtmp($text(+0),$job)	; Clear subprocess metadata on clean exit
 	quit
 
 ; Set additional triggers as needed. Triggers are set for nodes that are above
@@ -1658,6 +1929,11 @@ tts2S2	;set tmp=@xfnp1sub@locsnum@xfnp2 if '$data(@name(@locsnum,tmp,@sub)) set 
 tts2ZK2	;set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkill ^(@lastsubind) if 1>$increment(@name(-@locsnum,tmp),-1) zkill ^(tmp) zkill:1>$increment(@name(-@locsnum),-1) ^(-@locsnum)
 
 ;	Error message texts
+;	A process returns $ECODE to the shell as an exit status, which is modulo
+;	256, so these must stay at or below 255. New codes are therefore assigned
+;	downward from the lowest one in use.
+U225	;"-F-INVNPROC Number of processes for the initial scan """_$get(tmp)_""" is not a positive integer"
+U226	;"-F-SCANINCOMPLETE Process "_$get(i)_" of "_$get(nworkers)_" did not complete its scan of "_$get(gbl)_"; cross reference is incomplete"
 U227	;"-F-BADEXTREF Extended reference "_$zpiece(gbl,"""|""",2)_" is not a valid filename"
 U228	;"-F-INVSNUM snum="_$get(snum)_" includes subscript numbers that cannot be cross referenced"
 U229	;"-F-BADTRANSFORM  with type>1, force="""_$get(force)_""" is not a valid function entryref"
@@ -1665,7 +1941,7 @@ U230	;"-F-ALLCONST Cross referencing a subscript requires at least one non-const
 U231	;"-F-BADTEMPLATE Trigger "_$get(outstr)_" has incorrect number of / delimiters for text substitution"
 U232	;"-F-BADZINTERRUPT Caller's $ZINTERRUPT handler returned control to %YDBAIM"
 U233	;"-F-JOBERR Error(s) reported by JOB'd process in "_err(i)
-U234	;"-F-JOBFAIL Failed to JOB process for xrefdata/xrefsub("_$get(nsubs)_","_$get(i)_")"
+U234	;"-F-JOBFAIL Failed to JOB worker "_$get(i)_" of "_$get(nworkers)_" to scan "_$get(gbl)
 U235	;"-F-NULL1 Null subscripts are not permitted for type=1 global variables"
 U236	;"-F-SUBERR1 Subscript specification does not match type=1 requirements"
 U237	;"-F-BADTYPEFORCE Schema type="_$get(type)_" and/or force="_$get(force)_" not recognized"
