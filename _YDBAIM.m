@@ -1157,7 +1157,7 @@ ZINTERRUPT ;
 ; Uses local variables from caller: stacklvl, stacklvl2, xrefproc, zintrptsav
 ; It tests for the existence of zpiece.
 xrefjobsterm
-	new proc
+	new i,proc,waiting
 	set proc="" for  set proc=$order(^%ydbAIMtmp($text(+0),$job,0,proc)) quit:'$zlength(proc)  if $zsigproc(proc,"TERM")
 	; As noted in xrefdatajobs, there is the potential for a child process
 	; to exist whose pid is not captured in ^%ydbAIMtmp($text(+0),$job,0).
@@ -1167,6 +1167,17 @@ xrefjobsterm
 	; and that different process has the same uid, then that different
 	; process will be inadvertently terminated.
 	if $zjob,$zsigproc($zjob,"TERM")
+	; Wait for the processes signaled above to exit before releasing the locks
+	; that block UNXREFDATA(). One still running when this process returns can
+	; write to a cross reference the caller has since removed, leaving an AIM
+	; global variable with no ^%ydbAIMDxref entry for UNXREFDATA() to find.
+	; Bounded, since this is the interrupt path; U224 if the bound expires.
+	for i=1:1:10000 do  quit:'waiting
+	. set waiting=0,proc=""
+	. for  set proc=$order(^%ydbAIMtmp($text(+0),$job,0,proc)) quit:'$zlength(proc)  set:$zgetjpi(proc,"isprocalive") waiting=1
+	. set:$zjob&$zgetjpi($zjob,"isprocalive") waiting=1
+	. hang:waiting .001
+	set:waiting $ecode=",U224,"
 	; Release M locks
 	if $data(zpiece) do XREFDATAQUIT
 	else  do XREFSUBQUIT
@@ -1932,6 +1943,7 @@ tts2ZK2	;set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkil
 ;	A process returns $ECODE to the shell as an exit status, which is modulo
 ;	256, so these must stay at or below 255. New codes are therefore assigned
 ;	downward from the lowest one in use.
+U224	;"-F-JOBNOTERM JOB'd process(es) scanning "_$get(gbl)_" did not exit after being signaled; the cross reference may still be written to"
 U225	;"-F-INVNPROC Number of processes for the initial scan """_$get(tmp)_""" is not a positive integer"
 U226	;"-F-SCANINCOMPLETE Process "_$get(i)_" of "_$get(nworkers)_" did not complete its scan of "_$get(gbl)_"; cross reference is incomplete"
 U227	;"-F-BADEXTREF Extended reference "_$zpiece(gbl,"""|""",2)_" is not a valid filename"
