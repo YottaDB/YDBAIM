@@ -32,7 +32,7 @@ Scanning dependencies of target _ydbaimutf8
 [ 50%] Built target _ydbaimutf8
 Scanning dependencies of target _ydbaimM
 [ 75%] Building M object CMakeFiles/_ydbaimM.dir/_YDBAIM.m.o
-[100%] Linking M shared library M/_ydbaim.so
+[100%] Linking M shared library _ydbaim.so
 [100%] Built target _ydbaimM
 [ 50%] Built target _ydbaimutf8
 [100%] Built target _ydbaimM
