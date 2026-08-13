@@ -1664,6 +1664,7 @@ tresume ; @TEST Resuming an interrupted cross-reference
 	new jobpid job tresumejob:passcurlvn set jobpid=$zjob
 	for  quit:$data(^%ydbAIMtmp("%YDBAIM",jobpid,0))  hang .01
 	if $ZSIGPROC(jobpid,"SIGUSR1") ; stop the job (job does zgoto 0 in $zint which stops it)
+	do tresumestopchk(jobpid)
 	;
 	; Ensure that AIM did not certify this index complete (3 node)
 	do assert('$data(@aimgbl@(3)))
@@ -1687,6 +1688,7 @@ tresume ; @TEST Resuming an interrupted cross-reference
 	job tresumejob(1):passcurlvn set jobpid=$zjob
 	for  quit:$data(^%ydbAIMtmp("%YDBAIM",jobpid,0))  hang .01
 	if $ZSIGPROC(jobpid,"SIGUSR1") ; stop the job (job does zgoto 0 in $zint which stops it)
+	do tresumestopchk(jobpid)
 	;
 	; Ensure that AIM did not certify this index complete (0 node)
 	; As the (0) node is not set and the (3) node is not updated until cross-referencing
@@ -1707,9 +1709,46 @@ tresume ; @TEST Resuming an interrupted cross-reference
 	quit
 	;
 tresumejob(type) ; [job target - tresume target] - type=1 means XREFSUB()
-	set $zinterrupt="if $zjobexam() zgoto 0"
+	; $ZLENGTH() is what makes the ZGOTO run. $ZJOBEXAM() returns the name of the
+	; file it wrote, and a file name is 0 as a truth value, so this line written
+	; as "if $zjobexam() zgoto 0" halted nothing: the process wrote its dump and
+	; went on scanning, and tresume, whose whole subject is resuming an
+	; interrupted scan, interrupted nothing and raced the scan it started. Same
+	; idiom as sigusrint below.
+	set $zinterrupt="if $zlength($zjobexam()) zgoto 0"
 	if +$get(type) do XREFSUB^%YDBAIM("^PSNDF",.subs,2)
 	else  do XREFDATA^%YDBAIM("^PSNDF",.subs,"^",1)
+	quit
+	;
+	; Wait for a signaled scan, and every process it JOB'd, to stop.
+	;
+	; Halting the process that started the scan does not end the scan. Its
+	; $ZINTERRUPT handler halts it without running any AIM code, so the processes
+	; it JOB'd are left to scan the ranges already queued for them, and since
+	; AIM#97 there is one of those per CPU. Left alone they can index the whole
+	; global variable while this test counts what they have indexed, which makes
+	; the counts below equal and leaves nothing partial for the resumption below
+	; to resume. So wait for the signaled process to stop, terminate the processes
+	; it JOB'd, and wait for those to stop, before counting anything. AIM stops them
+	; itself once their parent is gone, but only at the end of the range each is
+	; scanning, and this test does not wait for that.
+	;
+	; The pids are read from the same node the wait above waits on, which the
+	; halted process leaves behind, and both waits are bounded, so that a process
+	; that never exits fails this test and says which wait it was in rather than
+	; hanging the whole test suite.
+tresumestopchk:(pid)
+	new deadline,proc,waiting
+	set deadline=$zut+60E6
+	for  quit:'$zgetjpi(pid,"isprocalive")!($zut>deadline)  hang .01
+	do assert('$zgetjpi(pid,"isprocalive"),"the signaled process did not exit within 60 seconds")
+	set proc="" for  set proc=$order(^%ydbAIMtmp("%YDBAIM",pid,0,proc)) quit:'$zlength(proc)  if $zsigproc(proc,"TERM")
+	set deadline=$zut+60E6,waiting=1
+	for  do  quit:'waiting!($zut>deadline)
+	. set waiting=0,proc=""
+	. for  set proc=$order(^%ydbAIMtmp("%YDBAIM",pid,0,proc)) quit:'$zlength(proc)  set:$zgetjpi(proc,"isprocalive") waiting=1
+	. hang:waiting .01
+	do assert('waiting,"the scanning processes did not exit within 60 seconds")
 	quit
 	;
 tresumecountdata:() ; [$$: # of data items in ^PSNDF(50.6)]

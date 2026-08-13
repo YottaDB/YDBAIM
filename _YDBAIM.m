@@ -1053,6 +1053,10 @@ xrefdata(nsubsxref,ppid)
 ; are coming or when the parent is no longer alive. The parent sets "end" after
 ; the last "n", so re-reading "n" after seeing "end" reads its final value.
 ;
+; Check whether the parent is still alive before claiming each range, and if not
+; (e.g., it might have been stopped), then exit. The granularity is one range, so
+; a range being scanned when the parent goes away is scanned to its end.
+;
 ; The pid is recorded first and the completion flag last. The first narrows the
 ; window described in xrefdatajobs(); the second is how the parent knows this
 ; process scanned every range it claimed, which no other process covers.
@@ -1061,7 +1065,10 @@ xrefwork(ppid,wnum,issub)
 	new more,seq
 	set ^%ydbAIMtmp($text(+0),ppid,0,$job)=""
 	for  do  quit:'more
-	. set seq=$increment(^%ydbAIMtmp($text(+0),ppid,"take")),more=1
+	. set more=1
+	. ; Terminate with an incomplete scan if the parent process no longer exists.
+	. if '$zgetjpi(ppid,"isprocalive") set more=0 quit
+	. set seq=$increment(^%ydbAIMtmp($text(+0),ppid,"take"))
 	. for  quit:seq'>+$get(^%ydbAIMtmp($text(+0),ppid,"n"))  do  quit:'more
 	. . if $data(^%ydbAIMtmp($text(+0),ppid,"end")),seq>+$get(^%ydbAIMtmp($text(+0),ppid,"n")) set more=0 quit
 	. . ; The parent produces the queue, so if it is gone there will never be
