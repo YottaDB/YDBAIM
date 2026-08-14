@@ -4251,13 +4251,23 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	for  quit:($get(^tsigusr)'="")!($zut>deadline)  hang .01
 	do assert($get(^tsigusr)'="","the interrupt handler did not commit ^tsigusr within 60 seconds")
 	;
-	; Count data six times. Each count should be greater than the previous one.
-	do sigusrcount(1,aimgbl) h .001
-	do sigusrcount(2,aimgbl) h .001
-	do sigusrcount(3,aimgbl) h .001
-	do sigusrcount(4,aimgbl) h .001
-	do sigusrcount(5,aimgbl) h .001
-	do sigusrcount(6,aimgbl)
+	; Count once as a baseline and then recount until the index grows, bounded as
+	; every other wait in this test is, rather than counting a fixed number of
+	; times a fixed interval apart. Since AIM#97 the signaled process no longer
+	; scans: it cuts the ranges the processes it JOB'd scan, and while it is in
+	; its interrupt handler writing the jobexam dump it queues no ranges, so a
+	; worker that has drained the queue writes nothing either. This test starts
+	; counting inside that gap, and six counts a millisecond apart can all fall in
+	; it and come out equal, which is how this test failed in a pipeline with a
+	; complete and correct index. Growth at any point after the interrupt is what
+	; proves the scan outlived it, and no window is too narrow to see it.
+	do sigusrcountA(1,aimgbl)
+	do assert(^tsigusr(1,"count","A"),"nothing was indexed at the first count")
+	set deadline=$zut+60E6
+	for  do  quit:(^tsigusr(2,"count","A")>^tsigusr(1,"count","A"))!($zut>deadline)
+	. hang .001
+	. do sigusrcountA(2,aimgbl)
+	do assert(^tsigusr(2,"count","A")>^tsigusr(1,"count","A"),"the index did not grow within 60 seconds of the interrupt")
 	;
 	; Assert that the signal is USR1
 	do assert(^tsigusr="SIGUSR1")
@@ -4270,30 +4280,14 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	; Final count
 	do sigusrcount(7,aimgbl)
 	;
-	; ^tsigusr(1,"count","A")=388
-	; ^tsigusr(1,"count","B")=410
-	; ^tsigusr(2,"count","A")=545
-	; ^tsigusr(2,"count","B")=562
-	; ^tsigusr(3,"count","A")=693
-	; ^tsigusr(3,"count","B")=713
-	; ^tsigusr(4,"count","A")=847
-	; ^tsigusr(4,"count","B")=873
-	; ^tsigusr(5,"count","A")=1014
-	; ^tsigusr(5,"count","B")=1047
-	; ^tsigusr(6,"count","A")=1192
-	; ^tsigusr(6,"count","B")=1225
-	; ...
-	; ^tsigusr(7,"count","A")=497000
+	; ^tsigusr(1,"count","A")=388		; the baseline, taken after the interrupt
+	; ^tsigusr(2,"count","A")=545		; the recount that saw it grow
+	; ^tsigusr(7,"count","A")=497000	; after the scan ended
 	; ^tsigusr(7,"count","B")=497001
 	;
 	; Final count should be the full count
 	do assert(^tsigusr(7,"count","A")=497000)
 	do assert(^tsigusr(7,"count","B")=497001)
-	;
-	; Counts should be non-zero and increasing monotonically
-	new i for i=1:1:6 do
-	. do assert(^tsigusr(i,"count","A")),assert(^tsigusr(i,"count","A")<^tsigusr(i+1,"count","A"))
-	. do assert(^tsigusr(i,"count","B")),assert(^tsigusr(i,"count","B")<^tsigusr(i+1,"count","B"))
 	;
 	; Test XREFSUB()
 	; delete old data generated from interrupt (in case of re-runs)
@@ -4354,7 +4348,7 @@ tsigusr1 ; @TEST Interrupt using SIGUSR1
 	; In AIM jobs we have seen though that sometimes the last 3 counts are
 	; the same which means that we finished early. So assert instead that
 	; 3 counts of 6 are increasing monotonically.
-	new increasedCount set increasedCount=0
+	new i,increasedCount set increasedCount=0
 	for i=1:1:6 do
 	. do assert(^tsigusr(i))
 	. if ^tsigusr(i)<^tsigusr(i+1) set increasedCount=increasedCount+1
