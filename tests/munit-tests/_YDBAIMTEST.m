@@ -916,6 +916,54 @@ aim98dist(val)	; [private] #98 distinguishing transform: value -> "regular trans
 	; neither a bare "" (the old hardcode) nor anything derivable from a value.
 	quit $select(val'="":"regular transform->"_val,1:"null transform")
 	;
+aim102	; @TEST AIM#102 - a fatal worker error is reported, not discarded
+	; The parent reads each worker's error file and raises JOBERR for a message
+	; that is neither informational (-I-) nor success (-S-). YottaDB writes GVIS
+	; on the same line as the message that produced it, and that trailing
+	; "%YDB-I-GVIS" once made the whole line read as informational: the error was
+	; discarded, its file deleted, and the parent reported SCANINCOMPLETE, which
+	; names neither the error nor what caused it.
+	;
+	; The value indexed below is longer than a key of the region that holds the
+	; cross reference, so the worker that reaches that node dies with GVSUBOFLOW,
+	; to which YottaDB appends GVIS.
+	new ecodetest,errfile,g,gtmetrap,i,jobstat,keysize,line,ydbetrap
+	set g="^"_$select(xdref:xdrefloc,1:"")_"aim102"
+	kill @g
+	do
+	. if xdref new $zgbldir set $zgbldir=xdrefgld
+	. set keysize=$$^%PEEKBYNAME("sgmnt_data.max_key_size","YDBAIM")
+	for i=1:1:100 set @g@(i,0)="v"_(i#7)_"|x"
+	set @g@(50,0)=$justify("",keysize+100)_"|x"
+	; A JOB'd process writes an error to its error file only when it has no
+	; $ETRAP of its own, and ydb_env_set puts one in the environment that writes
+	; the error to stdout instead.
+	set ydbetrap=$ztrnlnm("ydb_etrap"),gtmetrap=$ztrnlnm("gtm_etrap")
+	view "unsetenv":"ydb_etrap"
+	view "unsetenv":"gtm_etrap"
+	do
+	. new $etrap set $etrap="set jobstat=$zstatus goto err^"_$text(+0)
+	. set (ecodetest,jobstat)="" if $$XREFDATA^%YDBAIM(g,2,"|",1)
+	if $zlength(ydbetrap) view "setenv":"ydb_etrap":ydbetrap
+	if $zlength(gtmetrap) view "setenv":"gtm_etrap":gtmetrap
+	do assert("U233"=ecodetest,"the worker's GVSUBOFLOW is reported as JOBERR; $ecode was ,"_ecodetest_",")
+	; JOBERR names the worker's error file, which is left behind to be read
+	set errfile=$zpiece(jobstat,"JOB'd process in ",2)
+	do assert($zlength(errfile),"JOBERR names the error file: "_jobstat)
+	do:$zlength(errfile)
+	. new io set io=$io
+	. ; XREFDATA() left the device open where it stopped reading, hence the rewind
+	. open errfile use errfile:rewind read line use io close errfile:delete
+	. do assert(line["GVSUBOFLOW","the error file holds the message that stopped the worker: "_line)
+	; The incomplete cross reference has to go before the global variable does:
+	; a KILL of the node with the long value fires the cross reference's KILL
+	; trigger, which raises GVSUBOFLOW in this process.
+	do
+	. if xdref new $zgbldir set $zgbldir=xdrefgld
+	. do UNXREFDATA^%YDBAIM
+	kill @g
+	quit
+	;
 tinv1	; @TEST Invalid Input: Global without ^
 	new g set g=""_$select(xdref:xdrefloc,1:"")_"ORD"
 	new ecodetest

@@ -1131,7 +1131,10 @@ xrefdatajobs:(nsubs)
 	. do xrefrecruit
 	. set i="" for  set i=$order(xrefproc(i)) quit:'$zlength(i)  kill:'$zgetjpi(xrefproc(i),"isprocalive") xrefproc(i)
 	; quit		; uncomment for debugging
-	; Raise error if there is any non-information (-I-), non-success (S) message other than FORCEDHALT.
+	; Raise an error for any message that is neither informational (-I-) nor success
+	; (-S-), other than FORCEDHALT. YottaDB writes a message such as GVIS on the same
+	; line as the message it describes, so it is the severity of the message the line
+	; begins with, not any severity on the line, that says whether it reports an error.
 	for i=1:1:njobbed do
 	. set out(i)=$zsearch(out(i)_"*") open out(i)
 	. for j=1:1 use out(i) read line quit:$zeof  if $zlength(line) use io write line,! use out(i)
@@ -1141,7 +1144,7 @@ xrefdatajobs:(nsubs)
 	. set tmp="%"_msgprefix_"-"
 	. for j=1:1 use err(i) read line quit:$zeof  do:$zlength(line)&'$zlength($zpiece(line,tmp,1))
 	. . use io
-	. . set:'($zfind(line,"FORCEDHALT")!(line?@((".E1"""_msgprefix_"""1""-""1(1""I"",1""S"")1""-"".E")))) $ecode=",U233,"
+	. . set:'($zfind(line,"FORCEDHALT")!($zextract(line,$zlength(tmp)+1,$zlength(tmp)+2)?1(1"I",1"S")1"-")) $ecode=",U233,"
 	. . use err(i)
 	. use io close err(i):delete
 	; Every worker must have recorded completion. A worker that ended without
@@ -1558,7 +1561,10 @@ xrefsubjobs:(nsubs)
 	. do xrefrecruit
 	. set i="" for  set i=$order(xrefproc(i)) quit:'$zlength(i)  kill:'$zgetjpi(xrefproc(i),"isprocalive") xrefproc(i)
 	; quit		; uncomment for debugging
-	; Raise error if there is any non-information (-I-), non-success (S) message other than FORCEDHALT.
+	; Raise an error for any message that is neither informational (-I-) nor success
+	; (-S-), other than FORCEDHALT. YottaDB writes a message such as GVIS on the same
+	; line as the message it describes, so it is the severity of the message the line
+	; begins with, not any severity on the line, that says whether it reports an error.
 	for i=1:1:njobbed do
 	. set out(i)=$zsearch(out(i)_"*") open out(i) use out(i)
 	. for j=1:1 read line quit:$zeof  if $zlength(line) use io write line,! use out(i)
@@ -1568,7 +1574,7 @@ xrefsubjobs:(nsubs)
 	. set tmp="%"_msgprefix_"-"
 	. for j=1:1 read line quit:$zeof  do:$zlength(line)&'$zlength($zpiece(line,tmp,1))
 	. . use io
-	. . set:'($zfind(line,"FORCEDHALT")!(line?@((".E1"""_msgprefix_"""1""-""1(1""I"",1""S"")1""-"".E")))) $ecode=",U233,"
+	. . set:'($zfind(line,"FORCEDHALT")!($zextract(line,$zlength(tmp)+1,$zlength(tmp)+2)?1(1"I",1"S")1"-")) $ecode=",U233,"
 	. . use err(i)
 	. close err(i):delete
 	for i=1:1:njobbed set:'$data(^%ydbAIMtmp($text(+0),$job,"done",i)) $ecode=",U226,"
