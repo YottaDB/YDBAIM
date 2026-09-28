@@ -964,6 +964,46 @@ aim102	; @TEST AIM#102 - a fatal worker error is reported, not discarded
 	kill @g
 	quit
 	;
+tjobsym	; @TEST workers receive AIM's own variables, not the caller's symbol table
+	; Builds an XREFDATA() and an XREFSUB() cross reference with four workers while
+	; the caller holds a large local tjobsymjunk and its own name. The
+	; transformation function runs in the workers and records their pids, and
+	; whether they can see tjobsymjunk. Asserts that the workers ran, that none saw
+	; tjobsymjunk, and that the caller's name is unchanged.
+	new g,gx,i,j,name,subs,tjobsymjunk,x
+	set g="^"_$select(xdref:xdrefloc,1:"")_"tjobsym",subs(1)="*"
+	;
+	; The workers write ^tjobsymx through the global directory of g
+	set gx="^"_$select(xdref:xdrefloc,1:"")_"tjobsymx"
+	kill @g,@gx
+	for i=1:1:3000 set @g@(i)="v"_(i#37)_"|p"_(i#11)
+	;
+	; A caller with its own variable named like AIM's, and a large symbol table
+	set name="caller's"
+	for i=1:1:50000 set tjobsymjunk(i)="junk"_i
+	;
+	view "setenv":"ydb_aim_nproc":4
+	;
+	for j="XREFDATA","XREFSUB" do
+	. kill @gx
+	. set x=$select("XREFDATA"=j:$$XREFDATA^%YDBAIM(g,.subs,"|",1,,,1,0,2,"$$tjobsymxf^%YDBAIMTEST()"),1:$$XREFSUB^%YDBAIM(g,.subs,1,,1,0,2,"$$tjobsymxf^%YDBAIMTEST()"))
+	. do assert($data(@gx@("pid")),j_": the transformation function never ran in a worker")
+	. do assert('$data(@gx@("leak")),j_": a worker saw the caller's tjobsymjunk")
+	. do:"XREFDATA"=j UNXREFDATA^%YDBAIM(g,.subs,"|",1,,,1,0,2,"$$tjobsymxf^%YDBAIMTEST()")
+	. do:"XREFSUB"=j UNXREFSUB^%YDBAIM(g,.subs,1,,1,0,2,"$$tjobsymxf^%YDBAIMTEST()")
+	view "unsetenv":"ydb_aim_nproc"
+	;
+	; The caller's name is unchanged
+	do assert("caller's"=name,"the caller's name changed")
+	;
+	kill @g,@gx
+	quit
+	;
+tjobsymxf(val,ignore)	; [private] transformation function for tjobsym: records what the worker sees
+	set ^tjobsymx("pid",$job)=""
+	set:$data(tjobsymjunk) ^tjobsymx("leak",$job)=""
+	quit val
+	;
 tinv1	; @TEST Invalid Input: Global without ^
 	new g set g=""_$select(xdref:xdrefloc,1:"")_"ORD"
 	new ecodetest

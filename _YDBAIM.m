@@ -78,7 +78,7 @@ err	; Primary Error Handler
 ; global variable, or all data cross references
 LSXREFDATA(lvn,gbl)
 	new $etrap,io do etrap
-	new currgld,currlck,envgld,extgld,tlevel,xrefvar
+	new currgld,currlck,envgld,extgld,name,tlevel,xrefvar
 	set tlevel=$tlevel
 	set gbl=$get(gbl)
 	do:gbl?1"^|".E1"|"1(1"%",1AN).AN setgbldir
@@ -96,7 +96,7 @@ LSXREFDATA(lvn,gbl)
 ; a global variable, or all subscript cross references
 LSXREFSUB(lvn,gbl)
 	new $etrap do etrap
-	new currgld,currlck,envgld,extgld,tlevel,xrefvar
+	new currgld,currlck,envgld,extgld,name,tlevel,xrefvar
 	set tlevel=$tlevel
 	set gbl=$get(gbl)
 	do:gbl?1"^|".E1"|"1(1"%",1AN).AN setgbldir
@@ -116,7 +116,7 @@ LSXREFSUB(lvn,gbl)
 ; not required and are therefore ignored.
 UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	new $etrap,io do etrap
-	new currgld,currlck,envgld,extgld,i,nsubs,tlevel,xrefvar
+	new currgld,currlck,envgld,extgld,i,name,nsubs,tlevel,xrefvar
 	set tlevel=$tlevel
 	; Ensure type & force have values and convert 0 to "" for backward compatibility
 	if '$data(type)!(0=type) set type=""
@@ -160,7 +160,7 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 ; not required and are therefore ignored.
 UNXREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force)
 	new etrap do etrap
-	new currgld,currlck,envgld,extgld,i,nsubs,tlevel,xrefvar
+	new currgld,currlck,envgld,extgld,i,name,nsubs,tlevel,xrefvar
 	set tlevel=$tlevel
 	; Ensure force has a value and convert 0 to "" for backward compatibility
 	if '$data(force)!(0=force) set force=""
@@ -795,7 +795,7 @@ ravel:(pstr)
 resetgbldir:
 	new tmp
 	; Add the extended reference to the cross reference name if it exists
-	; (name is undefined for UNXREF* labels)
+	; (LSXREF* and UNXREF* labels NEW name, leaving it undefined)
 	set:$data(name) name="^|"""_$zgbldir_"""|"_$zpiece(name,"^",2)
 	set $zgbldir=currgld
 	if $data(envgld) set tmp=$order(envgld("")) view "setenv":tmp:envgld(tmp)
@@ -906,8 +906,11 @@ unxref:(xrefgbl)
 ; in the triggers that maintain cross references as globals are updated.
 ; References variables defined in parent or passed through from XREFDATA():
 ;   constlist, force, gbl, gblind, gblindtype1, lastsubind, lastvarsub, locxsub,
-;   name, nameind, newpstr, nullsub, omitfix, stacklvl1, stacklvl2, stat, subary,
-;   type, type1last, valcntind, xfnp1, xfnp2, xrefind, xrefindtype1, zpiece
+;   name, nameind, newpstr, nullsub, omitfix, sep, stacklvl1, stacklvl2, stat,
+;   subary, type, type1last, valcntind, xfnp1, xfnp2, xrefind, xrefindtype1,
+;   zpiece
+; A worker receives only the variables xrefjobmore() keeps visible, so a
+; variable added here must be added to its exclusive NEW as well.
 ; xrefwork() calls this once for each range of subscripts it claims, with
 ; locxsub(chunklvl) set to that range.
 xrefdata(nsubsxref,ppid)
@@ -1060,7 +1063,9 @@ xrefdata(nsubsxref,ppid)
 ; The pid is recorded first and the completion flag last. The first narrows the
 ; window described in xrefdatajobs(); the second is how the parent knows this
 ; process scanned every range it claimed, which no other process covers.
-; Local variables come from the parent through passcurlvn.
+; Local variables come from the parent through passcurlvn, limited by
+; xrefjobmore() to those listed there: xrefwork() itself uses chunklvl, locxsub
+; and nsubs.
 xrefwork(ppid,wnum,issub)
 	new more,seq
 	set ^%ydbAIMtmp($text(+0),ppid,0,$job)=""
@@ -1214,9 +1219,21 @@ xrefjobsterm
 ; ^%ydbAIMtmp($text(+0),$job,0) rather than as a list, so that a worker
 ; recording its own pid (see xrefwork()) and the parent recording it write the
 ; same node.
+;
+; The exclusive NEW below ensures that only variables used by the JOB'd
+; processes, and by AIM while it JOBs them, are passed to them. Specifically:
+; - those the workers use: see the lists preceding xrefwork(), xrefdata() and
+;   xrefsub();
+; - those this label uses and updates: upto, err, issub, njobbed, out, prefix,
+;   xrefproc;
+; - those the error handler needs: io, tlevel, ztout, currlck, currgld, envgld,
+;   name, xrefproc, nworkers;
+; - those ZINTERRUPT needs: zyintrsig, stacklvl2, currgld, zintrptsav, extgld.
+; A variable that any of those starts to use must be added to this list.
 ; Uses and updates local variables from caller: err, issub, njobbed, out,
 ; prefix, xrefproc
 xrefjobmore:(upto)
+	new (chunklvl,constlist,currgld,currlck,envgld,err,extgld,force,gbl,gblind,gblindtype1,io,issub,lastsubind,lastvarsub,locxsub,name,nameind,newpstr,njobbed,nsnum,nsubs,nullsub,nworkers,omitfix,out,prefix,sep,stacklvl1,stacklvl2,stat,subary,tlevel,type,type1last,upto,valcntind,xfnp1,xfnp2,xrefind,xrefindtype1,xrefproc,zintrptsav,zpiece,ztout,zyintrsig)
 	new cmd,i,intdefer
 	quit:upto'>njobbed
 	set intdefer="",$zinterrupt="set intdefer=$zyintrsig"	; defer interrupts temporarily
@@ -1478,7 +1495,10 @@ xrefjobskill:
 ; requested) for nodes through the level nsubs. As this is modeled on xrefdata(),
 ; comments here are specific to xrefsub().
 ; References variables defined in parent or passed through from XREFSUB().
-;   locxsub,nameind,nsnum,nsubs,nullsub,subary,xrefind
+;   constlist,gblind,locxsub,nameind,nsnum,nsubs,nullsub,stat,subary,valcntind,
+;   xrefind
+; A worker receives only the variables xrefjobmore() keeps visible, so a
+; variable added here must be added to its exclusive NEW as well.
 ; xrefwork() calls this once for each range of subscripts it claims, with
 ; locxsub(chunklvl) set to that range.
 xrefsub(nsubsxref,ppid)
