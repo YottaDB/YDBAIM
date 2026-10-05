@@ -35,6 +35,7 @@
 	quit
 	;
 STARTUP	; Runs once to create test data
+	do covoff
 	; There is a bunch of zwr files that got loaded before we got here.
 	if xdref new $zgbldir set $zgbldir=xdrefgld
 	set ^customers(1)="George§Washington§gwashington@usa.gov§3200 Mt Vernon Hwy§Mount Vernon§VA§22121"
@@ -83,6 +84,7 @@ STARTUP	; Runs once to create test data
 	for i=4:4:numrows set ^composite(1,2,3,4,5,6,7,i)="B|A"
 	;
 	for i=6000:1:1E6 set ^PSNDF(50.6,i,"VUID")=$select(i#2:"A^B",1:"B^A")
+	do covon
 	quit
 	;
 TEARDOWN ; Runs after each test
@@ -96,6 +98,26 @@ SHUTDOWN ; Runs once, after the whole suite - the counterpart of STARTUP
 	open "pipe":(shell="/bin/sh":command="rm -rf "_$$aim93dir()_"*":writeonly:readonly:independent)::"pipe"
 	close "pipe"
 	QUIT
+	;
+covoff	; [STARTUP, the speed and concurrency tests, aim77, tlsxref2] Pause line coverage over a stretch that reaches no new code
+	; Line coverage (tests/test.sh with AIMCOVERAGE) profiles every process through
+	; ydb_trace_gbl_name, at the cost of a call per line executed. A load of test data or a
+	; 1E6-record scan is millions of lines that exercise nothing the small tests do not, so
+	; the runner's trace so far is dumped into a segment of its own and stopped, and the
+	; variable is unset so that the processes JOB'd meanwhile do not profile either.
+	; _YDBAIMCOV.m takes the union over every segment and every process.
+	quit:'$zlength($ztrnlnm("ydb_trace_gbl_name"))
+	view "TRACE":0:"^%ydbcov("""_$job_"."_$increment(^%ydbcovseg($job))_""")"
+	view "setenv":"AIMCOVPAUSED":$ztrnlnm("ydb_trace_gbl_name")
+	view "unsetenv":"ydb_trace_gbl_name"
+	quit
+	;
+covon	; Resume line coverage after covoff
+	quit:'$zlength($ztrnlnm("AIMCOVPAUSED"))
+	view "setenv":"ydb_trace_gbl_name":$ztrnlnm("AIMCOVPAUSED")
+	view "unsetenv":"AIMCOVPAUSED"
+	view "TRACE":1:"^%ydbcov("""_$job_"."_$increment(^%ydbcovseg($job))_""")"
+	quit
 	;
 LOADDATA(lab)	; load data after label lab
 	if xdref new $zgbldir set $zgbldir=xdrefgld
@@ -357,6 +379,7 @@ aim74	; @TEST YDBAIM#74 - literal subscripts that include "/" work
 	quit
 	;
 aim77	; @Test for YDBAIM77 - transformation functions
+	do covoff
 	; Test XREFSUB() alongside XREFDATA()
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"x"
 	new force,i,j,k,aimgbl,aimgbls,stat,sub
@@ -449,6 +472,7 @@ aim77	; @Test for YDBAIM77 - transformation functions
 	. do assert($data(@x@(2,"",1))),assert($data(@x@(2,"",7)))
 	. if stat do assert(2=@x@(-2,"")) if stat-1 do assert(1=@x@(-2))
 	. do UNXREFDATA^%YDBAIM(g,.sub,"|",2,,,1,stat,2,force) kill @g
+	do covon
 	quit
 	;
 aim77neg(val,ignore)	quit $select($zlength(val):-val,1:"")	;transformation function negative of value
@@ -2137,6 +2161,7 @@ tlsxref1 ; @TEST LSXREFDATA normal tests
 	quit
 	;
 tlsxref2 ; @TEST LSXREFDATA when non-AIM ^%ydbAIM* globals exist
+	do covoff
 	; Test that they do not crash LSXREFDATA
 	; https://gitlab.com/YottaDB/DBMS/YDBOcto/-/merge_requests/898#note_653213876
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"names"
@@ -2161,6 +2186,7 @@ tlsxref2 ; @TEST LSXREFDATA when non-AIM ^%ydbAIM* globals exist
 	else  do LSXREFSUB^%YDBAIM(.xrefs)
 	for count=0:1 set xref=$order(xrefs(xref)) quit:'$zlength(xref)
 	do assert(count=1)
+	do covon
 	quit
 	;
 tstat1	; @TEST stats of 1 and 2 produce the correct output
@@ -2383,6 +2409,7 @@ randgblname()	;
 	quit gblname
 	;
 tspeeddata1	; @TEST Data Index 1E6 rows of ^names(:)="A|B"
+	do covoff
 	;new reccount,indexcount set (reccount,indexcount)=0
 	;new i for i=0:0 set i=$order(^names(i)) quit:'i  if $increment(reccount)
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"names"
@@ -2390,9 +2417,11 @@ tspeeddata1	; @TEST Data Index 1E6 rows of ^names(:)="A|B"
 	;new i set i="" for  set i=$order(@aimgbl@(2,i)) quit:i=""  do
 	;. new j set j="" for  set j=$order(@aimgbl@(2,i,j)) quit:j=""  if $increment(indexcount)
 	;do assert(reccount=indexcount)
+	do covon
 	quit
 	;
 tspeeddata2	; @TEST Data Index 1E6 rows of ^names3("fix",:,0)="A|B"
+	do covoff
 	;new reccount,indexcount set (reccount,indexcount)=0
 	;new i for i=0:0 set i=$order(^names3("fix",i)) quit:'i  if $data(^(i,0)),$increment(reccount)
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"names3"
@@ -2401,9 +2430,11 @@ tspeeddata2	; @TEST Data Index 1E6 rows of ^names3("fix",:,0)="A|B"
 	;new i set i="" for  set i=$order(@aimgbl@(2,i)) quit:i=""  do
 	;. new j set j="" for  set j=$order(@aimgbl@(2,i,j)) quit:j=""  if $increment(indexcount)
 	;do assert(reccount=indexcount)
+	do covon
 	quit
 	;
 tspeeddata3	; @TEST Data Index 1E6 rows of ^composite(1,2,3,4,5,6,7,:)="A|B"
+	do covoff
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"composite"
 	;new reccount,indexcount set (reccount,indexcount)=0
 	;new i set i=$name(^composite)
@@ -2412,9 +2443,11 @@ tspeeddata3	; @TEST Data Index 1E6 rows of ^composite(1,2,3,4,5,6,7,:)="A|B"
 	;new i,start set (i,start)=$name(@aimgbl@(0))
 	;for  set i=$query(@i) quit:$name(@i,1)'=start  if $increment(indexcount)
 	;do assert(reccount=indexcount)
+	do covon
 	quit
 	;
 tspeeddata4	; @TEST Data Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
+	do covoff
 	;new reccount,indexcount set (reccount,indexcount)=0
 	;new i for i=0:0 set i=$order(^PSNDF(50.6,i)) quit:'i  if $data(^(i,"VUID")) if $increment(reccount)
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"PSNDF"
@@ -2423,6 +2456,7 @@ tspeeddata4	; @TEST Data Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
 	;new i set i="" for  set i=$order(@aimgbl@(1,i)) quit:i=""  do
 	;. new j set j="" for  set j=$order(@aimgbl@(1,i,j)) quit:j=""  if $increment(indexcount)
 	;do assert(reccount=indexcount)
+	do covon
 	quit
 	;
 t4speeddata1	; @TEST type=4 Data Index 1E6 nodes of ^names(:)="A|B"
@@ -2447,20 +2481,21 @@ t4speeddata1	; @TEST type=4 Data Index 1E6 nodes of ^names(:)="A|B"
 	do UNXREFDATA^%YDBAIM(aimgbl)
 	quit
 	;
-t4speeddata4	; @TEST type=4 Data Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
+t4speeddata4	; @TEST type=4 Data Index ~1E6 dispersed records in ^PSNDF(50.6,:,"VUID")
 	quit:aimtype=4  ; this test passes its own type, so the type=4 pass would only run it again
-	; tspeeddata4 with a record specification, and the shape Octo generates: the column
-	; one level below the row, so the record specification runs one level past its deepest named
-	; subscript and the chunk level is the ien.
+	do covoff
+	; tspeeddata4 with a record specification, and the structure an application gives it: the value node
+	; one level below the record, so the record specification runs one level past its deepest named
+	; subscript and the level the scan is divided at is the ien.
 	;
 	; The commented-out count differs from tspeeddata4's on purpose. The value walk
 	; visits only the records that HAVE a "VUID" node; the record walk visits every
-	; record and indexes the rest under NULL, so the index holds one entry per
+	; record and indexes the rest under the empty string, so the index holds one entry per
 	; ^PSNDF(50.6,ien) with no $data() test. Commented out for the reason given in
 	; t4speeddata1, and run the same way before it was.
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"PSNDF"
 	new subs   set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
-	new recsub set recsub(1)=50.6,recsub(2)=":",recsub=3	; depth 3: level 3 varies and is watched, not a key column
+	new recsub set recsub(1)=50.6,recsub(2)=":",recsub=3	; depth 3: level 3 varies and is watched, not a record subscript
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM(g,.subs,"^",1,,,,,4,,,g,.recsub)
 	;new reccount,indexcount set (reccount,indexcount)=0
 	;new i for i=0:0 set i=$order(@g@(50.6,i)) quit:'i  if $increment(reccount)
@@ -2468,21 +2503,23 @@ t4speeddata4	; @TEST type=4 Data Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUI
 	;. new j set j="" for  set j=$order(@aimgbl@(1,i,j)) quit:j=""  if $increment(indexcount)
 	;do assert(reccount=indexcount,"divided record walk indexed "_indexcount_" of "_reccount)
 	do UNXREFDATA^%YDBAIM(aimgbl)
+	do covon
 	quit
 	;
-tspeeddata4solo	; @TEST 1 process: type=0 Data Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
-	; tspeeddata4 pinned to a single scanning process. This is the INSTRUMENT for
-	; changes to xrefdata(), the type=0 walk, and its partner t4speeddata4solo is
-	; the instrument for the decoupled walk.
+tspeeddata4solo	; @TEST 1 process: type=0 Data Index ~1E6 dispersed records in ^PSNDF(50.6,:,"VUID")
+	do covoff
+	; tspeeddata4 run with a single scanning process. This measures the cost of
+	; xrefdata(), the type=0 walk, and its partner t4speeddata4solo measures the
+	; record walk.
 	;
-	; Why pinning matters. xrefjobmore() JOBs one worker at the outset and recruits
+	; Why one process matters. xrefjobmore() JOBs one worker at the outset and starts
 	; more only once the scan has been running longer than jobby, 50ms. A build of
-	; this fixture takes about a second, so it always crosses that line, and how many
-	; workers it then recruits and when depends on what else the machine is doing.
-	; That is the dominant term in the run-to-run spread of tspeeddata4, which was
+	; this test's data takes about a second, so it always crosses that line, and how many
+	; workers it then starts and when depends on what else the machine is doing.
+	; That is the largest part of the run-to-run spread of tspeeddata4, which was
 	; measured at about 25% of the mean - far wider than any change to the walk
 	; itself is likely to be, so those tests can detect only a gross regression.
-	; With ydb_aim_nproc=1 there is one worker, no recruitment, and the number left
+	; With ydb_aim_nproc=1 there is one worker, no starting of workers, and the number left
 	; is the cost of the walk.
 	;
 	; It does NOT measure the parallel scan; tspeeddata4 still does that.
@@ -2494,13 +2531,15 @@ tspeeddata4solo	; @TEST 1 process: type=0 Data Index ~1E6 dispersed rows in ^PSN
 	set aimgbl=$$XREFDATA^%YDBAIM(g,.subs,"^",1,,,,,aimtype)
 	do speednproc(sav)
 	do UNXREFDATA^%YDBAIM(aimgbl)
+	do covon
 	quit
 	;
-t4speeddata4solo	; @TEST 1 process: type=4 Data Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
+t4speeddata4solo	; @TEST 1 process: type=4 Data Index ~1E6 dispersed records in ^PSNDF(50.6,:,"VUID")
 	quit:aimtype=4  ; this test passes its own type, so the type=4 pass would only run it again
-	; t4speeddata4 pinned to a single scanning process; see tspeeddata4solo for why.
-	; This one times the decoupled record walk, xr4walk/xr4rng, over the same rows,
-	; so the pair brackets both walkers that step C proposes to merge into one.
+	do covoff
+	; t4speeddata4 run with a single scanning process; see tspeeddata4solo for why.
+	; This one times the record walk, xr4walk/xr4rng, over the same records, so the
+	; pair measures both walks.
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"PSNDF"
 	new subs   set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
 	new recsub set recsub(1)=50.6,recsub(2)=":",recsub=3
@@ -2510,22 +2549,25 @@ t4speeddata4solo	; @TEST 1 process: type=4 Data Index ~1E6 dispersed rows in ^PS
 	set aimgbl=$$XREFDATA^%YDBAIM(g,.subs,"^",1,,,,,4,,,g,.recsub)
 	do speednproc(sav)
 	do UNXREFDATA^%YDBAIM(aimgbl)
+	do covon
 	quit
 	;
-t6speeddata4	; @TEST type=6 Data Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
+t6speeddata4	; @TEST type=6 Data Index ~1E6 dispersed records in ^PSNDF(50.6,:,"VUID")
 	quit:aimtype=4  ; this test passes its own type, so the type=4 pass would only run it again
+	do covoff
 	; t4speeddata4 with a transformation function, on the same data, so the pair isolates
 	; what a transformation costs per indexed value: types 2 and 6 run the caller's
-	; function in the scan and in the trigger bodies for EVERY value indexed.
+	; function in the scan and in the trigger trigger code for EVERY value indexed.
 	;
 	; aim77neg is deliberately trivial - it negates the value - so that what is timed
 	; is AIM's per-value call, not somebody else's function.
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"PSNDF"
 	new subs   set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
-	new recsub set recsub(1)=50.6,recsub(2)=":",recsub=3	; depth 3: level 3 varies and is watched, not a key column
+	new recsub set recsub(1)=50.6,recsub(2)=":",recsub=3	; depth 3: level 3 varies and is watched, not a record subscript
 	; gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment,recgbl,recsub
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM(g,.subs,"^",1,0,0,,,6,"$$aim77neg^%YDBAIMTEST()",,g,.recsub)
 	do UNXREFDATA^%YDBAIM(aimgbl)
+	do covon
 	quit
 	;
 speednproc(sav)	; [tspeeddata4solo, t4speeddata4solo] Put ydb_aim_nproc back as it was
@@ -2535,11 +2577,12 @@ speednproc(sav)	; [tspeeddata4solo, t4speeddata4solo] Put ydb_aim_nproc back as 
 	else  view "unsetenv":"ydb_aim_nproc"
 	quit
 	;
-tspeedtrig1	; @TEST Triggers: 3E5 SET/ZKILL/SET of the value node, 1E5 rows of ^trgspd(:)="A|B"
+tspeedtrig1	; @TEST Triggers: 3E5 SET/ZKILL/SET of the value node, 1E5 nodes of ^trgspd(:)="A|B"
+	do covoff
 	; The trigger counterpart of tspeeddata1: the time is the triggers', not the scan's.
-	; A private global of 1E5 rows is built, indexed, and then every row's value node
+	; A private global of 1E5 records is built, indexed, and then every record's value node
 	; is SET to a new value, ZKILLed, and SET back, so each of the value node's SET and
-	; ZKILL bodies runs 1E5 times and the ZKILL body sees a row that survives. The
+	; ZKILL triggers runs 1E5 times and the ZKILL trigger sees a record that survives. The
 	; index is built first so that the build is a small part of the time, and the
 	; global is the test's own, so it is left as it was found: absent.
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"trgspd"
@@ -2549,35 +2592,39 @@ tspeedtrig1	; @TEST Triggers: 3E5 SET/ZKILL/SET of the value node, 1E5 rows of ^
 	for i=1:1:1E5 set @g@(i)="C|D"
 	for i=1:1:1E5 zkill @g@(i)
 	for i=1:1:1E5 set @g@(i)="A|B"
-	do assert($data(@aimgbl@(2,"B",1E5)),"the last row is indexed under its value again")
+	do assert($data(@aimgbl@(2,"B",1E5)),"the last record is indexed under its value again")
 	do assert('$data(@aimgbl@(2,"D",1E5)),"...and not under the value it had in between")
 	do UNXREFDATA^%YDBAIM(aimgbl)
 	kill @g
+	do covon
 	quit
 	;
-t4speedtrig1	; @TEST type=4 Triggers: 3E5 SET/ZKILL/SET of the value node, 1E5 rows of ^trgspd(:)="A|B"
+t4speedtrig1	; @TEST type=4 Triggers: 3E5 SET/ZKILL/SET of the value node, 1E5 nodes of ^trgspd(:)="A|B"
 	quit:aimtype=4  ; this test passes its own type, so the type=4 pass would only run it again
-	; tspeedtrig1 with a record specification: the value node is the row, so the
-	; bodies test the node itself and walk nothing.
+	do covoff
+	; tspeedtrig1 with a record specification: the value node is the record, so the
+	; trigger code tests the node itself and walks nothing.
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"trgspd"
 	kill @g
 	new i for i=1:1:1E5 set @g@(i)="A|B"
-	new recsub set recsub(1)=":"		; the value node IS the row
+	new recsub set recsub(1)=":"		; the value node IS the record
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM(g,1,"|",2,,,,,4,,,g,.recsub)
 	for i=1:1:1E5 set @g@(i)="C|D"
 	for i=1:1:1E5 zkill @g@(i)
 	for i=1:1:1E5 set @g@(i)="A|B"
-	do assert($data(@aimgbl@(2,"B",1E5)),"the last row is indexed under its value again")
+	do assert($data(@aimgbl@(2,"B",1E5)),"the last record is indexed under its value again")
 	do assert('$data(@aimgbl@(2,"D",1E5)),"...and not under the value it had in between")
 	do UNXREFDATA^%YDBAIM(aimgbl)
 	kill @g
+	do covon
 	quit
 	;
-tspeedtrig4	; @TEST Triggers: 6E5 writes to 1E5 rows of ^trgspd4(50.6,ien,"VUID") and their records
-	; The trigger counterpart of tspeeddata4: the Octo shape, the column one level below
-	; the row, with a sibling node ^(ien,0) that keeps the row alive when the column is
-	; ZKILLed. Six writes per row: the column SET to a new value, ZKILLed and SET back,
-	; then the record KILLed and made again, its 0 node first and the column after. For
+tspeedtrig4	; @TEST Triggers: 6E5 writes to 1E5 nodes of ^trgspd4(50.6,ien,"VUID") and their records
+	do covoff
+	; The trigger counterpart of tspeeddata4: the structure with the value node one level below
+	; the record, with a sibling node ^(ien,0) that keeps the record in existence when the value node is
+	; ZKILLed. Six writes per record: the value node SET to a new value, ZKILLed and SET back,
+	; then the record KILLed and made again, its 0 node first and the value node after. For
 	; type=0 the KILL fires the tree's KILL trigger and the 0 node fires nothing.
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"trgspd4"
 	kill @g
@@ -2590,25 +2637,27 @@ tspeedtrig4	; @TEST Triggers: 6E5 writes to 1E5 rows of ^trgspd4(50.6,ien,"VUID"
 	for i=1:1:1E5 kill @g@(50.6,i)
 	for i=1:1:1E5 set @g@(50.6,i,0)="name"_i
 	for i=1:1:1E5 set @g@(50.6,i,"VUID")="v"_i_"^1"
-	do assert($data(@aimgbl@(1,"v"_1E5,1E5)),"the last row is indexed under its value again")
+	do assert($data(@aimgbl@(1,"v"_1E5,1E5)),"the last record is indexed under its value again")
 	do assert('$data(@aimgbl@(1,"w"_1E5,1E5)),"...and not under the value it had in between")
 	do UNXREFDATA^%YDBAIM(aimgbl)
 	kill @g
+	do covon
 	quit
 	;
-t4speedtrig4	; @TEST type=4 Triggers: 6E5 writes to 1E5 rows of ^trgspd4(50.6,ien,"VUID") and their records
+t4speedtrig4	; @TEST type=4 Triggers: 6E5 writes to 1E5 nodes of ^trgspd4(50.6,ien,"VUID") and their records
 	quit:aimtype=4  ; this test passes its own type, so the type=4 pass would only run it again
-	; tspeedtrig4 with the record specification Octo generates, depth 3. This is the
-	; shape whose bodies walk: the column's ZKILL and the record side's ZKILL ask
+	do covoff
+	; tspeedtrig4 with a record specification of depth 3. This is the
+	; structure whose trigger code walks: the value node's ZKILL and the record side's ZKILL ask
 	; $QUERY whether a node with a value survives under ^(50.6,ien), and the 0 node is
 	; what they find. The record's KILL fires the record side's KILL trigger, and the 0
-	; node's SET fires the record side's SET trigger, which indexes the row as NULL
-	; until the column's SET moves it.
+	; node's SET fires the record side's SET trigger, which cross references it under the empty string
+	; until the value node's SET moves it.
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"trgspd4"
 	kill @g
 	new i for i=1:1:1E5 set @g@(50.6,i,0)="name"_i,@g@(50.6,i,"VUID")="v"_i_"^1"
 	new subs   set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
-	new recsub set recsub(1)=50.6,recsub(2)=":",recsub=3	; depth 3: level 3 varies and is watched, not a key column
+	new recsub set recsub(1)=50.6,recsub(2)=":",recsub=3	; depth 3: level 3 varies and is watched, not a record subscript
 	new aimgbl set aimgbl=$$XREFDATA^%YDBAIM(g,.subs,"^",1,,,,,4,,,g,.recsub)
 	for i=1:1:1E5 set @g@(50.6,i,"VUID")="w"_i_"^1"
 	for i=1:1:1E5 zkill @g@(50.6,i,"VUID")
@@ -2621,36 +2670,48 @@ t4speedtrig4	; @TEST type=4 Triggers: 6E5 writes to 1E5 rows of ^trgspd4(50.6,ie
 	do assert('$data(@aimgbl@(1,"",1E5)),"...nor under the empty string, which it was while its record was being made")
 	do UNXREFDATA^%YDBAIM(aimgbl)
 	kill @g
+	do covon
 	quit
 	;
 tspeedsubs1 ; @TEST Subs Index 1E6 rows of ^names(:)="A|B"
+	do covoff
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"names"
 	new aimgbl set aimgbl=$$XREFSUB^%YDBAIM(g,1,1)
+	do covon
 	quit
 	;
 tspeedsubs2 ; @TEST Subs Index 1E6 rows of ^names3("fix",:,0)="A|B"
+	do covoff
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"names3"
 	new subs set subs(1)="""fix""",subs(2)=":",subs(3)=0
 	new aimgbl set aimgbl=$$XREFSUB^%YDBAIM(g,.subs,1+$random(3))
+	do covon
 	quit
 	;
 tspeedsubs3 ; @TEST Subs Index 1E6 rows of ^composite(1,2,3,4,5,6,7,:)="A|B"
+	do covoff
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"composite"
 	new aimgbl set aimgbl=$$XREFSUB^%YDBAIM(g,8,1+$random(8))
+	do covon
 	quit
 	;
 tspeedsubs3a ; @TEST Multiple Subs Index 1E6 rows of ^composite(1,2,3,4,5,6,7,:)="A|B"
+	do covoff
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"composite"
 	new aimgbl set aimgbl=$$XREFSUB^%YDBAIM(g,8,"8;;6;1:3")
+	do covon
 	quit
 	;
 tspeedsubs4 ; @TEST Subs Index ~1E6 dispersed rows in ^PSNDF(50.6,:,"VUID")
+	do covoff
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"PSNDF"
 	new subs set subs(1)=50.6,subs(2)=":",subs(3)="""VUID"""
 	new aimgbl set aimgbl=$$XREFSUB^%YDBAIM(g,.subs,"1;3;2")
+	do covon
 	quit
 	;
 tcon1	; @TEST Concurrent do/undo of the same global
+	do covoff
 	; First lock prevents the "horses" from running until it is open
 	lock +racegate
 	job tcon1job:pass
@@ -2689,6 +2750,7 @@ tcon1	; @TEST Concurrent do/undo of the same global
 	do assert('$data(files),"There should not be any error files; first error: "_$order(files("")))
 	set aimgbl=$$XREFSUB^%YDBAIM(g,1,1,1) ; nmonly
 	do assert('$data(@aimgbl),"Shouldn't exist as the last operation should have been an unxref")
+	do covon
 	quit
 	;
 tcon1job ; [Job target] Concurrent do/undo of the same global
@@ -2726,6 +2788,7 @@ tcon1jobet ; [Error trap] Concurrent do/undo of the same global
 	halt
 	;
 tcon2	; @TEST Concurrent xref of different globals
+	do covoff
 	; First lock prevents the "horses" from running until it is open
 	new gnames set gnames="^"_$select(xdref:xdrefloc,1:"")_"names"
 	new gord set gord="^"_$select(xdref:xdrefloc,1:"")_"ORD"
@@ -2761,6 +2824,7 @@ tcon2	; @TEST Concurrent xref of different globals
 	set job2aim=$$XREFSUB^%YDBAIM(gord,.subs,1)
 	do assert($data(@job1aim))
 	do assert($data(@job2aim))
+	do covon
 	quit
 	;
 tcon2job1(type) ; [Job target] Concurrent xref of different globals
@@ -2780,6 +2844,7 @@ tcon2job2(type) ; [Job target] Concurrent xref of different globals
 	;
 	;
 tcon3	; @TEST Concurrent unxref of different globals
+	do covoff
 	new gnames set gnames="^"_$select(xdref:xdrefloc,1:"")_"names"
 	new gord set gord="^"_$select(xdref:xdrefloc,1:"")_"ORD"
 	new aimgbl1 set aimgbl1=$$XREFDATA^%YDBAIM(gnames,1,"|",1,,,,,aimtype)
@@ -2822,6 +2887,7 @@ tcon3	; @TEST Concurrent unxref of different globals
 	;
 	do assert('$data(@aimgbl1))
 	do assert('$data(@aimgbl2))
+	do covon
 	quit
 	;
 tcon3job1(type) ; [Job target] Concurrent unxref of different globals
@@ -2840,6 +2906,7 @@ tcon3job2(type) ; [Job target] Concurrent unxref of different globals
 	quit
 	;
 tcon4	; @TEST Concurrent xref of the same global
+	do covoff
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"names"
 	lock +racegate
 	job tcon4job:pass
@@ -2952,6 +3019,7 @@ tcon4	; @TEST Concurrent xref of the same global
 	set tmp=3+$random(1000000) do assert($data(@aimgbl@(1,tmp)))
 	do assert($data(@aimgbl@(-1,3+$random(1000000))))
 	do assert(@aimgbl@(-1)=1000000)
+	do covon
 	quit
 	;
 tcon4job(type) ; [Job target] Concurrent xref of the same global
@@ -2966,6 +3034,7 @@ tcon4job(type) ; [Job target] Concurrent xref of the same global
 	quit
 	;
 tconp	; @TEST concurrent xref of two DIFFERENT pieces of one node
+	do covoff
 	; tcon4 races two callers on the SAME piece, where the piece bit-map union is a
 	; no-op. This races them on different pieces, which is what the union is for.
 	;
@@ -3028,6 +3097,7 @@ tconp	; @TEST concurrent xref of two DIFFERENT pieces of one node
 	do assert('$data(@aimgbl@(2,"Z",newid)),"and its piece 2 entry goes when it does")
 	;
 	do UNXREFDATA^%YDBAIM(aimgbl)
+	do covon
 	quit
 	;
 tconpjob(pnum)	; [Job target] one caller of the tconp race, cross referencing piece pnum

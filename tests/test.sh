@@ -169,6 +169,15 @@ cp $script_dir/munit-tests/*.m $ydb_dir/r/
 # Run tests
 cd $ydb_dir
 export script_dir	# used by "tbash" unit test to invoke bash test script "run_bash_tests.sh" and "ydbaim_test.sh"
+# Line coverage. With AIMCOVERAGE set, every process of the suite - this runner, the scan
+# workers AIM JOBs, the bash tests' processes - dumps its M-profiling data at exit under its
+# own pid in ^%ydbcov, and _YDBAIMCOV.m turns the union into a Cobertura XML for GitLab after
+# the passes. The variable is set here, after ydb_env_set, and not earlier, because this
+# script unsets every ydb_* variable at its start.
+if [[ -v AIMCOVERAGE ]]; then
+	$ydb_dist/yottadb -r %XCMD 'kill ^%ydbcov'
+	export ydb_trace_gbl_name='^%ydbcov($J)'
+fi
 echo "--- Running in NORMAL mode ---"
 $ydb_dist/yottadb -r %XCMD 'DO ^%YDBAIMTEST(0)' | tee -a test_output.txt
 echo
@@ -182,6 +191,13 @@ echo
 # the whole value specification as one, so the record node IS the value node.
 echo "--- Running in TYPE 4 mode ---"
 $ydb_dist/yottadb -r %XCMD 'DO ^%YDBAIMTEST(0,4)' | tee -a test_output.txt
+
+# The coverage report: cobertura.xml lands in the artifacts with the rest of $ydb_dir, and
+# the "Coverage:" line is what the pipeline's coverage regex reads.
+if [[ -v AIMCOVERAGE ]]; then
+	unset ydb_trace_gbl_name
+	$ydb_dist/yottadb -r %XCMD 'DO COBERTURA^%YDBAIMCOV("'"$script_dir"'/../_YDBAIM.m","'"$ydb_dir"'/cobertura.xml")' | tee -a test_output.txt
+fi
 
 # Create smaller block AIM region needed to create error TRANS2BIG (otherwise will take too long)
 # unset needed because rundown fails otherwise if these are present

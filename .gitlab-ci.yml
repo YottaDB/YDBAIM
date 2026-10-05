@@ -1,6 +1,6 @@
 #################################################################
 #								#
-# Copyright (c) 2021-2025 YottaDB LLC and/or its subsidiaries.	#
+# Copyright (c) 2021-2026 YottaDB LLC and/or its subsidiaries.	#
 # All rights reserved.						#
 #								#
 #	This source code contains the intellectual property	#
@@ -31,11 +31,20 @@ ydbaim-test:
   image: docker:latest
   stage: build
   interruptible: true
+  # The suite runs with AIMCOVERAGE set, so every process dumps its M-profiling data and
+  # tests/test.sh writes a Cobertura XML from the union: GitLab then marks covered and
+  # uncovered lines of _YDBAIM.m in the merge request diff, and the regex below takes the
+  # percentage for the job's coverage figure.
+  coverage: '/^Coverage: (\d+\.\d+)%/'
   artifacts:
     paths:
       - artifacts/
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: artifacts/cobertura.xml
     expire_in: 1 month
     when: always
   script:
     - docker build -t test .
-    - docker run -v ${PWD}/artifacts:/artifacts -e CI_PIPELINE_ID test
+    - docker run -v ${PWD}/artifacts:/artifacts -e CI_PIPELINE_ID -e AIMCOVERAGE=1 test
