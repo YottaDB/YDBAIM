@@ -48,6 +48,12 @@ fi
 # as it seems /tmp contents cannot be later downloaded as pipeline artifacts.
 # Turn off journaling and use MM mode for faster execution
 export ydb_dir=$ydb_dir1
+# Use local compiled copy of AIM. ydb_env_set, sourced below, appends the plugins and
+# $ydb_dist/libyottadbutil.so to what is set here.
+if [[ ! -v CI_PIPELINE_ID ]]; then
+	mkdir -p $ydb_dir/o
+	export ydb_routines="$ydb_dir/o*($ydb_dir/r/) $script_dir/../build/utf8/_ydbaim.so"
+fi
 source `pkg-config --variable=prefix yottadb`/ydb_env_set
 mupip set -journal=disable -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
 mupip set -access_method=mm -region DEFAULT,YDBAIM,YDBOCTO 2>/dev/null
@@ -169,6 +175,13 @@ echo
 echo
 echo "--- Running in EXTENDED REFERENCES mode ---"
 $ydb_dist/yottadb -r %XCMD 'DO ^%YDBAIMTEST(1)' | tee -a test_output.txt
+echo
+echo
+# Every call that does not need a particular type passes aimtype as its type, so this
+# pass runs them as type=4 cross references. Given no record specification, AIM takes
+# the whole value specification as one, so the record node IS the value node.
+echo "--- Running in TYPE 4 mode ---"
+$ydb_dist/yottadb -r %XCMD 'DO ^%YDBAIMTEST(0,4)' | tee -a test_output.txt
 
 # Create smaller block AIM region needed to create error TRANS2BIG (otherwise will take too long)
 # unset needed because rundown fails otherwise if these are present

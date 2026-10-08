@@ -19,7 +19,7 @@
 ;
 ; The number in the comment is a minor version number for the software.
 ; Refer to comments before the VERSION() label.
-%YDBAIM;2
+%YDBAIM;3
 	; Top level entry not supported
 	new $etrap,io do etrap
 	set $ecode=",U255,"	; top level entry not supported
@@ -114,7 +114,7 @@ LSXREFSUB(lvn,gbl)
 ; The parameters for UNXREFDATA() mirror those of XREFDATA() to simplify calling
 ; it to remove triggers and cross references, even though some parameters are
 ; not required and are therefore ignored.
-UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
+UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,recgbl,recsub)
 	new $etrap,io do etrap
 	new currgld,currlck,envgld,extgld,i,name,nsubs,tlevel,xrefvar
 	set tlevel=$tlevel
@@ -150,7 +150,7 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force)
 	. . lock +^%ydbAIMD(gbl)
 	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMDxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do unxref(xrefvar)
 	. . lock -^%ydbAIMD(gbl)
-	. else  do unxref($$XREFDATA(gbl,.xsub,$get(sep),,1,$get(zpiece),$get(omitfix,1),$get(stat,0),type,force))
+	. else  do unxref($$XREFDATA(gbl,.xsub,$get(sep),,1,$get(zpiece),$get(omitfix,1),$get(stat,0),type,force,,$get(recgbl,gbl),.recsub))
 	do:$data(currgld) resetgbldir
 	quit:$quit "" quit
 
@@ -227,53 +227,212 @@ VERSION(type)
 
 ; XREFDATA() cross references metadata of nodes, or pieces of nodes.
 ;
-; Note that for historical reasons, variables whose names suggest they are
-; relevant just to type=1, e.g., type1last, are also relevant to type=3,
-; i.e., to Fileman globals. The number in the comment is the major version
-; for data metadata. Refer to comments before the VERSION() label.
+; The number in the comment is the major version for data metadata. Refer to
+; comments before the VERSION() label.
 ;
 ; The initial scan of existing nodes divides them among several processes. How
 ; many is the ydb_aim_nproc environment variable if defined, and otherwise one
 ; less than the number of online CPUs (one on a single CPU machine), the parent
 ; needing a CPU for the walk that writes the ranges those processes scan. It
 ; does not affect the cross reference produced, only how long producing it
-; takes, and is not part of the cross reference name.
-XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment);4
+; takes, and is not part of the cross reference name. Types 4 and 6 divide
+; their scan the same way, over the record specification.
+;
+; Types 4 and 6 (6 = 4 with a transformation function) take a record specification,
+; recgbl and recsub, which says which global variable nodes define that a record
+; exists, separately from gbl and xsub, which say where the value to cross reference
+; lives. A record whose value node is absent is then cross referenced under the empty
+; string. The record specification is described where it is parsed, below. Types 1 and
+; 3 are treated as types 4 and 6, with a record specification whose record node is the
+; parent of the value node.
+; E.g. with xsub(1)=":", recsub(1)=":" and recsub=1,
+;   $$XREFDATA^%YDBAIM("^H",.xsub,,,,,,,4,,,"^G",.recsub)
+; cross references ^H(id) for every record ^G(id), and a record 2 with no ^H(2) under "".
+XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment,recgbl,recsub);5
 	new $etrap,io do etrap
-	new altlastsub,altsub,asciisep,constlist,currgld,currlck,envgld,extgld
-	new fullsub,fullsubprnt,fulltrigsub,gblind,gblindtype1,i,j,killtrg
+	new asciisep,constlist,currgld,currlck,envgld,extgld
+	new fullsub,fulltrigsub,gblind,gblx,i,j,killtrg
 	new lastfullsub,lastsub,lastsubind,lastvarsub,locxsub,modflag,name
 	new nameind,newpnum,newpstr,pieces,nsubs,nullsub,omitflag,oldpstr
-	new stacklvl1,sub,subary,suffix,swver,tlevel,tmp,trigdel,trigdelx
-	new type1last,trigprefix,trigset,trigsub,ttprfx,valcntind,xfnp1
-	new xfnp2,xfntest,xrefind,xrefindtype1,z,zintrptsav,zlsep,ztout
-	new zyintrsig
+	new recalive,recaliver,recconstlist,recdup,recgblb,recgblind,recgblx,recgld
+	new reck,reckey,recklast,reclocxsub,reclvlspec,recn,recname,recnsubs,recnullsub
+	new recpfx,recpfxr,recpl,recplast,recsamedb,recspec,recsynth,recvlast,recvskip
+	new recwild,rpos,rtsub,rvalnode,stacklvl1,sub,subary,suffix,swver,tlevel,tmp
+	new trigdel,trigdelx,trigprefix,trigset,trigsub,ttprfx,valcntind,valind,veck
+	new vpos,vrecexq,xfnp1,xfnp2,xfntest,xnl,xrefind,xv1,xv2,z,zintrptsav,zlsep
+	new ztout,zyintrsig
+	;
 	set stacklvl1=$stack	; required by premature termination
 	set tlevel=$tlevel	; required by error trap to rollback/unwind
 	do initxref		; initialization shared with XREFSUB()
-	; Ensure subscript specifications for Fileman global variables end in
-	; a constant. The actual trigger subscript specification for the last
-	; subscript matches all subscripts, as metadata varies depending on
-	; whether or not there are other nodes at that last level, if no node
-	; exists with the constant subscript.
+	;
+	; A Fileman (type 1 or 3) specification ends in a constant, the record node being
+	; its parent, and does not support omitfix=0.
+	; E.g. ^ORD(100.01,ien,.1): .1 is the constant, and the record node is ^ORD(100.01,ien).
 	set:(type#2)&'constlist(nsubs) $ecode=",U236,"
-	; type 1 and 3 (index missing nodes as NULL) are not supported together with
-	; omitfix=0 (retaining the fixed last subscript): that path builds an index
-	; indirection containing the trigger-specification wildcard and fails to
-	; populate the index. Reject the combination rather than silently building an
-	; empty index.
 	set:(type#2)&'omitfix $ecode=",U254,"
+	;
+	; --- Record specification, types 4 and 6 ---------------------------------------------
+	; The structures, in the terms the rest of this routine uses:
+	;   the VALUE global, gbl, and the value specification, xsub, say which nodes hold
+	;       the values to cross reference, as for every type: e.g. ^H(:) or ^ORD(100.01,:,.1).
+	;       The levels of xsub that vary are the VALUE SUBSCRIPTS, the ones a cross
+	;       reference entry carries.
+	;   the RECORD global, recgbl, and the record specification, recsub, say which nodes
+	;       define that a record exists: a RECORD NODE is a node at recsub's deepest named
+	;       level, e.g. ^G(:) or ^ORD(100.01,:), and a record exists when the record node,
+	;       or a node below it within the depth, holds a value. A record whose value node
+	;       is absent is cross referenced under the empty string.
+	; recgbl defaults to gbl. recsub uses the grammar of xsub:
+	;   ":" or "*" (optionally a range) is a RECORD SUBSCRIPT, corresponding positionally
+	;       to a value subscript: the i-th ":" here is the i-th ":" in xsub;
+	;   a constant names a fixed subscript, e.g. the 0 of ^ORD(100.01,ien,0);
+	;   the ROOT of recsub is the record specification's total DEPTH. A level between the deepest
+	;       named one and that depth varies, names nothing, and is WATCHED: a node there keeps
+	;       the record in existence. No level below the depth is watched.
+	; So: recsub(1)=":", recsub=1                          a record is ^g(A), nothing below it
+	;     recsub(1)=":", recsub=2                          a record is ^g(A), kept in existence by any ^g(A,x)
+	;     recsub(1)=":",recsub(2)=":",recsub(3)=0, recsub=3   a record is ^g(A,B,0)
+	; The depth has to cover every level at which a record can come into or go out of
+	; existence, because a trigger fires only on the node actually written.
+	; Given no record specification at all, the value specification serves as it: the record
+	; node is the value node itself. Only a record specification in gbl can be derived (U219 otherwise).
+	; E.g. type=4, gbl="^names", xsub(1)=":" and no recsub: recsub(1)=":", recsub=1 is derived.
+	;
+	; Types 1 and 3 are treated as types 4 and 6: the record node is the parent of the value
+	; node, so the record specification names every level but the last, and the last is
+	; watched - ^ORD(100.01,ien,.1) with type=1 is the record ^ORD(100.01,ien), in existence
+	; while any of its children exists. The checks a Fileman specification must pass
+	; (U236, U254) have been made above.
+	; E.g. type=1, xsub(1)=100.01, xsub(2)=":", xsub(3)=.1: recsub(1)=100.01, recsub(2)=":",
+	; recsub=3 is derived, and type becomes 4.
+	set recgbl=$select($zlength($get(recgbl)):recgbl,1:gbl),recname=""			; omitted, or "" from a positional caller reaching recsub: gbl
+	merge:$data(recsub) recspec=recsub							; a private copy: the derivation must not reach the caller's recsub
+	set recsynth=(type#2)!((type\4#2)&'$data(recspec)&(recgbl=gbl))				; derive a record specification? always for types 1/3; for types 4/6 only when none is given and the records live in gbl
+	do:recsynth
+	. set:(type#2)&($data(recspec)!(recgbl'=gbl)) $ecode=",U219,"				; types 1/3 take no record specification of their own
+	. for i=1:1:nsubs-(type#2) set recspec(i)=$select("*"=locxsub(i):":",1:locxsub(i))	; copy xsub, less its last level for types 1/3; "*" is spelled ":" in recsub
+	. set recspec=nsubs									; the depth: the value node's level
+	. set:type#2 type=type-1+4								; 1 -> 4, 3 -> 6
+	set recnsubs=$get(recspec,0)								; the depth as stated at the root; 0 for none, raised below to the deepest named level
+	;
+	; Three spellings of the record global, because its uses answer to different
+	; global directories:
+	;   recgbl  - as the caller wrote it; only the cross reference NAME derives from it
+	;   recgblb - with any extended reference dropped: a trigger SPECIFICATION may not
+	;             carry one, and this is what compares against gbl, which initxref
+	;             has already stripped
+	;   recgblx - with the database always spelled out, for the scan and the trigger
+	;             code, which runs under a global directory that is not necessarily the
+	;             record global's
+	; E.g. called with $zgbldir=/a/c.gld:
+	;   recgbl                      recgblb   recgblx
+	;   ^G                          ^G        ^G
+	;   ^|"x.gld"|G                 ^G        ^|"x.gld"|G
+	;   ^G, with gbl=^|"y.gld"|H    ^G        ^|"/a/c.gld"|G
+	set recgblb=recgbl
+	set:recgblb?1"^|".E1"|"1(1"%",1AN).AN recgblb="^"_$zpiece(recgblb,"|",3)	; ^|"x.gld"|G -> ^G
+	;
+	; The record global's database. initxref has switched $zgbldir to the value
+	; global's database if gbl was an extended reference, saving the caller's in
+	; currgld, so a bare recgbl means the ^G the CALLER's directory maps - except one
+	; AIM derived from gbl, which lives where gbl does.
+	; E.g. called with $zgbldir=/a/c.gld:
+	;   gbl=^H            recgbl=^G             recgld=/a/c.gld
+	;   gbl=^|"y.gld"|H   recgbl=^G             recgld=/a/c.gld, though $zgbldir is now y.gld
+	;   gbl=^H            recgbl=^|"x.gld"|G    recgld=the file $zsearch finds for x.gld (U227 if none)
+	;   gbl=^|"y.gld"|H   no recgbl             recgld=$zgbldir, which is y.gld
+	do
+	. new tmp
+	. if recsynth set recgld=$zgbldir quit							; derived from gbl: where gbl lives
+	. if recgbl?1"^|".E1"|"1(1"%",1AN).AN do  quit						; an extended reference names its own database
+	. . set tmp=$zpiece(recgbl,"|",2)
+	. . set recgld=$zsearch($select(""""=$zextract(recgbl,3):$zwrite(tmp,1),1:tmp),-1)	; the directory as written, unquoted if quoted, resolved to a file as $zgbldir would be
+	. . set:'$zlength(recgld) $ecode=",U227,"
+	. set recgld=$select($data(currgld):currgld,1:$zgbldir)					; a bare recgbl: the caller's directory, which initxref may have switched away from
+	;
+	; recsamedb: one database holds the value global, the record global and the cross
+	; reference, and every global is named bare. Otherwise the trigger code says
+	; which database it means, because a trigger fires in whichever process wrote
+	; the node, and that process's $zgbldir is not ours.
+	; E.g. gbl=^H, recgbl=^|"x.gld"|G, $zgbldir=/a/c.gld: recsamedb=0, recgblx=^|"x.gld"|G and
+	; gblx=^|"/a/c.gld"|H, so a trigger on ^G, firing in a process that uses x.gld, still reads
+	; the value node in /a/c.gld.
+	set recsamedb=(recgld=$zgbldir)															; records and values in one database?
+	set recgblx=$select(recgbl?1"^|".E1"|"1(1"%",1AN).AN:recgbl,recsamedb:recgblb,1:"^|"""_recgld_"""|"_$zextract(recgblb,2,$zlength(recgblb)))	; an extended reference as written; bare in one database; else qualified with recgld
+	set gblx=$select(recsamedb:gbl,1:"^|"""_$zgbldir_"""|"_$zextract(gbl,2,$zlength(gbl)))								; gbl as the record side's trigger code sees it: qualified when the databases differ
+	;
+	; Parse recsub into reclocxsub/recconstlist/reckey, and build recname, which feeds the
+	; cross reference name.
+	; E.g. recsub(1)=100.01, recsub(2)=":", recsub=3:
+	;   i   reclocxsub(i)   recconstlist(i)   reckey(i)
+	;   1   100.01          1                 0
+	;   2   "*"             0                 1
+	;   3   "*"             0                 0           (unspecified: varies, names nothing)
+	;   recnsubs=3, recname="100.01*:*"
+	do:$data(recspec)\10
+	. set i="" for  set i=$order(recspec(i)) quit:'$zlength(i)  do:$data(recspec(i))#10		; each named level
+	. . set:1>i!(i\1'=i)!(29<i) $ecode=",U247,"							; a level is an integer 1 through 29
+	. . set tmp=recspec(i)
+	. . set reclocxsub(i)=$select(":"=tmp:"*",1:tmp)						; ":" (any value) is spelled "*" internally, as xsub's is; a stated "*" is the same thing
+	. . set recconstlist(i)=$$chktrgspec(.reclocxsub,i)						; 1 for a constant, 0 for a range; validates the spelling
+	. . set reckey(i)=(0=recconstlist(i))								; a named varying level is a record subscript
+	. set i=$order(reclocxsub(""),-1)								; the deepest named level
+	. set:($data(recspec)#10)&(i>recnsubs) $ecode=",U223,"						; a stated depth covers every named subscript
+	. set:i>recnsubs recnsubs=i									; no stated depth: the deepest named level is the depth
+	set:($data(recspec)#10)&((recnsubs\1'=recnsubs)!(1>recnsubs)!(29<recnsubs)) $ecode=",U223,"	; a stated depth is an integer 1 through 29
+	for i=1:1:recnsubs set:'$data(reclocxsub(i)) reclocxsub(i)="*",recconstlist(i)=0		; a level within the depth the caller did not name: it varies and is not a record subscript
+	for i=1:1:recnsubs set:'$data(reckey(i)) reckey(i)=0						; unnamed: not a record subscript
+	for i=1:1:recnsubs set recname=recname_reclocxsub(i)_$select(reckey(i):":",1:"")		; e.g. "100.01*:*": the record specification's part of the cross reference name
+	;
+	; A record specification is permitted only with types 4 and 6, and one in a global
+	; other than gbl has to be stated.
+	; E.g. type=0 with a recsub is U219, and so is type=4 with recgbl="^G" and no recsub.
+	set:(type\4#2)&'$data(recspec) $ecode=",U219,"
+	set:'(type\4#2)&($data(recspec)!(recgbl'=gbl)) $ecode=",U219,"
+	;
+	; The value subscripts must be a left-prefix of the record subscripts, and no record subscript may
+	; sit below a "*". Positions, all subscript numbers:
+	;   recvlast - the deepest varying subscript
+	;   recklast - the deepest record subscript
+	;   recwild  - the record specification ends in "*": recvlast is below recklast
+	;   recplast - THE RECORD NODE: the deepest subscript the value subscripts plus the
+	;              record specification's constants fix; with a trailing "*", the node the "*"
+	;              hangs off. A record exists when that node exists, carrying a value or
+	;              a child.
+	; E.g. xsub(1)=100.01, xsub(2)=":", xsub(3)=.1 with recsub(1)=100.01, recsub(2)=":", recsub=3:
+	;   recklast=2, recvlast=3, recwild=1, recplast=2. The record node is ^ORD(100.01,ien), and a
+	;   child at level 3 keeps it in existence.
+	; E.g. xsub(1)=":" with recsub(1)=":", recsub(2)=":", recsub=2:
+	;   recklast=2, recvlast=2, recwild=0, recplast=2. The record node is ^G(A,B), and the value
+	;   key is A alone.
+	; E.g. xsub(1)=":", xsub(2)=":" with recsub(1)=":", recsub=1 is U220: two value subscripts
+	;   against one record subscript.
+	; E.g. xsub(1)=":" with recsub(2)=":", recsub=2 is U221: level 1 varies and names nothing,
+	;   above the record subscript at level 2.
+	do:type\4#2
+	. set reck=0 for i=1:1:nsubs set:'constlist(i) reck=reck+1	; value subscripts: the varying levels of xsub
+	. set recn=0,recvlast=0,recklast=0
+	. for i=1:1:recnsubs set:reckey(i) recn=recn+1,recklast=i	; record subscripts, and the deepest
+	. for i=1:1:recnsubs set:'recconstlist(i) recvlast=i		; the deepest varying level, record subscript or "*"
+	. set:reck>recn $ecode=",U220,"					; the value subscripts cannot outnumber the record subscripts
+	. set recwild=recvlast>recklast,recplast=recnsubs		; a "*" below the key? the record node is the depth until refined below
+	. do:recwild
+	. . new j set j=recklast
+	. . for  set j=j+1 quit:j>recnsubs  quit:'recconstlist(j)	; the constants below the last record subscript
+	. . set recplast=j-1						; the record node: the last of those constants, or the last record subscript
+	. new seenwild set seenwild=0
+	. for i=1:1:recnsubs do
+	. . set:'recconstlist(i)&'reckey(i) seenwild=1			; an unnamed level
+	. . set:reckey(i)&seenwild $ecode=",U221,"			; no record subscript below one
+	;
 	; Derive subscript specification for trigger definitions from parameters
 	; and build string from which to derive xref variable name
 	for i=1:1:nsubs do
 	. set name=name_locxsub(i)
 	. set lastfullsub="sub"_i,trigsub=trigsub_lastfullsub_"=",fulltrigsub=fulltrigsub_lastfullsub_","
-	. if constlist(i)&(type#2) do
-	. . set fullsub=fullsub_locxsub(i)_","
-	. . set trigsub=trigsub_$select(i=nsubs:"*",1:locxsub(i))_","
-	. else  do
-	. . set fullsub=fullsub_lastfullsub_","
-	. . set trigsub=trigsub_locxsub(i)_","
+	. set fullsub=fullsub_lastfullsub_","
+	. set trigsub=trigsub_locxsub(i)_","
 	. if omitfix&constlist(i) set omitflag=1
 	. else  set lastsub=lastfullsub,sub=sub_lastfullsub_","
 	; Ensure at least one subscript selected for cross reference global
@@ -285,7 +444,7 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment);4
 	set sep=$get(sep),zlsep=$zlength(sep),zpiece=+$get(zpiece),z=$select(zpiece:"z",1:"")
 	set asciisep=1
 	for i=1:1:zlsep set:$zascii($zextract(sep,i))>127 asciisep=0 quit:'asciisep
-	set suffix=$zysuffix(gbl_name_$select(zlsep:sep_$select(asciisep:0,zpiece:1,1:$zchset),1:"")_$select(omitflag:1,1:"")_type_force)
+	set suffix=$zysuffix(gbl_name_$select(zlsep:sep_$select(asciisep:0,zpiece:1,1:$zchset),1:"")_$select(omitflag:1,1:"")_type_force_$select(type\4#2:recgbl_recname,1:""))	; everything that makes a different cross reference, the record specification included
 	set name="^%ydbAIMD"_suffix
 	; Flagging this error needs to be deferred as the error handler may
 	; need name to be set.
@@ -295,14 +454,6 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment);4
 	; a value, as calling it as a routine asking for a name is a
 	; meaningless operation that is likely an application program bug.
 	if +$get(nmonly) do:$data(currgld) resetgbldir quit name
-	; For Fileman application globals need to search all subtrees at bottom
-	; level when other subscripts match. Note that these application globals
-	; have at least two subscripts.
-	do:type#2
-	. if omitfix set altsub=sub,altlastsub=$zpiece(sub,",",$zlength(sub,","))
-	. else  set tmp=$zlength(sub,",")-1,altsub=$zpiece(sub,",",1,tmp)_$select(tmp:",""""",1:""""""),altlastsub=""
-	. set type1last=locxsub(nsubs),locxsub(nsubs)="*",constlist(nsubs)=0
-	. set fullsubprnt=$zpiece(fullsub,",",1,$zlength(fullsub,",")-1)
 	do mkindxrefdata		; Create indirection strings to be used
 	set ztout=$view("ztrigger_output")
 	; Common prefix for all triggers
@@ -321,9 +472,25 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment);4
 	; unary operators ('') are used to force non-zero values to 1.
 	set tmp=$view("region",gbl),nullsub=''$$^%PEEKBYNAME("sgmnt_data.null_subs",$zpiece(tmp,",",1))
 	for i=2:1:$zlength(tmp,",") set:nullsub'=''$$^%PEEKBYNAME("sgmnt_data.null_subs",$zpiece(tmp,",",i)) $ecode=",U251,"
-	set:nullsub&(type#2) $ecode=",U235,"		; null subscripts not permitted for Fileman globals
+	;
+	; The record global's database may differ from the value global's on whether null
+	; subscripts are allowed, and it is the record global the type=4/6 scan walks.
+	; E.g. ^H in a region that allows null subscripts and ^|"x.gld"|G in one that does not:
+	; nullsub=1, recnullsub=0.
+	if recsamedb set recnullsub=nullsub
+	else  do
+	. new rgn,sav
+	. set sav=$zgbldir,$zgbldir=recgld
+	. set rgn=$view("region",recgblb)						; under the record database's directory
+	. set recnullsub=''$$^%PEEKBYNAME("sgmnt_data.null_subs",$zpiece(rgn,",",1))	; the record database's null-subscript setting, as nullsub is gbl's
+	. for i=2:1:$zlength(rgn,",") set:recnullsub'=''$$^%PEEKBYNAME("sgmnt_data.null_subs",$zpiece(rgn,",",i)) $ecode=",U251,"
+	. set $zgbldir=sav
+	;
 	set ttprfx="tt"_type				; prefix for trigger template
+	set:type\4#2 ttprfx="tt4"			; types 4 and 6 share one template family; see @xv1/@xv2 in xr4subst
 	set killtrg="rk"_nullsub			; template for KILL trigger
+	set recvskip=""					; the KILL template's guard: the record side sets it per level (xr4trigs)
+	do:type\4#2 xr4subst				; substitution strings for the tt4* templates
 	; Determine whether to xref pieces or entire node, and act accordingly
 	if $zlength(sep) do				; xref pieces
 	. set:'$zlength($get(pnum)) $ecode=",U250,"
@@ -356,9 +523,10 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment);4
 	. . . set trigdelx=trigprefix_"zkill -name=%ydb"_suffix_"Z -xecute="_$$exptempl(ttprfx_"ZKp2")
 	. . else  set $ecode=",U241,"
 	. . set @name=gbl,@name@(4)=newpstr,^(5)=z,^(6)=trigset,^(7)=trigdel,^(8)=trigdelx,^(9)=omitfix,^(10)=stat
-	. . set:$zlength($get(comment)) ^(11)=comment
+	. . do:$zlength($get(comment)) setcmt($$unravel(pnum))	; per piece: a comment belongs to the piece the caller named
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. . do xtratrig		; set additional triggers for higher levels in the tree
+	. . do:type\4#2 xr4trigs	; and the record side's triggers
 	. . set ^%ydbAIMDxref(gbl,name)=""
 	. tcommit
 	. view "ztrigger_output":ztout
@@ -368,7 +536,6 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment);4
 	. set oldpstr=$get(@name@(3),"#"),modflag=0
 	. for i=2:1:$zlength(newpstr) if +$zextract(newpstr,i)&'+$zextract(oldpstr,i) set modflag=1 quit
 	. do:modflag
-	. . set:type#2 tmp=$order(constlist(""),-1),constlist(tmp)=1,locxsub(tmp)=$zwrite(type1last,1)
 	. . do xrefdatajobs(nsubs)
 	. . ; Update metadata to indicate completion
 	. . tstart ():transactionid="batch"
@@ -404,11 +571,11 @@ XREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,comment);4
 	. . set:$zlength($get(comment)) ^(11)=comment
 	. . set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. . do xtratrig		; set additional triggers for higher level nodes
+	. . do:type\4#2 xr4trigs	; and the record side's triggers
 	. . set ^%ydbAIMDxref(gbl,name)=""
 	. tcommit
 	. view "ztrigger_output":ztout
 	. set newpstr=""
-	. set:type#2 tmp=$order(constlist(""),-1),constlist(tmp)=1,locxsub(tmp)=$zwrite(type1last,1)
 	. do xrefdatajobs(nsubs)
 	. ; Add metadata to indicate completion
 	. tstart ():transactionid="batch"
@@ -429,8 +596,8 @@ XREFDATAQUIT
 ; label. The initial scan uses several processes, as described for XREFDATA().
 XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment);2
 	new $etrap,io do etrap
-	new constlist,currgld,currlck,envgld,extgld,fullsub,fullsubprnt,fulltrigsub
-	new gblind,i,j,killtrg,lastfullsub,lastsub,lastsubind,lastvarsub,locxsub
+	new constlist,currgld,currlck,envgld,extgld,fullsub,fulltrigsub
+	new gblind,i,j,killtrg,lastfullsub,lastsub,lastsubind,lastvarsub,locxsub,recvskip
 	new locsnum,modflag,name,nameind,newsbits,nsnum,nsubs,nullsub,oldsbits
 	new omitflag,stacklvl1,sub,subary,suffix,swver,tlevel,tmp,trigdel,trigdelx
 	new trigprefix,trigset,trigsub,ttprfx,valcntind,xrefind,zintrptsav,ztout
@@ -483,6 +650,7 @@ XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment);2
 	set stat=+$get(stat)
 	set ttprfx="tts"_type				; prefix for trigger template
 	set killtrg="rk"_nullsub			; template for KILL trigger
+	set recvskip=""					; the KILL template's guard: the record side sets it per level (xr4trigs)
 	; Set triggers
 	view "ztrigger_output":0
 	tstart ():transactionid="batch"
@@ -591,19 +759,15 @@ expline:(line)
 ; - exptempl() uses the line just before the label to get list of variables
 ;   to replace.  A variable name ending in $ means $ZWRITE() its value when
 ;   expanding.
-; - fullsubprnt needs to precede fullsub in the list of substitutions otherwise
-;   the @fullsub part of @fullsubprnt will be replaced leaving "prnt" in place,
-;   which creates incorrect triggers.
 ; - code between slashes (///) is replaced, with the first part used if force
 ;   is non-zero, and the second if it is zero
 ; Uses local variables from XREF*() but does not substitute them: force
-; Uses local variables from XREF*(): altlastsub,altsub,fullsubprnt,fullsub,fulltrigsub,gbl,lastfullsub,lastsubind,lastsub,name,nsubs,pieces,sep$,sub,type1last,xfnp1,xfnp2,z
+; Uses local variables from XREF*(): fullsub,fulltrigsub,gbl,lastfullsub,lastsubind,lastsub,name,nsubs,pieces,recaliver,recalive,recvskip,rtsub,rvalnode,sep$,sub,vrecexq,xfnp1,xfnp2,xv1,xv2,xnl,z
 exptempl:(lab)
 	new i,j,len,line,multiline,num,outstr,npieces,prefix,rep,str,suffix,tmp,var,vars,zflag
 	set line=$$expline($text(@lab))
 	set str=line
 	for i=1:1 set tmp=$text(@lab+i) quit:" "=tmp  set str=str_$char(10)_$$expline(tmp)
-	set multiline=$zlength(str,$char(10))-1
 	; Set template options to force string collation if specified
 	set npieces=$zlength(str,"/")-1
 	set:npieces#3 $ecode=",U231,"
@@ -619,7 +783,13 @@ exptempl:(lab)
 	. set str=outstr
 	; Remove repeated subscripts for XREFSUB() triggers that don't force string collation or use transformation function
 	set prefix=""
-	for  quit:outstr'?.E1"(".N1",sub".N1",".E  do
+	;
+	; XREFSUB() trigger code only ($data(locsnum)): type=4/6 record-side trigger code embeds a path
+	; into the source global, whose constant subscript matches the pattern by accident
+	; E.g. XREFDATA() trigger code reading $get(^t4oe(100,sub2,"S")) contains "(100,sub2,", and is
+	; left as it is.
+	;
+	for  quit:'$data(locsnum)!(outstr'?.E1"(".N1",sub".N1",".E)  do
 	. set prefix=prefix_$zpiece(outstr,"$data(",1)_"$data(",outstr=$zpiece(outstr,"$data(",2,$zlength(outstr,"$data("))
 	. set prefix=prefix_$zpiece(outstr,",sub",1)_",sub",outstr=$zpiece(outstr,",sub",2,$zlength(outstr,",sub"))
 	. set num=$zpiece(outstr,",",1)
@@ -631,10 +801,12 @@ exptempl:(lab)
 	. set tmp=$zextract(name,2,$zlength(name)),str=$zpiece(outstr,name,1)
 	. for i=2:1:$zlength(outstr,name) set str=str_"^|"""_extgld_"""|"_tmp_$zpiece(outstr,name,i)
 	. set outstr=str
-	. ; Also prefix source global (gbl) references in trigger body so they hit extended db (used by tt1/tt3 templates)
+	. ; Also prefix source global (gbl) references in trigger body so they hit extended db (the tt4 templates name it)
 	. set tmp=$zextract(gbl,2,$zlength(gbl)),str=$zpiece(outstr,gbl,1)
 	. for i=2:1:$zlength(outstr,gbl) set str=str_"^|"""_extgld_"""|"_tmp_$zpiece(outstr,gbl,i)
 	. set outstr=str
+	; a substitution may bring a line of its own (xr4alv), so count the lines last
+	set multiline=$zlength(outstr,$char(10))-1
 	quit $select(multiline:"<<"_$char(10)_outstr_$c(10),1:$zwrite(outstr))
 
 ; Output metadata for a specific xref variable.
@@ -678,14 +850,20 @@ initxref:
 	; - "-1" type defaults; force specified
 	; - "1-1" both specified
 	; If type>1, there is no ambiguity
-	if 1<type do	; Superficial syntax check of transformation function
+	if type\2#2 do	; Superficial syntax check of transformation function
 	. set xfnp1=$zpiece(force,"(",1)_"(",xfnp2=$zpiece(force,"(",2,$zlength(force,"("))
 	. set:(xfnp1'?1(1"$$"0.1"%".an1"^"0.1"%",1"$").an1"(")!(xfnp2'?1(1")",1","1.e1")")) $ecode=",U229,"
 	. set xfntest=$$^%ZMVALID("set zyx="_xfnp1_"zyx"_xfnp2),$ecode=""	; compile & discard errors
 	. set:$zlength(xfntest) $ecode=",U229,"
 	else  do
-	. set:($zlength(type)&(1'=type))!($zlength(force)&(1'=force)) $ecode=",U237,"
+	. set:($zlength(type)&(1'=type)&(4'=type))!($zlength(force)&(1'=force)) $ecode=",U237,"
 	. set:$zlength(force) force=-force
+	;
+	; A record specification combines with a transformation function as type=6, but not with
+	; the Fileman bit: 5 and 7 mean nothing (5 is rejected just above).
+	; E.g. type=6 with force="$$f^rtn()" is accepted; type=7 with the same force is U237.
+	set:7=type $ecode=",U237,"
+	;
 	; If constraints specified for subscripts, ensure all refer to
 	; subscripts that are integers in the range 1 through 29
 	set nsubs=$get(xsub,0)	; Ensure Number of subcripts has a value
@@ -717,8 +895,8 @@ initxref:
 
 ; Create indirection strings to be used by xrefdata()
 ; Uses or references local variables passed to or defined in XREFDATA():
-;   constlist, gbl, gblind, gblindtype1, lastvarsub, name, nameind, nsubs,
-;   omitfix, sep, subary, type, valcntind, xrefind, xrefindtype1
+;   constlist, gbl, gblind, lastlit, lastvarsub, name, nameind, nsubs,
+;   omitfix, recdup, sep, subary, type, valcntind, valind, xrefind
 mkindxrefdata:
 	new i,tmp,valtype
 	set gblind(1)=gbl_"("_$select(constlist(1):locxsub(1),1:"subary(1)")
@@ -726,29 +904,65 @@ mkindxrefdata:
 	for i=1:1:nsubs set gblind(i)=gblind(i)_")"
 	set xrefind=name_"("_$select($zlength(sep):"k,"_$select(force:"""#""_",1:"")_"pieceval",1:"0,"_$select(force:"""#""_",1:"")_"nodeval")
 	for i=1:1:nsubs do
-	. if constlist(i)!((type#2)&(i=nsubs)) do
+	. if constlist(i) do
 	. . if 'omitfix set lastvarsub=i,lastsubind=locxsub(i),xrefind=xrefind_","_lastsubind
 	. else  set lastvarsub=i,lastsubind="subary("_i_")",xrefind=xrefind_","_lastsubind
 	set xrefind=xrefind_")"
+	; The code that writes cross reference entries at the bottom of xrefdata() reads the value node as
+	; $get(@valind) - a reference, not
+	; an expression: atom indirection reaches a variable only - and writes a cross reference entry's
+	; last subscript as lastsubind itself when that is a literal (a constant last subscript
+	; with omitfix=0), through indirection otherwise; both are per scan.
+	set valind=gblind(nsubs),lastlit=constlist(nsubs)&(lastvarsub=nsubs)
 	if $zlength(sep) set nameind=name_"(-k,"_$select(force:"""#""_",1:"")_"pieceval)",valcntind=name_"(-k)"
 	else  set nameind=name_"("""","_$select(force:"""#""_",1:"")_"nodeval)",valcntind=name_"("""")"
-	do:type#2	; type 1 & 3 schema
-	. set xrefindtype1=xrefind	; omitfix=1 here (type#2 with omitfix=0 is rejected as U254)
-	. set gblindtype1=gblind(nsubs)
-	. set $zpiece(gblindtype1,",",$zlength(gblindtype1,","))=type1last_")"
-	do:1<type	; Transformation function used for metadata
+	do:type\2#2	; Transformation function used for metadata
 	. set valtype=$select($zfind(xrefind,"nodeval"):"nodeval",1:"pieceval")
 	. set xrefind=$zpiece(xrefind,valtype,1)_xfnp1_valtype_xfnp2_$zpiece(xrefind,valtype,2)
 	. set nameind=$zpiece(nameind,valtype,1)_xfnp1_valtype_xfnp2_$zpiece(nameind,valtype,2)
-	. ; YDBAIM#98: recapture the missing-node forward index (xrefindtype1) from the now
-	. ; transformed xrefind. The missing-node build code (xrefdata:) sets nodeval/pieceval to ""
-	. ; and indexes through @xrefindtype1, so a MISSING node is now indexed under the
-	. ; transformation applied to "" (the transform's own SQL NULL value) instead of a bare "".
-	. ; That matches what the maintenance triggers now do (tt3* templates) and what nameind
-	. ; already did. forceStr is just the built-in string transform x->"#"_x, so its "#" NULL
-	. ; marker is that transform applied to ""; this generalizes NULL to any transform.
-	. set:3=type xrefindtype1=xrefind
+	;
+	; Types 4 and 6: the scan walks the RECORD global, so subary() holds record subscripts,
+	; while the strings built above name the VALUE global by the value specification's own
+	; levels. This block maps between the two.
+	; - vpos(k) is the level of xsub holding the k-th value subscript; rpos(k) is the level
+	;   of the record specification holding the same subscript; veck is how many there are.
+	; - recgblind(i) is the record global down to level i, for the walk.
+	; - recdup says whether two records can share the same value subscripts, which is so only
+	;   when the record has more subscripts than the value, e.g. records ^G(A,B) under the value
+	;   key A. Then the scan must cross reference each key once, which xr4rec does by comparing a
+	;   record's key with the previous record's; otherwise it skips that comparison.
+	; - valind is the value node, named by the record subscripts its key maps to. The code
+	;   that writes cross reference entries at the bottom of xrefdata() reads $get of it, so a value
+	;   node that is absent or valueless cross references its record under the empty string.
+	; - xrefind and lastsubind, built above as subary(vpos(k)), have to say subary(rpos(k)).
+	;   The renaming goes through a placeholder because a value position can equal another
+	;   subscript's record position: renaming subary(1) to subary(2) and then subary(2) to
+	;   subary(3) in one pass would carry the first subscript on to subary(3) as well.
+	; E.g. gbl=^H, xsub(1)=":", xsub(2)=":" with recgbl=^G, recsub(1)=100, recsub(2)=":",
+	; recsub(3)=":", recsub=3:
+	;   veck=2, vpos(1)=1, vpos(2)=2, rpos(1)=2, rpos(2)=3, recdup=0
+	;   recgblind(3)=^G(100,subary(2),subary(3)), valind=^H(subary(2),subary(3))
+	;   xrefind names subary(2) and subary(3) where it named subary(1) and subary(2).
+	do:type\4#2
+	. set veck=0 for i=1:1:nsubs set:'constlist(i) veck=veck+1,vpos(veck)=i												; vpos(k): the k-th value subscript as a level of xsub
+	. set tmp=0 for i=1:1:recnsubs set:reckey(i) tmp=tmp+1,rpos(tmp)=i												; rpos(k): the same subscript as a level of the record specification
+	. set recdup=recklast>rpos(veck)																; can two records share their value subscripts? only when the record has more subscripts
+	. set recgblind(1)=recgblx_"("_$select(recconstlist(1):reclocxsub(1),1:"subary(1)")										; recgblind(i): the record global down to level i, constants spelled out, varying levels as subary(i)
+	. for i=2:1:recnsubs set recgblind(i)=recgblind(i-1)_","_$select(recconstlist(i):reclocxsub(i),1:"subary("_i_")")
+	. for i=1:1:recnsubs set recgblind(i)=recgblind(i)_")"
+	. set tmp=0,valind=gbl_"("
+	. for i=1:1:nsubs set valind=valind_$select(constlist(i):locxsub(i),1:"subary("_rpos($increment(tmp))_")")_$select(i<nsubs:",",1:")")				; e.g. ^H(subary(2)): the value node, named by the record subscripts its key maps to
+	. for i=1:1:veck set xrefind=$$subst(xrefind,"subary("_vpos(i)_")","subary(#"_i_"#)"),lastsubind=$$subst(lastsubind,"subary("_vpos(i)_")","subary(#"_i_"#)")	; subary(vpos(k)) -> placeholder
+	. for i=1:1:veck set xrefind=$$subst(xrefind,"subary(#"_i_"#)","subary("_rpos(i)_")"),lastsubind=$$subst(lastsubind,"subary(#"_i_"#)","subary("_rpos(i)_")")	; placeholder -> subary(rpos(k))
 	quit
+
+; Replace every occurrence of from in str with to
+; E.g. $$subst("a(1),a(2)","a(1)","a(#1#)") returns "a(#1#),a(2)"
+subst:(str,from,to)
+	new i,out
+	set out=$zpiece(str,from,1)
+	for i=2:1:$zlength(str,from) set out=out_to_$zpiece(str,from,i)
+	quit out
 
 ; Create indirection strings to be used by xrefsub()
 ; References or updates variables passed in to, or defined in XREFSUB():
@@ -800,6 +1014,16 @@ resetgbldir:
 	set $zgbldir=currgld
 	if $data(envgld) set tmp=$order(envgld("")) view "setenv":tmp:envgld(tmp)
 	else  view "unsetenv":"ydb_gbldir"
+	quit
+
+; Record the caller's comment in metadata slot 11, subscripted by piece number. One
+; cross reference serves every piece of a node, and callers describing different
+; pieces share it, so a comment belongs to the piece the caller named: pstr is the
+; piece bit-map of this call alone. Uses XREFDATA() locals: comment,name
+; E.g. a call with pnum=3 and comment="orders.status" sets @name@(11,3)="orders.status".
+setcmt:(pstr)
+	new i
+	for i=2:1:$zlength(pstr) set:+$zextract(pstr,i) @name@(11,i-1)=comment
 	quit
 
 ; If gbl is an extended reference, save the current global directory,
@@ -883,6 +1107,17 @@ unxref:(xrefgbl)
 	. ; names start with %ydb. Both have the same $ZYHASH(), but trigger
 	. ; names additionally have a suffix.
 	. if $ztrigger("item","-%ydb"_$zextract(xrefgbl,10,$zlength(xrefgbl))_"*")
+	. ;
+	. ; Types 4 and 6 with the record global in another database (slot 99): its
+	. ; record-side triggers are defined there, where the wildcard above cannot see them
+	. ; E.g. gbl=^H, recgbl=^|"x.gld"|G: the triggers on ^G are in the database x.gld maps, and
+	. ; slot 99 holds the path of x.gld.
+	. do:$data(@xrefgbl@(99))#10
+	. . new sav
+	. . set sav=$zgbldir,$zgbldir=@xrefgbl@(99)	; the record database, recorded by xr4trigs
+	. . if $ztrigger("item","-%ydb"_$zextract(xrefgbl,10,$zlength(xrefgbl))_"*")
+	. . set $zgbldir=sav
+	. ;
 	. kill @xrefgbl
 	. zkill @xrefvar@(gbl,xrefgbl)
 	. tcommit
@@ -905,17 +1140,16 @@ unxref:(xrefgbl)
 ; code is executed only for the initial creation of a cross reference, and not
 ; in the triggers that maintain cross references as globals are updated.
 ; References variables defined in parent or passed through from XREFDATA():
-;   constlist, force, gbl, gblind, gblindtype1, lastsubind, lastvarsub, locxsub,
-;   name, nameind, newpstr, nullsub, omitfix, sep, stacklvl1, stacklvl2, stat,
-;   subary, type, type1last, valcntind, xfnp1, xfnp2, xrefind, xrefindtype1,
-;   zpiece
+;   constlist, force, gbl, gblind, lastlit, lastsubind, locxsub, name,
+;   nameind, newpstr, nullsub, omitfix, recdup, sep, stacklvl1, stacklvl2, stat,
+;   subary, type, valcntind, valind, xfnp1, xfnp2, xrefind, zpiece
 ; A worker receives only the variables xrefjobmore() keeps visible, so a
 ; variable added here must be added to its exclusive NEW as well.
 ; xrefwork() calls this once for each range of subscripts it claims, with
 ; locxsub(chunklvl) set to that range.
 xrefdata(nsubsxref,ppid)
 	new flag,i,j,k,nodelen1,nodeval,nranges,piece1,piece2,pieceval,quitflag
-	new rangebegin,rangeend,sublvl,thisrange,tmp1,tmp2
+	new rangebegin,rangeend,sublvl,thisrange,tmp2
 	; If nsubsxref>1 it means call the function recursively for the next
 	; subscript level.
 	set flag=nullsub
@@ -924,7 +1158,11 @@ xrefdata(nsubsxref,ppid)
 	if nsubsxref>1 do
 	. if "*"=locxsub(sublvl) for  do:flag  set flag=1,subary(sublvl)=$order(@gblind(sublvl)) quit:'$zlength(subary(sublvl))
 	. . do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,ppid)
-	. else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,ppid)
+	. ; The IF 1 leaves $TEST true: a DO with an argument leaves $TEST as the callee's
+	. ; last IF set it, and the ELSE below would then walk this level a second time.
+	. ; E.g. ^g("fix",:): the call for the bottom level returns with $TEST=0, and the ELSE
+	. ; would walk the "fix" level again.
+	. else  if $get(constlist(sublvl),0) do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,ppid) if 1
 	. else  do
 	. . set nranges=$select(zpiece:$zlength(locxsub(sublvl),";"),1:$length(locxsub(sublvl),";"))
 	. . for i=1:1:nranges do
@@ -941,74 +1179,28 @@ xrefdata(nsubsxref,ppid)
 	. . . set flag=$select($zlength(piece1):1,1:nullsub)
 	. . . set subary(sublvl)=rangebegin
 	. . . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl)) quit:'$zlength(tmp2)!($zlength(piece2)&(tmp2]]rangeend))
-	. . . . if (type#2)&(2=nsubsxref) do
-	. . . . . tstart ():transactionid="batch"
-	. . . . . set tmp1=$data(@gblind(sublvl))
-	. . . . . if tmp1\10 do xrefdata(nsubsxref-1,ppid)
-	. . . . . else  do:tmp1#10
-	. . . . . . set nodeval=""
-	. . . . . . if $zlength(sep) do
-	. . . . . . . set nodelen1=$zlength(newpstr),pieceval=""
-	. . . . . . . for j=2:1:nodelen1 do:+$zextract(newpstr,j)
-	. . . . . . . . set k=j-1
-	. . . . . . . . do:'($data(@xrefindtype1)#10)
-	. . . . . . . . . set ^(@lastsubind)=""
-	. . . . . . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
-	. . . . . . else  do:'($data(@xrefindtype1)#10)
-	. . . . . . . set ^(@lastsubind)=""
-	. . . . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
-	. . . . . tcommit
-	. . . . else  do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,ppid)
+	. . . . do:$data(@gblind(sublvl))\10 xrefdata(nsubsxref-1,ppid)
 	; if nsubsxref=1 (the rest of the code below) the traversal has reached the
 	; subscript level at which globals are to have metadata
 	; computed. Compute metadata per subscript and metadata type
 	; specification.
-	; Note that the code for Fileman type comes before the code for
-	; constlist(sublvl) because constlist(sublvl)=1 for Fileman data but
-	; Fileman schema has precedence over constlist(sublvl)=1
-	else  if type#2 do
-	. tstart ():transactionid="batch"
-	. if $data(@gblindtype1)#10 do
-	. . set nodeval=@gblindtype1
-	. . if $zlength(sep) do
-	. . . set nodelen1=$zlength(newpstr)
-	. . . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
-	. . . . set k=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
-	. . . . do:'($data(@xrefind)#10)
-	. . . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
-	. . else  do:'$data(@xrefind)
-	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
-	. else  do	; node doesn't exist but peers or peer subtrees do
-	. . set nodeval=""
-	. . if $zlength(sep) do
-	. . . set nodelen1=$zlength(newpstr),pieceval=""
-	. . . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
-	. . . . set k=i-1
-	. . . . do:'($data(@xrefindtype1)#10)
-	. . . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
-	. . else  do:'$data(@xrefindtype1)
-	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
-	. tcommit
 	else  if constlist(sublvl) do
+	. if type\4#2 set xr4ok=$data(@gblind(sublvl)) do xr4rec quit:'xr4ok	; types 4 and 6: xr4rec checks whether a record exists here and is not yet cross referenced; if not, skip it
 	. tstart ():transactionid="batch"
-	. if $data(@gblind(sublvl))#10 do
-	. . set nodeval=@gblind(sublvl)
-	. . if $zlength(sep) do
-	. . . set nodelen1=$zlength(newpstr)
-	. . . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
-	. . . . set k=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
-	. . . . do:'($data(@xrefind)#10)
-	. . . . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
-	. . else  do:'$data(@xrefind)
-	. . . set ^($select(lastvarsub=sublvl:lastsubind,1:@lastsubind))=""
-	. . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
+	. if '(type\4#2),'($data(@gblind(sublvl))#10) tcommit  quit	; a node without a value is not cross referenced - except for types 4 and 6, where xr4rec has admitted the record and $get below makes an absent value node an empty-string entry
+	. set nodeval=$get(@valind)
+	. if $zlength(sep) do
+	. . set nodelen1=$zlength(newpstr)
+	. . for i=2:1:nodelen1 do:+$zextract(newpstr,i)
+	. . . set k=i-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
+	. . . do:'($data(@xrefind)#10)
+	. . . . set ^($select(lastlit:lastsubind,1:@lastsubind))=""
+	. . . . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
+	. else  do:'$data(@xrefind)
+	. . set ^($select(lastlit:lastsubind,1:@lastsubind))=""
+	. . if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. tcommit
-	else  do	; not Fileman or a constant subscript specification
+	else  do								; not Fileman or a constant subscript specification
 	. set nranges=$select(zpiece:$zlength(locxsub(sublvl),";"),1:$length(locxsub(sublvl),";"))
 	. for i=1:1:nranges do
 	. . if "*"=locxsub(sublvl) do
@@ -1031,16 +1223,67 @@ xrefdata(nsubsxref,ppid)
 	. . . set flag=$select($zlength(piece1):1,1:nullsub)
 	. . . set subary(sublvl)=rangebegin
 	. . for  do:flag  set flag=1,(subary(sublvl),tmp2)=$order(@gblind(sublvl)) quit:'$zlength(tmp2)!($zlength(piece2)&(tmp2]]rangeend))
+	. . . if type\4#2 set xr4ok=$data(@gblind(sublvl)) do xr4rec quit:'xr4ok	; types 4 and 6: xr4rec checks whether a record exists here and is not yet cross referenced; if not, skip it
 	. . . tstart (j,k):transactionid="batch"
-	. . . do:$data(@gblind(sublvl))#10
-	. . . . set nodeval=@gblind(sublvl)
-	. . . . if $zlength(sep) do
-	. . . . . set nodelen1=$zlength(newpstr)
-	. . . . . for j=2:1:nodelen1 do:+$zextract(newpstr,j)
-	. . . . . . set k=j-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
-	. . . . . . if '($data(@xrefind)#10) set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
-	. . . . else  if '($data(@xrefind)#10) set ^(@lastsubind)="" if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
+	. . . if '(type\4#2),'($data(@gblind(sublvl))#10) tcommit  quit	; a node without a value is not cross referenced - except for types 4 and 6, where xr4rec has admitted the record and $get below makes an absent value node an empty-string entry
+	. . . set nodeval=$get(@valind)
+	. . . if $zlength(sep) do
+	. . . . set nodelen1=$zlength(newpstr)
+	. . . . for j=2:1:nodelen1 do:+$zextract(newpstr,j)
+	. . . . . set k=j-1,pieceval=$select(zpiece:$zpiece(nodeval,sep,k),1:$piece(nodeval,sep,k))
+	. . . . . if '($data(@xrefind)#10) set ^($select(lastlit:lastsubind,1:@lastsubind))="" if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
+	. . . else  if '($data(@xrefind)#10) set ^($select(lastlit:lastsubind,1:@lastsubind))="" if stat,$increment(@nameind),(2=stat),1=@nameind,$increment(@valcntind)
 	. . . tcommit
+	quit
+
+; Types 4 and 6: xrefdata() has reached a record node, subary(1..nsubs) - nsubs being the
+; record node's depth in a type=4/6 scan (xrefdatajobs) - with xr4ok its $DATA. Decides
+; whether xrefdata() cross references it: xr4ok=1 for a record node at which a record exists and the first of its
+; value subscripts, 0 otherwise. Two records share their value subscripts only when the record has more
+; subscripts than the value (recdup); then record nodes are visited in subscript order, so equal value subscripts
+; are adjacent, and lastvk holds the previous one. The indexing is xrefdata()'s own code:
+; it reads $get of the value node, valind (mkindxrefdata), "" when that node is absent
+; or valueless, and names the record subscripts the value subscripts map to.
+; E.g. the value node ^H(A) with records ^G(A,B), the records being ^G(1,1), ^G(1,2), ^G(2,1):
+; at ^G(1,1) the key 1 is new, so ^H(1) is cross referenced; ^G(1,2) has the same key, so nothing is
+; done; at ^G(2,1) the key 2 is new, so ^H(2) is cross referenced - as the empty-string entry for key 2 when
+; ^H(2) does not exist.
+xr4rec:
+	; Nothing is NEWed here: this runs once per record node over million-node globals.
+	; xr4i, xr4ok, xr4pfx, xr4q, xr4vk and lastvk are NEWed once per worker by xrefwork().
+	;
+	; A record node without a value of its own is a record only if a node with a value
+	; exists within the depth, the levels the triggers watch. xr4ok arrives as the
+	; $DATA of the record node, which the caller evaluated to get here. Only 10 is
+	; examined: no value but descendants, so the first $QUERY from the node is a
+	; descendant, and its $QLENGTH against the depth settles it. 0 is possible, and
+	; is no record: the first key of a bounded range is visited without an $ORDER, so
+	; it need not exist, and a $QUERY from an absent node returns its successor,
+	; which is no descendant, or "", which $QLENGTH rejects. Only when that first descendant lies
+	; below the depth does the walk go on, through the subtree while a node starts
+	; with the record node's name, until a node within the depth is found or the
+	; subtree ends; a subtree with nodes below the depth alone makes no record. With no
+	; level below the record node to watch there is nothing to look for.
+	; The indirection is through gblind(sublvl), one string for the whole scan, which
+	; the indirection cache serves; the continuation, with @xr4q a different string
+	; per record, is the rare path.
+	; E.g. recsub(1)=":", recsub=2, at the record node ^G(8), which has no value of its own:
+	;   ^G(8,1)="" alone       the first $QUERY from ^G(8) is ^G(8,1): $QLENGTH 2, within the depth,
+	;                          so ^G(8) is a record and the walk is never entered
+	;   ^G(8,0,"X")="" alone   the first $QUERY is ^G(8,0,"X"): $QLENGTH 3, below the depth, so the
+	;                          walk goes on; the next $QUERY is ^G(9) or beyond, outside "^G(8,",
+	;                          and ^G(8) is not a record
+	;   both                   the first $QUERY is ^G(8,0,"X"), below; the next is ^G(8,1), within,
+	;                          so ^G(8) is a record
+	if 10=xr4ok,recnsubs>sublvl set xr4q=$query(@gblind(sublvl)),xr4i=$qlength(xr4q),xr4ok=(xr4i>sublvl)&(xr4i'>recnsubs) do:'xr4ok&(xr4i>sublvl)
+	. set xr4pfx=$name(@gblind(sublvl)),xr4pfx=$zextract(xr4pfx,1,$zlength(xr4pfx)-1)_","
+	. for  set xr4q=$query(@xr4q) quit:$zextract(xr4q,1,$zlength(xr4pfx))'=xr4pfx  set:$qlength(xr4q)'>recnsubs xr4ok=1 quit:xr4ok
+	set xr4ok=xr4ok#10	; 1 or 11: a value of its own, a record; 0: absent, no record; 10 the IF left alone: nothing below to watch, no record
+	quit:'xr4ok
+	quit:'recdup	; every record has value subscripts of its own: nothing to collapse
+	set xr4vk="" for xr4i=1:1:veck set xr4vk=xr4vk_$char(1)_subary(rpos(xr4i))	; this record's value subscripts, joined
+	if xr4vk=$get(lastvk) set xr4ok=0 quit						; the previous record had the same key: that key is cross referenced already
+	set lastvk=xr4vk								; remember it for the next record
 	quit
 
 ; The JOB'd process that scans. It repeatedly takes the next unclaimed range of
@@ -1067,7 +1310,7 @@ xrefdata(nsubsxref,ppid)
 ; xrefjobmore() to those listed there: xrefwork() itself uses chunklvl, locxsub
 ; and nsubs.
 xrefwork(ppid,wnum,issub)
-	new more,seq
+	new lastvk,more,seq,xr4i,xr4ok,xr4pfx,xr4q,xr4vk
 	set ^%ydbAIMtmp($text(+0),ppid,0,$job)=""
 	for  do  quit:'more
 	. set more=1
@@ -1105,12 +1348,32 @@ xrefwork(ppid,wnum,issub)
 ; Comments preceding xrefdata() list local variables passed through
 xrefdatajobs:(nsubs)
 	new chunklvl,cmd,err,i,io,issub,j,jobby,k,line,msgprefix,njobbed,nworkers,out,prefix,stacklvl2,tmp,totcnt,val,xrefproc
+	;
+	; Types 4 and 6 scan the RECORD specification. Present it under the names the
+	; chunker and xrefdata() read, down to the record node; the workers inherit it.
+	; E.g. gbl=^H, xsub(1)=":" with recgbl=^G, recsub(1)=100, recsub(2)=":", recsub=2: from here
+	; on nsubs=2, constlist(1)=1, gblind(2)=^G(100,subary(2)), and the walk ends on the record
+	; nodes ^G(100,id).
+	new:type\4#2 constlist,gblind,locxsub,nullsub,subary
+	if type\4#2 for i=1:1:recplast set locxsub(i)=reclocxsub(i),gblind(i)=recgblind(i),constlist(i)=recconstlist(i)	; the walk's arrays, from the record specification down to the record node
+	set:type\4#2 nsubs=recplast,nullsub=recnullsub
+	;
 	set io=$io
 	set msgprefix=$ztrnlnm("ydb_msgprefix")
 	set:'$zlength(msgprefix) msgprefix="YDB"
 	set prefix="/tmp/xrefdata^"_$text(+0)_"_"_$job_"_"_($zut\1E6)_"_"
 	set stacklvl2=$stack	; required by premature termination
 	set chunklvl=$$xrefchunklvl,nworkers=$select(chunklvl:$$xrefnproc,1:1)
+	;
+	; Types 4 and 6: xr4rec collapses records sharing their value subscripts by comparing each
+	; with the previous one, which holds only while one process visits them in key
+	; order. A level below the deepest record subscript the value subscripts map to, rpos(veck), is
+	; reached only when every level above it holds one subscript, so one chunk is
+	; the same division.
+	; E.g. records ^G(A,B) with the value subscript A, so rpos(veck)=1: dividing at level 2 would hand
+	; the B's of one A to several workers, and each of them would cross reference A.
+	set:(type\4#2)&(chunklvl>rpos(veck)) chunklvl=0,nworkers=1
+	;
 	set:1<nworkers nworkers=$$xrefcapworkers(nworkers)
 	; Job the worker processes and record their pids so that they can be
 	; subsequently identified, e.g., to terminate them. Since JOB'd
@@ -1233,7 +1496,7 @@ xrefjobsterm
 ; Uses and updates local variables from caller: err, issub, njobbed, out,
 ; prefix, xrefproc
 xrefjobmore:(upto)
-	new (chunklvl,constlist,currgld,currlck,envgld,err,extgld,force,gbl,gblind,gblindtype1,io,issub,lastsubind,lastvarsub,locxsub,name,nameind,newpstr,njobbed,nsnum,nsubs,nullsub,nworkers,omitfix,out,prefix,sep,stacklvl1,stacklvl2,stat,subary,tlevel,type,type1last,upto,valcntind,xfnp1,xfnp2,xrefind,xrefindtype1,xrefproc,zintrptsav,zpiece,ztout,zyintrsig)
+	new (chunklvl,constlist,currgld,currlck,envgld,err,extgld,force,gbl,gblind,io,issub,lastlit,lastsubind,locxsub,name,nameind,newpstr,njobbed,nsnum,nsubs,nullsub,nworkers,omitfix,out,prefix,recdup,recnsubs,rpos,sep,stacklvl1,stacklvl2,stat,subary,tlevel,type,upto,valcntind,valind,veck,xfnp1,xfnp2,xrefind,xrefproc,zintrptsav,zpiece,ztout,zyintrsig)
 	new cmd,i,intdefer
 	quit:upto'>njobbed
 	set intdefer="",$zinterrupt="set intdefer=$zyintrsig"	; defer interrupts temporarily
@@ -1620,22 +1883,255 @@ xtratrig:
 	. set trig=trig1_trigsub_trig2_$zextract(trigsuffix,i+1)_trig3
 	. set:'$ztrigger("item",trig) $ecode=",U239,"
 	. set ^(12+i)=trig
-	; type specific additional triggers, caution: code uses & extends i from above
-	do:type#2
-	. set tmp=$zlength(trigsub)
-	. set:","=$zextract(trigsub,tmp) $zextract(trigsub,tmp)=""
-	. set trigsub=trigsub_")"
-	. set trig2=trig1_trigsub
-	. set trigsuffix=$select($zlength(sep):"p",1:"e")
-	. set trig3=" -command=set -name=%ydb"_suffix_"s -xecute="_$$exptempl("tt1pS"_trigsuffix_stat)
-	. set trig=trig2_trig3
-	. set:'$ztrigger("item",trig) $ecode=",U239,"
-	. set ^(12+$increment(i))=trig
-	. set trig3=" -command=zkill -name=%ydb"_suffix_"z -xecute="_$$exptempl("tt1pZK"_trigsuffix_stat)
-	. set trig=trig2_trig3
-	. set:'$ztrigger("item",trig) $ecode=",U239,"
-	. set ^(12+$increment(i))=trig
 	quit
+
+; Types 4 and 6: the record side of the cross reference. Called from XREFDATA() inside
+; its trigger transaction, after xtratrig has defined the value tree's triggers.
+; - Removes this cross reference's triggers from the record global's database, which
+;   the wildcard in XREFDATA() cannot reach when that is another database, and records
+;   that database in slot 99 for unxref().
+; - Defines one SET/ZKILL pair per WATCHED level of the record node, slots 100+lvl and
+;   140+lvl: a record can be brought into or taken out of existence by a write at any of
+;   them, and a trigger fires only for the node actually written.
+; - Defines the recursive-KILL triggers on the record tree, slots 51 and 53+i, laid out as
+;   the value tree's are: the deepest watched level in 51, as the value node's own KILL is in
+;   7, and level i above it in 53+i, the record global itself being level 0, as xtratrig's
+;   are in 12+i; 52 is unused. Any specification xtratrig has already covered is skipped: the
+;   two trees overlap when recgbl is gbl, and YottaDB folds a second definition of an
+;   identical trigger into the first, after which deleting the family by name wildcard fails
+;   with TRIGDEFBAD.
+; - A trigger belongs to the database holding the global it fires on, and $ztrigger() picks
+;   that database from $zgbldir as it runs - the specification itself cannot say which, since
+;   a trigger specification may not carry an extended reference (that is why recgblb is the
+;   stripped name). initxref left $zgbldir on the value global's database, so a record global
+;   living anywhere else needs the switch while its triggers are defined, or they land on a
+;   same-named global in the wrong database and never fire. $zgbldir is restored before any
+;   error is raised, so the caller unwinds cleanly.
+; E.g. gbl=^H, xsub(1)=":" with recgbl=^G, recsub(1)=":", recsub=2:
+;   SET/ZKILL pairs on ^G(sub1=*), slots 101 and 141, and on ^G(sub1=*,sub2=*), slots 102 and 142
+;   KILL triggers on ^G, slot 53, on ^G(sub1=*), slot 54, and on ^G(sub1=*,sub2=*), slot 51
+; Uses XREFDATA() locals: gbl,name,nsubs,recgblb,recgld,reclocxsub,reclvlspec,recnsubs,
+;   recnullsub,recplast,recsamedb,sep,stat,suffix
+xr4trigs:
+	new done,i,lvl,nch,ok,pe,rectrigdelx,rectrigprefix,rectrigset,recvskip,sav,self,spec,trig,trigsuffix,vguard
+	do:'recsamedb
+	. new sav
+	. set sav=$zgbldir,$zgbldir=recgld
+	. if $ztrigger("item","-%ydb"_$zextract(name,10,$zlength(name))_"*")	; remove any triggers of this cross reference left in the record database
+	. set $zgbldir=sav
+	. set @name@(99)=recgld							; where unxref() finds the record database
+	;
+	; The record node's trigger specification at each level.
+	; E.g. recsub(1)=":", recsub=2: reclvlspec(1)="^G(sub1=*)", reclvlspec(2)="^G(sub1=*,sub2=*)"
+	set spec=recgblb_"("
+	for i=1:1:recnsubs set spec=spec_$select(1<i:",",1:"")_"sub"_i_"="_reclocxsub(i),reclvlspec(i)=spec_")"	; reclvlspec(i): e.g. ^G(sub1=100.01,sub2=*)
+	set trigsuffix=$zpiece($text(xtratrigsufx),";",2)							; one letter per level for trigger names
+	set pe=$select($zlength(sep):"p",1:"e")									; the piece or the entire-node templates
+	;
+	; The value node in the record tree: same global and database, at or below the record node.
+	; Its own triggers do its work, so the record side defines no second pair on the record
+	; node when that IS the value node (the KILL trigger is already skipped, by done() below),
+	; and at the watched level that holds the value node its triggers quit for that one node,
+	; through @recvskip, which is empty for every other level. The value specification's
+	; levels below the record node are constants, since the value subscripts are a prefix of the
+	; record subscripts, so the node is named by them.
+	; E.g. ^ORD(100.01,ien,.1) with the record ^ORD(100.01,ien), depth 3: at level 3 the
+	;      record side's trigger code starts quit:(sub3=.1)
+	set vguard=""
+	if (recgblb=gbl)&recsamedb&(nsubs>recplast)&(nsubs'>recnsubs) do
+	. for i=recplast+1:1:nsubs set vguard=vguard_"&(sub"_i_"="_locxsub(i)_")"
+	. set vguard=" quit:"_$zextract(vguard,2,$zlength(vguard))_"  "			; the leading space: a body line that starts with a command, not a label
+	for lvl=recplast:1:recnsubs do							; the record node and every watched level below it
+	. quit:recsamedb&(("+"_reclvlspec(lvl))=$zpiece(@name@(6)," -command=",1))	; the record node is the value node: its own pair serves
+	. set recvskip=$select(lvl=nsubs:vguard,1:"")
+	. set rectrigprefix="+"_reclvlspec(lvl)_" -command="
+	. set self=recgblx_"(sub1" for i=2:1:lvl set self=self_",sub"_i			; this level's node, as the trigger's sub1..subN name it
+	. set recaliver=$$xr4alv(recpfxr,recpl,"$name("_self_"))")			; the one substitution that varies by level
+	. set nch=$zextract(trigsuffix,lvl)						; this level's letter
+	. set rectrigset=rectrigprefix_"set -name=%ydb"_suffix_"S"_nch_" -xecute="_$$xr4body($$exptempl("tt4pS"_pe_stat))
+	. set rectrigdelx=rectrigprefix_"zkill -name=%ydb"_suffix_"Z"_nch_" -xecute="_$$xr4body($$exptempl("tt4pZK"_pe_stat))
+	. set @name@(100+lvl)=rectrigset,^(140+lvl)=rectrigdelx				; while $zgbldir still maps the cross reference
+	. set sav=$zgbldir set:'recsamedb $zgbldir=recgld				; define both in the record global's database
+	. set ok=$ztrigger("item",rectrigset)&$ztrigger("item",rectrigdelx)
+	. set $zgbldir=sav set:'ok $ecode=",U239,"
+	;
+	; The value tree's recursive-KILL specifications: slot 7 is the value node, 12 the
+	; global, 12+i the levels above the value node.
+	; E.g. recgbl=gbl=^ORD: xtratrig has a KILL trigger on ^ORD(sub1=100.01), so
+	; done("+^ORD(sub1=100.01)") is set and xr4ktrig defines no second one there.
+	set done($zpiece(@name@(7)," -command=",1))=""				; the value node's own KILL trigger
+	for i=12:1:11+nsubs set done($zpiece(@name@(i)," -command=",1))=""	; the KILL triggers xtratrig defined above it
+	;
+	; One recursive-KILL trigger per level of the record tree, level 0 being the record global
+	; itself: the deepest watched level, recnsubs, in slot 51 with a name ending in rK, as the
+	; value node's own is in slot 7 ending in K; every level above it in slot 53+i. Its code is
+	; the KILL template the RECORD database's null-subscript setting selects, with the value
+	; node's guard at the value node's level.
+	; E.g. level 1, spec ^G(sub1=*): +^G(sub1=*) -command=kill -name=%ydb<suffix>r1 -xecute=<the rk0 or rk1 code>
+	for i=0:1:recnsubs do
+	. set spec=$select(i:reclvlspec(i),1:recgblb)
+	. quit:recsamedb&$data(done("+"_spec))			; one database: the value tree already has a KILL trigger on this specification
+	. set recvskip=$select(i=nsubs:vguard,1:"")
+	. set nch=$select(i=recnsubs:"rK",1:"r"_$zextract(trigsuffix,i+1))
+	. set trig="+"_spec_" -command=kill -name=%ydb"_suffix_nch_" -xecute="_$$xr4body($$exptempl("rk"_recnullsub))
+	. set @name@($select(i=recnsubs:51,1:53+i))=trig
+	. set sav=$zgbldir set:'recsamedb $zgbldir=recgld	; define it in the record global's database
+	. set ok=$ztrigger("item",trig)
+	. set $zgbldir=sav set:'ok $ecode=",U239,"
+	quit
+
+; Record-side trigger code maintains the cross reference, which lives in the VALUE
+; global's database, while firing in a process that wrote the record global and is
+; therefore looking at another database. Name the cross reference with its database so
+; the code means the same thing wherever it runs.
+;
+; This is done on the finished code rather than by handing exptempl a qualified name,
+; because substituting a value containing an extended reference for @name yields it
+; twice over. The cross reference name is "^%ydbAIM" plus a hash, so a plain textual
+; replacement cannot collide with anything else in the code.
+;
+; The quoting depends on how exptempl delimited the code: a single line comes back in
+; quotes with every quote inside it doubled, a multi-line one in <> with no doubling.
+; Returns body unchanged when one database holds everything - every case but a split
+; specification. Uses XREFDATA locals: name,recsamedb
+; E.g. $zgbldir=/a/c.gld and name=^%ydbAIMDabc: in <> code, ^%ydbAIMDabc(0,p,sub1)
+; becomes ^|"/a/c.gld"|%ydbAIMDabc(0,p,sub1); in quoted code, ^|""/a/c.gld""|%ydbAIMDabc(0,p,sub1).
+xr4body:(body)
+	quit:recsamedb body							; one database: the cross reference's name is good as it is
+	new i,out,q,qn
+	set q=$select(""""=$zextract(body,1,1):$char(34)_$char(34),1:$char(34))	; a body that is itself a quoted string doubles the quotes inside it
+	set qn="^|"_q_$zgbldir_q_"|"_$zextract(name,2,$zlength(name))		; the cross reference as seen from the record database: ^|"<directory>"|%ydbAIMD...
+	set out=$zpiece(body,name,1)
+	for i=2:1:$zlength(body,name) set out=out_qn_$zpiece(body,name,i)	; every occurrence of the name
+	quit out
+
+; Build the type=4/6 trigger-code substitution strings, from the value and record specs:
+;   @recalive - value-side ZKILL: a statement line that sets alive to whether a record still
+;               exists for the value subscripts once the node being killed has lost its value
+;   @vrecexq  - value-side SET: the same line, without an exclusion, asking whether a
+;               record exists for the value subscripts at all, followed by the quit that guards
+;               the SET; or nothing, when the write being cross referenced is itself what
+;               brings the record into existence
+;   @rtsub    - the cross reference entry's subscripts, under the record node's trigger names
+;   @rvalnode - the value node in gbl, read through the record node's subscripts
+; @recaliver, the record-side ZKILL's line, is per level and is built in xr4trigs by the
+; same generator, xr4alv.
+;
+; One definition of a record serves the scan (xr4rec) and every trigger: a record exists
+; at a record node when it, or a node below it within the depth, has a value. The node being
+; ZKILLed does not count, since its value is going. The generated line walks the
+; subtree of the value subscripts' record prefix with $QUERY, bounded by the prefix and the
+; depth, and stops at the first node that qualifies.
+;
+; E.g. gbl=^H, xsub(1)=":" with recgbl=^G, recsub(1)=100, recsub(2)=":", recsub=2:
+;   @rtsub=sub2, @rvalnode=^H(sub2), and @vrecexq is
+;    set alive=($data(^G(100,sub1))#10),rq=$name(^G(100,sub1)),rq=$zextract(rq,1,$zlength(rq)-1)_",",rp=$query(^G(100,sub1)) for  quit:alive!($zextract(rp,1,$zlength(rq))'=rq)  set:($qlength(rp)'<2)&($qlength(rp)'>2) alive=1 set rp=$query(@rp)
+xr4subst:
+	new i,jj,onerec,self
+	;
+	; @xv1/@xv2 bracket a value with however this type represents it in the cross reference, and
+	; @xnl is that representation applied to the empty value - the subscript of the empty-string entry:
+	;   type=4, force=0 : nothing at all;              the empty value is ""
+	;   type=4, force=1 : the "#" marker, "#"_value;   the empty value is "#"
+	;   type=6          : the transformation function; the empty value is the function applied to ""
+	; Parameterising it this way is what lets type=6 share every template with type=4,
+	; rather than needing a transformed copy of each one, and it is why the templates
+	; say @xv1...@xv2 instead of the /"#"_//  force conditional the other types use.
+	; E.g. type=6, force="$$f^rtn()": @xv1 is $$f^rtn( and @xv2 is ), so @xv1$ztvalue@xv2 is
+	; $$f^rtn($ztvalue), and @xnl is $$f^rtn("").
+	if type\2#2 set xv1=xfnp1,xv2=xfnp2,xnl=xfnp1_""""""_xfnp2				; type 6: the transformation function around the value; the empty value is it applied to ""
+	else  set xv1=$select(force:"""#""_",1:""),xv2="",xnl=$select(force:"""#""",1:"""""")	; type 4: the "#" marker when force; the empty value is "#" or ""
+	;
+	; The record prefix of the value subscripts: the record specification from the top down to
+	; the last value subscript and the constants that follow it, the deepest node the
+	; value subscripts fix. Every record for them lies under it. Where no subscript varies
+	; below the deepest value subscript it is the record node itself. Spelled twice:
+	; recpfx under the value node's trigger names, recpfxr under the record node's.
+	; E.g. ^H(id) with records ^G(100,id): recpfx=^G(100,sub1), recpfxr=^G(100,sub2), recpl=2
+	;      ^H(id) with records ^G(id,line): recpfx=recpfxr=^G(sub1), recpl=1
+	set recpl=rpos(veck),onerec=recvlast'>recpl						; recpl: the level of the last value subscript; onerec: nothing varies below it
+	if onerec set recpl=recnsubs								; one record per set of value subscripts: the prefix is the whole specification
+	else  for i=recpl+1:1:recvlast quit:'recconstlist(i)  set recpl=i			; else extend it over the constants that follow
+	set (recpfx,recpfxr)=recgblx_"(",jj=0
+	for i=1:1:recpl do
+	. if recconstlist(i) set recpfx=recpfx_reclocxsub(i),recpfxr=recpfxr_reclocxsub(i)	; a constant: spelled out in both
+	. else  set jj=jj+1,recpfx=recpfx_"sub"_vpos(jj),recpfxr=recpfxr_"sub"_i		; a record subscript: sub<its level in xsub> under the value node's triggers, sub<i> under the record node's
+	. set:i<recpl recpfx=recpfx_",",recpfxr=recpfxr_","
+	set recpfx=recpfx_")",recpfxr=recpfxr_")"
+	;
+	; The value node, as its own triggers name it, so that its going value is not counted.
+	; It can only be in the record tree when the two globals are one.
+	set self=""
+	if (recgblb=gbl)&recsamedb set self=gbl_"(sub1" for i=2:1:nsubs set self=self_",sub"_i	; the value node is in the record tree only when the globals are one
+	set:$zlength(self) self="$name("_self_"))"
+	set recalive=$$xr4alv(recpfx,recpl,self)
+	;
+	; The SET guard is not applied when writing the value node is itself what brings the
+	; row into existence: same global, same database, and the value node at or below the
+	; record node. The node is not in the database while its SET trigger runs, so the
+	; walk would not see the row the write creates.
+	; E.g. ^H(id) with records ^G(id): the walk; ^ORD(100.01,ien,.1) with the record
+	;      ^ORD(100.01,ien): nothing.
+	set vrecexq=$select((recgblb=gbl)&recsamedb&(nsubs'<recplast):"",1:$$xr4alv(recpfx,recpl,"")_"quit:'alive  ")	; no guard when the SET itself creates the row; else the test, and quit on no row
+	;
+	; @rtsub: the index entry's subscripts, as @sub lists them for the value node's own
+	; triggers, under the names the record node's triggers bind: a value-key column is
+	; the record subscript it maps to, and a constant is kept, as a literal, when omitfix=0.
+	; E.g. ^H(id) with records ^G(100,id): sub2
+	;      ^H(100,id,"X") with records ^G(id), omitfix=0: 100,sub1,"X"
+	set rtsub="",jj=0
+	for i=1:1:nsubs do
+	. if constlist(i) set:'omitfix rtsub=rtsub_locxsub(i)_","	; a constant: kept as a literal when omitfix=0
+	. else  set rtsub=rtsub_"sub"_rpos($increment(jj))_","		; a value-key column: the record subscript it maps to
+	set $zextract(rtsub,$zlength(rtsub))=""
+	;
+	; @rvalnode is read by the RECORD-side triggers, which fire in a process that wrote
+	; the record global and is looking at that database, not the value global's.
+	; E.g. ^H(id) with records ^G(100,id): ^H(sub2), or ^|"/a/c.gld"|H(sub2) when ^G is in
+	; another database.
+	set rvalnode=gblx_"(",jj=0
+	for i=1:1:nsubs set rvalnode=rvalnode_$select(constlist(i):locxsub(i),1:"sub"_rpos($increment(jj)))_$select(i<nsubs:",",1:")")
+	;
+	quit
+
+; The statement line that sets alive, for trigger code: does a record exist for the value
+; key under the record prefix pfx, at level plvl, counting the prefix itself when it is a
+; record node, and never the node self, whose value the ZKILL is taking? A record is a node
+; with a value at a level from the record node down to the depth, whose constant
+; subscripts match the record specification. The result is put in front of the
+; template's own line: a prefix test alone shares that line, and a walk, whose FOR
+; takes the rest of a line, is a line of its own, ending in the line break and the
+; space the next line must start with.
+; Three forms, by what lies below the prefix within the depth:
+; - nothing: the prefix test alone;
+; - one level, the usual Fileman structure: that level's nodes are read directly, a single
+;   $DATA when the level is a constant, else $ORDER through them to the first with a value
+;   that is not self. No $QUERY, no name strings, and no indirection, which would miss the
+;   indirection cache for every record, the name being different each time;
+; - more, or a database allowing null subscripts, which $ORDER cannot step through: a
+;   $QUERY walk of the subtree, bounded by the prefix's name and the depth, that stops at
+;   the first node that is a record and only then takes no further step.
+; E.g. ^H(id) with records ^G(id), recsub=1, the value side's ZKILL: " set alive=0 "
+; E.g. ^ORD(100.01,ien,.1) with the record ^ORD(100.01,ien), depth 3, the value side's ZKILL:
+;    set alive=($data(^ORD(100.01,sub2))#10)&($name(^ORD(100.01,sub2))'=$name(^ORD(sub1,sub2,sub3))) if 'alive set c="" for  set c=$order(^ORD(100.01,sub2,c)) quit:c=""  if c'=sub3,$data(^ORD(100.01,sub2,c))#10 set alive=1 quit
+; E.g. pfx="^G(sub1)", plvl=1, records ^G(id,line,0) (recplast=3, depth 3), self="":
+;    set alive=0,rq=$name(^G(sub1)),rq=$zextract(rq,1,$zlength(rq)-1)_",",rp=$query(^G(sub1)) for  quit:alive!($zextract(rp,1,$zlength(rq))'=rq)  set:($qlength(rp)'<3)&($qlength(rp)'>3)&($qsubscript(rp,3)=0) alive=1 set:'alive rp=$query(@rp)
+; Uses the XREFDATA() locals recconstlist, reclocxsub, recnsubs, recnullsub, recplast.
+xr4alv:(pfx,plvl,self)
+	new c,i,n,q,t
+	; the prefix itself: a row when it is a record node with a value, unless it is self
+	set t=" set alive="_$select(plvl<recplast:0,self=("$name("_pfx_")"):0,'$zlength(self):"($data("_pfx_")#10)",1:"($data("_pfx_")#10)&($name("_pfx_")'="_self_")")								; above the record node, or self: never a row; else a value, and not self
+	quit:plvl'<recnsubs t_" "																								; nothing below the prefix is within the depth
+	set n=$select($zlength(self):$zlength(self,"(sub")+$zlength(self,",sub")-2,1:0)																		; self's level: its subscripts are sub1..subN
+	set q=$zextract(pfx,1,$zlength(pfx)-1)_","																						; the prefix less ")" plus ",": a child is q_<subscript>_")"
+	if recnsubs=(plvl+1),'recnullsub do  quit t																						; one watched level below the prefix: look at its nodes directly, no $QUERY and no indirection
+	. if recconstlist(plvl+1) set t=t_"!(($data("_q_reclocxsub(plvl+1)_"))#10)"_$select(n=(plvl+1):"&(sub"_n_"'="_reclocxsub(plvl+1)_")",1:"")_") "										; the level is a constant: one node, unless it is self
+	. else  set t=t_" if 'alive set c="""" for  set c=$order("_q_"c)) quit:c=""""  if "_$select(n=(plvl+1):"c'=sub"_n_",",1:"")_"$data("_q_"c))#10 set alive=1 quit"_$char(10)_" "						; a varying level: its first node with a value, other than self, makes a row
+	set c=""
+	for i=plvl+1:1:recplast set:recconstlist(i) c=c_"&($qsubscript(rp,"_i_")="_reclocxsub(i)_")"																; the constants between the prefix and the record node must match
+	set t=t_",rq=$name("_pfx_"),rq=$zextract(rq,1,$zlength(rq)-1)_"","",rp=$query("_pfx_")"																	; rq: what every descendant's name starts with; rp: the first descendant
+	set t=t_" for  quit:alive!($zextract(rp,1,$zlength(rq))'=rq)  set:($qlength(rp)'<"_recplast_")&($qlength(rp)'>"_recnsubs_")"_c_$select($zlength(self):"&(rp'="_self_")",1:"")_" alive=1 set:'alive rp=$query(@rp)"	; walk the subtree: a node from the record node to the depth, constants matching, not self, is a row; the next node only while none is found (an ELSE on the line would be skipped with the IF's rest)
+	quit t_$char(10)_" "
 
 ; The following is a list of trigger suffixes for trigger names for the
 ; potential additional triggers of higher level nodes, with 0 being a trigger
@@ -1649,8 +2145,8 @@ xtratrigsufx:	;0123456789ABCDEFGHIJLMNOPQRTUVWX
 ; - tt[s][t] for trigger template where the optional [s] parameter is for subscript
 ;   triggers and [t] is the type parameter. Not all combinations of s and t
 ;   are valid.
-;   - t=1 for type 1 global nodes, and 1p for Fileman parent global nodes
-;   - t=2 or t=3 for type 2 or 3 global nodes respectively
+;   - t=2 for type 2 global nodes
+;   - t=4 for types 4 and 6, and 4p for their record-side nodes
 ; - trigger command: S, ZK, K
 ; - for data triggers, e for entire node, p for pieces of node for data;
 ;   empty string for subscript triggers.
@@ -1690,7 +2186,13 @@ xtratrigsufx:	;0123456789ABCDEFGHIJLMNOPQRTUVWX
 ; an existing type except for the way that KILLs are handled by triggers. Once
 ; the functionality in https://gitlab.com/YottaDB/DB/YDB/-/issues/517 exists
 ; the recursive triggers here can be replaced with simpler triggers.
-rk0	; do dft($reference) quit
+; A leaf, $ZTDATA under 10, is ZKILLed directly, without the traversal's call: the
+; ZKILL is what fires the triggers that maintain the metadata, and $ZTDATA costs no
+; database access. @recvskip is the record side's guard (xr4trigs), empty elsewhere.
+; The traversal ZKILLs a leaf for the same reason: for a node without children the two
+; are one operation, and a KILL would only fire KILL triggers whose job is to ZKILL it.
+rk0	; @recvskip if '($ztdata\10) set var=$reference zkill:$ztdata @var quit
+	; do dft($reference) quit
 	; if @name
 	;dft(var)
 	; new sub,vard,vars,varsd,vsroot
@@ -1702,11 +2204,12 @@ rk0	; do dft($reference) quit
 	; . set sub="" for  set sub=$order(@vars) quit:'$zlength(sub)  do
 	; . . set varsd=$data(@vars)
 	; . . if varsd\10 do dft(vsroot_$zwrite(sub)_")")
-	; . . else  kill:varsd#10 @(vsroot_$zwrite(sub)_")")
+	; . . else  zkill:varsd#10 @(vsroot_$zwrite(sub)_")")
 	; zkill:vard#10 @var
 	; quit
 
-rk1	; do dft($reference) quit
+rk1	; @recvskip if '($ztdata\10) set var=$reference zkill:$ztdata @var quit
+	; do dft($reference) quit
 	; if @name
 	;dft(var)
 	; new sub,vard,vars,varsd,vsroot
@@ -1718,7 +2221,7 @@ rk1	; do dft($reference) quit
 	; . set sub="" for  do  set sub=$order(@vars) quit:'$zlength(sub)
 	; . . set varsd=$data(@vars)
 	; . . if varsd\10 do dft(vsroot_$zwrite(sub)_")")
-	; . . else  kill:varsd#10 @(vsroot_$zwrite(sub)_")")
+	; . . else  zkill:varsd#10 @(vsroot_$zwrite(sub)_")")
 	; zkill:vard#10 @var
 	; quit
 
@@ -1758,94 +2261,90 @@ ttSp2	; for i=@pieces set p=/"#"_//$@zpiece($ztoldval,@sep,i),q=/"#"_//$@zpiece(
 
 ttZKp2	;for i=@pieces set j=-i,p=/"#"_//$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
 
-tt1Se0	; if @type1last=@lastfullsub zkill @name(0,"/#//",@altsub),@name(0,/"#"_//$ztoldval,@sub) set @name(0,/"#"_//$ztvalue,@sub)=""
-	; else  set:'($data(@gbl(@fullsub))#10) @name(0,"/#//",@altsub)=""
+; Types 4 and 6. @xv1/@xv2 bracket a value as this type represents it in the index, and
+; @xnl is that representation of the empty value, the NULL bucket (xr4subst); that is what
+; lets type 6 share these templates. Each body opens with a line that sets alive, whether
+; a row exists for the value key (xr4alv), on a line of its own when it walks. The value
+; side (tt4S*, tt4ZK*) is the value node's own trigger: a SET quits when no row exists
+; for the key, and a ZKILL re-adds a NULL entry when a row survives. The record side (tt4pS*, tt4pZK*) fires on the record
+; node and the watched levels below it, reads the value node through @rvalnode, and on a
+; ZKILL removes the entry unless a row survives.
 
-tt1ZKe0	; if @type1last=@lastfullsub zkill @name(0,/"#"_//$ztoldval,@sub) set:($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) @name(0,"/#//",@altsub)=""
-	; else  zkill:'($data(@gbl(@fullsubprnt))#10)&('$data(@gbl(@fullsub))#10)&('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))) @name(0,"/#//",@altsub)
+tt4Se0	;@vrecexq zkill @name(0,@xv1$ztoldval@xv2,@sub) set @name(0,@xv1$ztvalue@xv2,@sub)=""
 
-tt1Se1	; if @type1last=@lastfullsub do
-	; . if $data(@name(0,"/#//",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name("","/#//"),-1) ^("/#//")
-	; . /set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name("",/tmp/$ztoldval/),-1) ^(/tmp/$ztoldval/)
-	; . /set tmp="#"_$ztvalue //if '$data(@name(0,/tmp/$ztvalue/,@sub)) set ^(@lastsub)="" if $increment(@name("",/tmp/$ztvalue/))
-	; else  if '($data(@gbl(@fullsub))#10),'$data(@name(0,"/#//",@altsub)) set ^(@altlastsub)="" if $increment(@name("","/#//"))
+tt4Se1	;@vrecexq set p=@xv1$ztoldval@xv2,q=@xv1$ztvalue@xv2
+	; if $data(@name(0,p,@sub))#10 zkill @name(0,p,@sub) zkill:1>$increment(@name("",p),-1) @name("",p)
+	; if '($data(@name(0,q,@sub))#10) set @name(0,q,@sub)="" if $increment(@name("",q))
 
-tt1ZKe1	; if @type1last=@lastfullsub do
-	; . /set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name("",/tmp/$ztoldval/),-1) ^(/tmp/$ztoldval/)
-	; . if ($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)),$increment(@name("","/#//")) set @name(0,"/#//",@altsub)=""
-	; else  if '($data(@gbl(@fullsubprnt))#10),'$data(@gbl(@fullsub))#10,('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))),$data(@name(0,"/#//",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name("","/#//"),-1) ^("")
+tt4Se2	;@vrecexq set p=@xv1$ztoldval@xv2,q=@xv1$ztvalue@xv2
+	; if $data(@name(0,p,@sub))#10 zkill @name(0,p,@sub) if 1>$increment(@name("",p),-1) zkill @name("",p) zkill:1>$increment(@name(""),-1) @name("")
+	; if '($data(@name(0,q,@sub))#10) set @name(0,q,@sub)="" if (1=$increment(@name("",q))),$increment(@name(""))
 
-tt1Se2	; if @type1last=@lastfullsub do
-	; . if $data(@name(0,"/#//",@altsub)) zkill ^(@altlastsub) if 1>$increment(@name("","/#//"),-1) zkill ^("/#//") if 1>$increment(@name(""),-1) zkill ^("")
-	; . /set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub)) zkill ^(@lastsub) if 1>$increment(@name("",/tmp/$ztoldval/),-1) zkill ^(/tmp/$ztoldval/) if 1>$increment(@name(""),-1) zkill ^("")
-	; . /set tmp="#"_$ztvalue //if '$data(@name(0,/tmp/$ztvalue/,@sub)) set ^(@lastsub)="" if 1=$increment(@name("",/tmp/$ztvalue/)),$increment(@name(""))
-	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'$data(@name(0,"/#//",@altsub)) set ^(@altlastsub)="" if 1=$increment(@name("","/#//")),$increment(@name(""))
+tt4Sp0	;@vrecexq for i=@pieces set p=@xv1$@zpiece($ztoldval,@sep,i)@xv2,q=@xv1$@zpiece($ztvalue,@sep,i)@xv2 do
+	; . if p'=q zkill @name(i,p,@sub) set @name(i,q,@sub)=""
+	; . else  set:q=@xnl @name(i,@xnl,@sub)=""
 
-tt1ZKe2	; if @type1last=@lastfullsub do
-	; . /set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub)) zkill ^(@lastsub) if 1>$increment(@name("",/tmp/$ztoldval/),-1) zkill ^(/tmp/$ztoldval/) if 1>$increment(@name(""),-1) zkill ^("")
-	; . if ($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) set @name(0,"/#//",@altsub)="" if 1=$increment(@name("","/#//")),$increment(@name(""))
-	; else  if '($data(@gbl(@fullsubprnt))#10),'$data(@gbl(@fullsub)),('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))),$data(@name(0,"/#//",@altsub)) zkill ^(@altlastsub) if 1>$increment(@name("","/#//"),-1) zkill ^("/#//") if 1>$increment(@name("/#//"),-1) zkill ^("/#//")
+tt4Sp1	;@vrecexq for i=@pieces set p=@xv1$@zpiece($ztoldval,@sep,i)@xv2,q=@xv1$@zpiece($ztvalue,@sep,i)@xv2,j=-i do
+	; . if p'=q do
+	; . . if $data(@name(i,p,@sub))#10 zkill @name(i,p,@sub) zkill:1>$increment(@name(j,p),-1) @name(j,p)
+	; . . if '($data(@name(i,q,@sub))#10) set @name(i,q,@sub)="" if $increment(@name(j,q))
+	; . else  if q=@xnl,'($data(@name(i,@xnl,@sub))#10) set @name(i,@xnl,@sub)="" if $increment(@name(j,@xnl))
 
-tt1Sp0	; if @type1last=@lastfullsub do
-	; . for i=@pieces set p=/"#"_//$@zpiece($ztoldval,@sep,i),q=/"#"_//$@zpiece($ztvalue,@sep,i) zkill @name(i,"/#//",@altsub),@name(i,p,@sub) set @name(i,q,@sub)=""
-	; else  if '($data(@gbl(@fullsub))#10) for i=@pieces set @name(i,"/#//",@altsub)=""
+tt4Sp2	;@vrecexq for i=@pieces set p=@xv1$@zpiece($ztoldval,@sep,i)@xv2,q=@xv1$@zpiece($ztvalue,@sep,i)@xv2,j=-i do
+	; . if p'=q do
+	; . . if $data(@name(i,p,@sub))#10 zkill @name(i,p,@sub) if 1>$increment(@name(j,p),-1) zkill @name(j,p) if 1>$increment(@name(j),-1) zkill @name(j)
+	; . . if '($data(@name(i,q,@sub))#10) set @name(i,q,@sub)="" if (1=$increment(@name(j,q))),$increment(@name(j))
+	; . else  if q=@xnl,'($data(@name(i,@xnl,@sub))#10) set @name(i,@xnl,@sub)="" if (1=$increment(@name(j,@xnl))),$increment(@name(j))
 
-tt1ZKp0	; if @type1last=@lastfullsub do
-	; . if $data(@gbl(@fullsubprnt))#10!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) for i=@pieces zkill @name(i,/"#"_//$@zpiece($ztoldval,@sep,i),@sub) set @name(i,"/#//",@altsub)=""
-	; . else  for i=@pieces zkill @name(i,/"#"_//$@zpiece($ztoldval,@sep,i),@sub)
-	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces zkill @name(i,"/#//",@altsub)
+tt4ZKe0	;@recalive zkill @name(0,@xv1$ztoldval@xv2,@sub) set:alive @name(0,@xnl,@sub)=""
 
-tt1Sp1	; if @type1last=@lastfullsub do
-	; . for i=@pieces set p=/"#"_//$@zpiece($ztoldval,@sep,i),q=/"#"_//$@zpiece($ztvalue,@sep,i) do
-	; . . if $data(@name(i,"/#//",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(-i,"/#//"),-1) ^("/#//")
-	; . . else  if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(-i,p),-1) ^(p)
-	; . . if '$data(@name(i,q,@sub)) set ^(@lastsub)="" if $increment(@name(-i,q))
-	; else  if '($data(@gbl(@fullsub))#10) for i=@pieces if '$data(@name(i,"/#//",@altsub)) set ^(@altlastsub)="" if $increment(@name(-i,"/#//"))
+tt4ZKp0	;@recalive for i=@pieces zkill @name(i,@xv1$@zpiece($ztoldval,@sep,i)@xv2,@sub) set:alive @name(i,@xnl,@sub)=""
 
-tt1ZKp1	; if @type1last=@lastfullsub do
-	; . if $data(@gbl(@fullsubprnt))#10!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) for i=@pieces set p=/"#"_//$@zpiece($ztoldval,@sep,i) do
-	; . . if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(-i,p),-1) ^(p)
-	; . . if '$data(@name(i,"/#//",@altsub)) set ^(@altlastsub)="" if $increment(@name(-i,"/#//"))
-	; . else  for i=@pieces set p=/"#"_//$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(-i,p),-1) ^(p)
-	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces if $data(@name(i,"/#//",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(-i,"/#//"),-1) ^("/#//")
+tt4pSe0	;@recvskip set @name(0,@xv1$get(@rvalnode)@xv2,@rtsub)=""
 
-tt1Sp2	; if @type1last=@lastfullsub do
-	; . for i=@pieces set j=-i,p=/"#"_//$@zpiece($ztoldval,@sep,i),q=/"#"_//$@zpiece($ztvalue,@sep,i) do
-	; . . if $data(@name(i,"/#//",@altsub)) zkill ^(@altlastsub) if 1>$increment(@name(j,"/#//"),-1) zkill ^("/#//") zkill:1>$increment(@name(j),-1) ^(j)
-	; . . else  if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
-	; . . if '$data(@name(i,q,@sub)) set ^(@lastsub)="" if 1=$increment(@name(j,q)),$increment(@name(j))
-	; else  if '($data(@gbl(@fullsub))#10) for i=@pieces set j=-i if '$data(@name(i,"/#//",@altsub)) set ^(@altlastsub)="" if 1=$increment(@name(j,"/#//")),$increment(@name(j))
+tt4pSp0	;@recvskip for i=@pieces set @name(i,@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2,@rtsub)=""
 
-tt1ZKp2	; if @type1last=@lastfullsub do
-	; . if $data(@gbl(@fullsubprnt))#10!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) for i=@pieces set j=-i,p=/"#"_//$@zpiece($ztoldval,@sep,i) do
-	; . . if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
-	; . . if '$data(@name(i,"/#//",@altsub)) set ^(@altlastsub)="" if 1=$increment(@name(j,"/#//")),$increment(@name(j))
-	; . else  for i=@pieces set j=-i,p=/"#"_//$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
-	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces if $data(@name(i,"/#//",@altsub)) set j=-i zkill ^(@altlastsub) if 1>$increment(@name(j,"/#//"),-1) zkill ^("/#//") zkill:1>$increment(@name(j),-1) ^(j)
+tt4pZKe0	;@recvskip @recaliver zkill:'alive @name(0,@xv1$get(@rvalnode)@xv2,@rtsub)
 
-tt1pSe0	;set:'($data(@gbl(@fullsub))#10) @name(0,"/#//",@altsub)=""
+tt4pZKp0	;@recvskip @recaliver if 'alive for i=@pieces zkill @name(i,@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2,@rtsub)
 
-tt1pZKe0;zkill:'($ZTDATA\10) @name(0,"/#//",@altsub)
+; stat=1 and stat=2 variants: the counts are the same nodes the other types maintain,
+; @name(-i,value)/@name(-i) for pieces and @name("",value)/@name("") for the whole node.
+; E.g. @name(-2,"Alice") is the number of rows whose piece 2 is "Alice" (stat=1 and 2), and
+; @name(-2) the number of distinct values of piece 2 (stat=2).
 
-tt1pSe1	;if '($data(@gbl(@fullsub))#10),'$data(@name(0,"/#//",@altsub)) set ^(@altlastsub)="" if $increment(@name("","/#//"))
+tt4ZKe1	;@recalive set p=@xv1$ztoldval@xv2
+	; if $data(@name(0,p,@sub))#10 zkill @name(0,p,@sub) zkill:1>$increment(@name("",p),-1) @name("",p)
+	; if alive,'($data(@name(0,@xnl,@sub))#10) set @name(0,@xnl,@sub)="" if $increment(@name("",@xnl))
 
-tt1pZKe1;if '($ZTDATA\10),$data(@name(0,"/#//",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name("","/#//"),-1) ^("/#//")
+tt4ZKe2	;@recalive set p=@xv1$ztoldval@xv2
+	; if $data(@name(0,p,@sub))#10 zkill @name(0,p,@sub) if 1>$increment(@name("",p),-1) zkill @name("",p) zkill:1>$increment(@name(""),-1) @name("")
+	; if alive,'($data(@name(0,@xnl,@sub))#10) set @name(0,@xnl,@sub)="" if (1=$increment(@name("",@xnl))),$increment(@name(""))
 
-tt1pSe2	;if '($data(@gbl(@fullsub))#10),'$data(@name(0,"/#//",@altsub)) set ^(@altlastsub)="" if 1=$increment(@name("","/#//")),$increment(@name("/#//"))
+tt4ZKp1	;@recalive for i=@pieces set j=-i,p=@xv1$@zpiece($ztoldval,@sep,i)@xv2 do
+	; . if $data(@name(i,p,@sub))#10 zkill @name(i,p,@sub) zkill:1>$increment(@name(j,p),-1) @name(j,p)
+	; . if alive,'($data(@name(i,@xnl,@sub))#10) set @name(i,@xnl,@sub)="" if $increment(@name(j,@xnl))
 
-tt1pZKe2 ;if '($ZTDATA\10),$data(@name(0,"/#//",@altsub)) zkill ^(@altlastsub) if 1>$increment(@name("","/#//"),-1) zkill ^("/#//") if 1>$increment(@name("/#//"),-1) zkill ^("/#//")
+tt4ZKp2	;@recalive for i=@pieces set j=-i,p=@xv1$@zpiece($ztoldval,@sep,i)@xv2 do
+	; . if $data(@name(i,p,@sub))#10 zkill @name(i,p,@sub) if 1>$increment(@name(j,p),-1) zkill @name(j,p) zkill:1>$increment(@name(j),-1) @name(j)
+	; . if alive,'($data(@name(i,@xnl,@sub))#10) set @name(i,@xnl,@sub)="" if (1=$increment(@name(j,@xnl))),$increment(@name(j))
 
-tt1pSp0	;if '($data(@gbl(@fullsub))#10) for i=@pieces set @name(i,"/#//",@altsub)=""
+tt4pSe1	;@recvskip set q=@xv1$get(@rvalnode)@xv2 if '($data(@name(0,q,@rtsub))#10) set @name(0,q,@rtsub)="" if $increment(@name("",q))
 
-tt1pZKp0;if '($ZTDATA\10) for i=@pieces zkill @name(i,"/#//",@altsub)
+tt4pSe2	;@recvskip set q=@xv1$get(@rvalnode)@xv2 if '($data(@name(0,q,@rtsub))#10) set @name(0,q,@rtsub)="" if (1=$increment(@name("",q))),$increment(@name(""))
 
-tt1pSp1	;if '($data(@gbl(@fullsub))#10) for i=@pieces if '$data(@name(i,"/#//",@altsub)) set ^(@altlastsub)="" if $increment(@name(-i,"/#//"))
+tt4pSp1	;@recvskip for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 if '($data(@name(i,q,@rtsub))#10) set @name(i,q,@rtsub)="" if $increment(@name(j,q))
 
-tt1pZKp1;if '($ZTDATA\10) for i=@pieces if $data(@name(i,"/#//",@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(-i,"/#//"),-1) ^("/#//")
+tt4pSp2	;@recvskip for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 if '($data(@name(i,q,@rtsub))#10) set @name(i,q,@rtsub)="" if (1=$increment(@name(j,q))),$increment(@name(j))
 
-tt1pSp2	;if '($data(@gbl(@fullsub))#10) for i=@pieces set j=-i if '$data(@name(i,"/#//",@altsub)) set ^(@altlastsub)="" if 1=$increment(@name(j,"/#//")),$increment(@name(j))
+tt4pZKe1	;@recvskip @recaliver if 'alive set q=@xv1$get(@rvalnode)@xv2 if $data(@name(0,q,@rtsub))#10 zkill @name(0,q,@rtsub) zkill:1>$increment(@name("",q),-1) @name("",q)
 
-tt1pZKp2 ;if '($ZTDATA\10) for i=@pieces if $data(@name(i,"/#//",@altsub)) set j=-i zkill ^(@altlastsub) if 1>$increment(@name(j,"/#//"),-1) zkill ^("/#//") zkill:1>$increment(@name(j),-1) ^(j)
+tt4pZKe2	;@recvskip @recaliver if 'alive set q=@xv1$get(@rvalnode)@xv2 if $data(@name(0,q,@rtsub))#10 zkill @name(0,q,@rtsub) if 1>$increment(@name("",q),-1) zkill @name("",q) zkill:1>$increment(@name(""),-1) @name("")
+
+tt4pZKp1	;@recvskip @recaliver if 'alive for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 if $data(@name(i,q,@rtsub))#10 zkill @name(i,q,@rtsub) zkill:1>$increment(@name(j,q),-1) @name(j,q)
+
+tt4pZKp2	;@recvskip @recaliver if 'alive for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 do
+	; . if $data(@name(i,q,@rtsub))#10 zkill @name(i,q,@rtsub) if 1>$increment(@name(j,q),-1) zkill @name(j,q) zkill:1>$increment(@name(j),-1) @name(j)
 
 tt2Se0	;zkill @name(0,@xfnp1$ztoldval@xfnp2,@sub) set @name(0,@xfnp1$ztvalue@xfnp2,@sub)=""
 
@@ -1883,71 +2382,6 @@ tt2Sp2	; for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zp
 
 tt2ZKp2	;for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
 
-tt3Se0	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub zkill @name(0,xfnnull,@altsub),@name(0,@xfnp1$ztoldval@xfnp2,@sub) set @name(0,@xfnp1$ztvalue@xfnp2,@sub)=""
-	; else  set:'($data(@gbl(@fullsub))#10) @name(0,xfnnull,@altsub)=""
-
-tt3ZKe0	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub zkill @name(0,@xfnp1$ztoldval@xfnp2,@sub) set:($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) @name(0,xfnnull,@altsub)=""
-	; else  zkill:'($data(@gbl(@fullsubprnt))#10)&('$data(@gbl(@fullsub))#10)&('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))) @name(0,xfnnull,@altsub)
-
-tt3Se1	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub do
-	; . if $data(@name(0,xfnnull,@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name("",xfnnull),-1) ^(xfnnull)
-	; . set tmp=@xfnp1$ztoldval@xfnp2 if $data(@name(0,tmp,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name("",tmp),-1) ^(tmp)
-	; . set tmp=@xfnp1$ztvalue@xfnp2 if '$data(@name(0,tmp,@sub)) set ^(@lastsub)="" if $increment(@name("",tmp))
-	; else  if '($data(@gbl(@fullsub))#10),'$data(@name(0,xfnnull,@altsub)) set ^(@altlastsub)="" if $increment(@name("",xfnnull))
-
-tt3ZKe1	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub do
-	; . set tmp=@xfnp1$ztoldval@xfnp2 if $data(@name(0,tmp,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name("",tmp),-1) ^(tmp)
-	; . if ($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)),$increment(@name("",xfnnull)) set @name(0,xfnnull,@altsub)=""
-	; else  if '($data(@gbl(@fullsubprnt))#10),'$data(@gbl(@fullsub))#10,('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))),$data(@name(0,xfnnull,@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name("",xfnnull),-1) ^(xfnnull)
-
-tt3Se2	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub do
-	; . if $data(@name(0,xfnnull,@altsub)) zkill ^(@altlastsub) if 1>$increment(@name("",xfnnull),-1) zkill ^(xfnnull) if 1>$increment(@name(""),-1) zkill ^("")
-	; . set tmp=@xfnp1$ztoldval@xfnp2 if $data(@name(0,tmp,@sub)) zkill ^(@lastsub) if 1>$increment(@name("",tmp),-1) zkill ^(tmp) if 1>$increment(@name(""),-1) zkill ^("")
-	; . set tmp=@xfnp1$ztvalue@xfnp2 if '$data(@name(0,tmp,@sub)) set ^(@lastsub)="" if 1=$increment(@name("",tmp)),$increment(@name(""))
-	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'$data(@name(0,xfnnull,@altsub)) set ^(@altlastsub)="" if 1=$increment(@name("",xfnnull)),$increment(@name(""))
-
-tt3ZKe2	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub do
-	; . set tmp=@xfnp1$ztoldval@xfnp2 if $data(@name(0,tmp,@sub)) zkill ^(@lastsub) if 1>$increment(@name("",tmp),-1) zkill ^(tmp) if 1>$increment(@name(""),-1) zkill ^("")
-	; . if ($data(@gbl(@fullsubprnt))#10)!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) set @name(0,xfnnull,@altsub)="" if 1=$increment(@name("",xfnnull)),$increment(@name(""))
-	; else  if '($data(@gbl(@fullsubprnt))#10),'$data(@gbl(@fullsub)),('($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1))))),$data(@name(0,xfnnull,@altsub)) zkill ^(@altlastsub) if 1>$increment(@name("",xfnnull),-1) zkill ^(xfnnull) if 1>$increment(@name(""),-1) zkill ^("")
-
-tt3Sp0	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub do
-	; . for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2 zkill @name(i,xfnnull,@altsub),@name(i,p,@sub) set @name(i,q,@sub)=""
-	; else  if '($data(@gbl(@fullsub))#10) for i=@pieces set @name(i,xfnnull,@altsub)=""
-
-tt3ZKp0	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub do
-	; . if $data(@gbl(@fullsubprnt))#10!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) for i=@pieces zkill @name(i,@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,@sub) set @name(i,xfnnull,@altsub)=""
-	; . else  for i=@pieces zkill @name(i,@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,@sub)
-	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces zkill @name(i,xfnnull,@altsub)
-
-tt3Sp1	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub do
-	; . for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2 do
-	; . . if $data(@name(i,xfnnull,@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(-i,xfnnull),-1) ^(xfnnull)
-	; . . else  if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(-i,p),-1) ^(p)
-	; . . if '$data(@name(i,q,@sub)) set ^(@lastsub)="" if $increment(@name(-i,q))
-	; else  if '($data(@gbl(@fullsub))#10) for i=@pieces if '$data(@name(i,xfnnull,@altsub)) set ^(@altlastsub)="" if $increment(@name(-i,xfnnull))
-
-tt3ZKp1	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub do
-	; . if $data(@gbl(@fullsubprnt))#10!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 do
-	; . . if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(-i,p),-1) ^(p)
-	; . . if '$data(@name(i,xfnnull,@altsub)) set ^(@altlastsub)="" if $increment(@name(-i,xfnnull))
-	; . else  for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(-i,p),-1) ^(p)
-	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces if $data(@name(i,xfnnull,@altsub)) zkill ^(@altlastsub) zkill:1>$increment(@name(-i,xfnnull),-1) ^(xfnnull)
-
-tt3Sp2	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub do
-	; . for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2 do
-	; . . if $data(@name(i,xfnnull,@altsub)) zkill ^(@altlastsub) if 1>$increment(@name(j,xfnnull),-1) zkill ^(xfnnull) zkill:1>$increment(@name(j),-1) ^(j)
-	; . . else  if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
-	; . . if '$data(@name(i,q,@sub)) set ^(@lastsub)="" if 1=$increment(@name(j,q)),$increment(@name(j))
-	; else  if '($data(@gbl(@fullsub))#10) for i=@pieces set j=-i if '$data(@name(i,xfnnull,@altsub)) set ^(@altlastsub)="" if 1=$increment(@name(j,xfnnull)),$increment(@name(j))
-
-tt3ZKp2	; set xfnnull=@xfnp1""@xfnp2 if @type1last=@lastfullsub do
-	; . if $data(@gbl(@fullsubprnt))#10!$zlength($order(@gbl(@fullsub)))!$zlength($order(@gbl(@fullsub),-1)) for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 do
-	; . . if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
-	; . . if '$data(@name(i,xfnnull,@altsub)) set ^(@altlastsub)="" if 1=$increment(@name(j,xfnnull)),$increment(@name(j))
-	; . else  for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
-	; else  if '($data(@gbl(@fullsubprnt))#10),'($data(@gbl(@fullsub))#10),'($zlength($order(@gbl(@fulltrigsub)))!($zlength($order(@gbl(@fulltrigsub),-1)))) for i=@pieces if $data(@name(i,xfnnull,@altsub)) set j=-i zkill ^(@altlastsub) if 1>$increment(@name(j,xfnnull),-1) zkill ^(xfnnull) zkill:1>$increment(@name(j),-1) ^(j)
-
 ttsS0	;set:'$data(@name(@locsnum,/"#"_//sub@locsnum,@sub)) ^(@lastsubind)=""
 
 ttsZK0	;zkill:$data(@name(@locsnum,/"#"_//sub@locsnum,@sub)) ^(@lastsubind)
@@ -1976,6 +2410,10 @@ tts2ZK2	;set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkil
 ;	A process returns $ECODE to the shell as an exit status, which is modulo
 ;	256, so these must stay at or below 255. New codes are therefore assigned
 ;	downward from the lowest one in use.
+U219	;"-F-RECSPEC type="_$get(type)_" inconsistent with record specification - recgbl/recsub are permitted only with the record specification types (4 and 6), which need recsub whenever recgbl is not gbl"
+U220	;"-F-RECPREFIX the value subscripts (count "_$get(reck)_") must be a left-prefix of the record subscripts (count "_$get(recn)_")"
+U221	;"-F-RECWILD record specification subscript "_$get(i)_" is a record subscript ("":"") below a level that varies and names nothing; name every level down to the deepest record subscript"
+U223	;"-F-RECDEPTH record specification depth recsub="_$get(recsub)_" must be an integer 1 through 29 and at least the deepest subscript named in recsub"
 U224	;"-F-JOBNOTERM JOB'd process(es) scanning "_$get(gbl)_" did not exit after being signaled; the cross reference may still be written to"
 U225	;"-F-INVNPROC Number of processes for the initial scan """_$get(tmp)_""" is not a positive integer"
 U226	;"-F-SCANINCOMPLETE Process "_$get(i)_" of "_$get(nworkers)_" did not complete its scan of "_$get(gbl)_"; cross reference is incomplete"
@@ -1987,7 +2425,6 @@ U231	;"-F-BADTEMPLATE Trigger "_$get(outstr)_" has incorrect number of / delimit
 U232	;"-F-BADZINTERRUPT Caller's $ZINTERRUPT handler returned control to %YDBAIM"
 U233	;"-F-JOBERR Error(s) reported by JOB'd process in "_err(i)
 U234	;"-F-JOBFAIL Failed to JOB worker "_$get(i)_" of "_$get(nworkers)_" to scan "_$get(gbl)
-U235	;"-F-NULL1 Null subscripts are not permitted for type=1 global variables"
 U236	;"-F-SUBERR1 Subscript specification does not match type=1 requirements"
 U237	;"-F-BADTYPEFORCE Schema type="_$get(type)_" and/or force="_$get(force)_" not recognized"
 U238	;"-F-NOPSEP Piece numbers "_$get(pnum)_" specified, but piece separator not specifed"

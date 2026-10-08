@@ -11,11 +11,19 @@
 #								#
 #################################################################
 set +e # don't stop for errors, we generate them.
+
+# The M test "tbash" reaches this script through ZSYSTEM, which spawns $SHELL. When that is a
+# csh/tcsh, it re-reads its own startup files and rewrites PATH, so the entry that "ydb_env_set"
+# added is gone by the time we run. The exported ydb_* variables do survive. So do not rely on
+# "yottadb" being on PATH; invoke it through ydb_dist, which "run_bash_tests.sh" passes down.
+# Fall back to PATH when ydb_dist is not set, so this script still works when run standalone.
+yottadb="${ydb_dist:+$ydb_dist/}yottadb"
+
 function run_test() {
 	local test_name=$1
 	local test_to_run=$2
 	echo $test_name $test_to_run
-	yottadb -run %XCMD $test_to_run | uniq
+	$yottadb -run %XCMD $test_to_run | uniq
 	echo ${PIPESTATUS[0]}
 	echo "---------------"
 	echo
@@ -34,6 +42,11 @@ run_test NOPIECE 'write $$XREFDATA^%YDBAIM("^abcd",1,"|")'
 run_test CANTADDSTAT1 'write $$XREFDATA^%YDBAIM("^abcd",1,"|",1),!,$$XREFDATA^%YDBAIM("^abcd",1,"|",1,,,,2)'
 run_test CANTADDSTAT2 'write $$XREFSUB^%YDBAIM("^abcd",1,1,,,1),!,$$XREFSUB^%YDBAIM("^abcd",1,1,,,2)'
 run_test INVPIECE 'set subs(1)="1:2:3" write $$XREFDATA^%YDBAIM("^x",.subs)'
+# A stat that is not 0, 1 or 2. On a global with no cross reference yet, so that the
+# CANTADDSTAT check (which compares against the stored stat) does not fire first.
+run_test INVSTAT1 'write $$XREFDATA^%YDBAIM("^statx",1,"|",1,,,,5)'
+run_test INVSTAT2 'write $$XREFSUB^%YDBAIM("^statx",1,1,,,5)'
+run_test INVSTAT3 'write $$XREFDATA^%YDBAIM("^statx",1,"|",1,,,,-1)'
 run_test INVPNUMSEP 'kill ^x set ^x(1)="a1|b1",^x(2)="a2|",^x(3)="|b3",subs(1)="*" write $$XREFDATA^%YDBAIM("^x",.subs,"|","1:2:3")'
 run_test INVSNUM1 'set x=$$XREFSUB^%YDBAIM("^x",2,0)'
 run_test INVSNUM2 'set x=$$XREFSUB^%YDBAIM("^x",2,30)'
@@ -61,7 +74,7 @@ run_test BADTRANSFORM3b 'do XREFSUB^%YDBAIM("^abcd",2,2,,,,2,"abcd")'
 run_test BADTRANSFORM4 'do XREFDATA^%YDBAIM("^abcd",2,,,,,,,1,"abcd")'
 
 echo "BADINVOCATION3 DO ^%YDBAIM in direct mode (not via %XCMD)"
-echo 'DO ^%YDBAIM' | yottadb -direct		# Test of BADINVOCATION in direct mode
+echo 'DO ^%YDBAIM' | $yottadb -direct		# Test of BADINVOCATION in direct mode
 echo $?
 echo "---------------"
 echo
