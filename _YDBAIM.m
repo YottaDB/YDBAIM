@@ -1940,13 +1940,13 @@ xr4trigs:
 	set vguard=""
 	if (recgblb=gbl)&recsamedb&(nsubs>recplast)&(nsubs'>recnsubs) do
 	. for i=recplast+1:1:nsubs set vguard=vguard_"&(sub"_i_"="_locxsub(i)_")"
-	. set vguard=" quit:"_$zextract(vguard,2,$zlength(vguard))_"  "			; the leading space: a body line that starts with a command, not a label
+	. set vguard=" ; the value node itself is skipped: its own trigger does its work"_$char(10)_" quit:"_$zextract(vguard,2,$zlength(vguard))_$char(10)_" "	; a line of its own, so that what follows (a comment or a command) starts a line; the leading spaces: body lines that start with a command, not a label
 	for lvl=recplast:1:recnsubs do							; the record node and every watched level below it
 	. quit:recsamedb&(("+"_reclvlspec(lvl))=$zpiece(@name@(6)," -command=",1))	; the record node is the value node: its own pair serves
 	. set recvskip=$select(lvl=nsubs:vguard,1:"")
 	. set rectrigprefix="+"_reclvlspec(lvl)_" -command="
 	. set self=recgblx_"(sub1" for i=2:1:lvl set self=self_",sub"_i			; this level's node, as the trigger's sub1..subN name it
-	. set recaliver=$$xr4alv(recpfxr,recpl,"$name("_self_"))")			; the one substitution that varies by level
+	. set recaliver=$$xr4alvc(recpfxr,recpl,"$name("_self_"))","alive: a record survives this ZKILL - a node with a value at the record node or below it within the depth, not counting the node being removed, which is still there while the trigger runs")	; the one substitution that varies by level
 	. set nch=$zextract(trigsuffix,lvl)						; this level's letter
 	. set rectrigset=rectrigprefix_"set -name=%ydb"_suffix_"S"_nch_" -xecute="_$$xr4body($$exptempl("tt4pS"_pe_stat))
 	. set rectrigdelx=rectrigprefix_"zkill -name=%ydb"_suffix_"Z"_nch_" -xecute="_$$xr4body($$exptempl("tt4pZK"_pe_stat))
@@ -2064,25 +2064,25 @@ xr4subst:
 	set self=""
 	if (recgblb=gbl)&recsamedb set self=gbl_"(sub1" for i=2:1:nsubs set self=self_",sub"_i	; the value node is in the record tree only when the globals are one
 	set:$zlength(self) self="$name("_self_"))"
-	set recalive=$$xr4alv(recpfx,recpl,self)
+	set recalive=$$xr4alvc(recpfx,recpl,self,"alive: a record survives this ZKILL - a node with a value at the record node or below it within the depth, not counting the node being removed, which is still there while the trigger runs")
 	;
 	; The SET guard is not applied when writing the value node is itself what brings the
-	; row into existence: same global, same database, and the value node at or below the
+	; record into existence: same global, same database, and the value node at or below the
 	; record node. The node is not in the database while its SET trigger runs, so the
-	; walk would not see the row the write creates.
+	; walk would not see the record the write creates.
 	; E.g. ^H(id) with records ^G(id): the walk; ^ORD(100.01,ien,.1) with the record
 	;      ^ORD(100.01,ien): nothing.
-	set vrecexq=$select((recgblb=gbl)&recsamedb&(nsubs'<recplast):"",1:$$xr4alv(recpfx,recpl,"")_"quit:'alive  ")	; no guard when the SET itself creates the row; else the test, and quit on no row
+	set vrecexq=$select((recgblb=gbl)&recsamedb&(nsubs'<recplast):"",1:$$xr4alvc(recpfx,recpl,"","this SET cannot create a record, the value node being off the record tree: quit unless a record exists - a node with a value at the record node or below it within the depth")_"quit:'alive  ")	; no guard when the SET itself creates the record; else the test, and quit on no record
 	;
-	; @rtsub: the index entry's subscripts, as @sub lists them for the value node's own
-	; triggers, under the names the record node's triggers bind: a value-key column is
+	; @rtsub: the cross reference entry's subscripts, as @sub lists them for the value node's own
+	; triggers, under the names the record node's triggers bind: a value subscript is
 	; the record subscript it maps to, and a constant is kept, as a literal, when omitfix=0.
 	; E.g. ^H(id) with records ^G(100,id): sub2
 	;      ^H(100,id,"X") with records ^G(id), omitfix=0: 100,sub1,"X"
 	set rtsub="",jj=0
 	for i=1:1:nsubs do
 	. if constlist(i) set:'omitfix rtsub=rtsub_locxsub(i)_","	; a constant: kept as a literal when omitfix=0
-	. else  set rtsub=rtsub_"sub"_rpos($increment(jj))_","		; a value-key column: the record subscript it maps to
+	. else  set rtsub=rtsub_"sub"_rpos($increment(jj))_","		; a value subscript: the record subscript it maps to
 	set $zextract(rtsub,$zlength(rtsub))=""
 	;
 	; @rvalnode is read by the RECORD-side triggers, which fire in a process that wrote
@@ -2117,20 +2117,24 @@ xr4subst:
 ; E.g. pfx="^G(sub1)", plvl=1, records ^G(id,line,0) (recplast=3, depth 3), self="":
 ;    set alive=0,rq=$name(^G(sub1)),rq=$zextract(rq,1,$zlength(rq)-1)_",",rp=$query(^G(sub1)) for  quit:alive!($zextract(rp,1,$zlength(rq))'=rq)  set:($qlength(rp)'<3)&($qlength(rp)'>3)&($qsubscript(rp,3)=0) alive=1 set:'alive rp=$query(@rp)
 ; Uses the XREFDATA() locals recconstlist, reclocxsub, recnsubs, recnullsub, recplast.
+; xr4alv with a comment line of its own ahead of the walk, so that the generated code says what alive is.
+xr4alvc:(pfx,plvl,self,why)
+	quit " ; "_why_$char(10)_$$xr4alv(pfx,plvl,self)
+
 xr4alv:(pfx,plvl,self)
 	new c,i,n,q,t
-	; the prefix itself: a row when it is a record node with a value, unless it is self
-	set t=" set alive="_$select(plvl<recplast:0,self=("$name("_pfx_")"):0,'$zlength(self):"($data("_pfx_")#10)",1:"($data("_pfx_")#10)&($name("_pfx_")'="_self_")")								; above the record node, or self: never a row; else a value, and not self
+	; the prefix itself: a record when it is a record node with a value, unless it is self
+	set t=" set alive="_$select(plvl<recplast:0,self=("$name("_pfx_")"):0,'$zlength(self):"($data("_pfx_")#10)",1:"($data("_pfx_")#10)&($name("_pfx_")'="_self_")")								; above the record node, or self: never a record; else a value, and not self
 	quit:plvl'<recnsubs t_" "																								; nothing below the prefix is within the depth
 	set n=$select($zlength(self):$zlength(self,"(sub")+$zlength(self,",sub")-2,1:0)																		; self's level: its subscripts are sub1..subN
 	set q=$zextract(pfx,1,$zlength(pfx)-1)_","																						; the prefix less ")" plus ",": a child is q_<subscript>_")"
 	if recnsubs=(plvl+1),'recnullsub do  quit t																						; one watched level below the prefix: look at its nodes directly, no $QUERY and no indirection
 	. if recconstlist(plvl+1) set t=t_"!(($data("_q_reclocxsub(plvl+1)_"))#10)"_$select(n=(plvl+1):"&(sub"_n_"'="_reclocxsub(plvl+1)_")",1:"")_") "										; the level is a constant: one node, unless it is self
-	. else  set t=t_" if 'alive set c="""" for  set c=$order("_q_"c)) quit:c=""""  if "_$select(n=(plvl+1):"c'=sub"_n_",",1:"")_"$data("_q_"c))#10 set alive=1 quit"_$char(10)_" "						; a varying level: its first node with a value, other than self, makes a row
+	. else  set t=t_" if 'alive set c="""" for  set c=$order("_q_"c)) quit:c=""""  if "_$select(n=(plvl+1):"c'=sub"_n_",",1:"")_"$data("_q_"c))#10 set alive=1 quit"_$char(10)_" "						; a varying level: its first node with a value, other than self, makes a record
 	set c=""
 	for i=plvl+1:1:recplast set:recconstlist(i) c=c_"&($qsubscript(rp,"_i_")="_reclocxsub(i)_")"																; the constants between the prefix and the record node must match
 	set t=t_",rq=$name("_pfx_"),rq=$zextract(rq,1,$zlength(rq)-1)_"","",rp=$query("_pfx_")"																	; rq: what every descendant's name starts with; rp: the first descendant
-	set t=t_" for  quit:alive!($zextract(rp,1,$zlength(rq))'=rq)  set:($qlength(rp)'<"_recplast_")&($qlength(rp)'>"_recnsubs_")"_c_$select($zlength(self):"&(rp'="_self_")",1:"")_" alive=1 set:'alive rp=$query(@rp)"	; walk the subtree: a node from the record node to the depth, constants matching, not self, is a row; the next node only while none is found (an ELSE on the line would be skipped with the IF's rest)
+	set t=t_" for  quit:alive!($zextract(rp,1,$zlength(rq))'=rq)  set:($qlength(rp)'<"_recplast_")&($qlength(rp)'>"_recnsubs_")"_c_$select($zlength(self):"&(rp'="_self_")",1:"")_" alive=1 set:'alive rp=$query(@rp)"	; walk the subtree: a node from the record node to the depth, constants matching, not self, is a record; the next node only while none is found (an ELSE on the line would be skipped with the IF's rest)
 	quit t_$char(10)_" "
 
 ; The following is a list of trigger suffixes for trigger names for the
@@ -2191,10 +2195,14 @@ xtratrigsufx:	;0123456789ABCDEFGHIJLMNOPQRTUVWX
 ; database access. @recvskip is the record side's guard (xr4trigs), empty elsewhere.
 ; The traversal ZKILLs a leaf for the same reason: for a node without children the two
 ; are one operation, and a KILL would only fire KILL triggers whose job is to ZKILL it.
-rk0	; @recvskip if '($ztdata\10) set var=$reference zkill:$ztdata @var quit
+rk0	; ; KILL: turn the KILL into ZKILLs, so that the ZKILL triggers retire the entries of every node that goes
+	; ; a node with no children ($ZTDATA under 10) is ZKILLed outright; a subtree is walked depth first by dft
+	; @recvskip if '($ztdata\10) set var=$reference zkill:$ztdata @var quit
 	; do dft($reference) quit
+	; ; never reached: keeps the label below inside the trigger code (YDB#799)
 	; if @name
 	;dft(var)
+	; ; depth first: recurse into each child that has children, ZKILL each that has none, then ZKILL the node itself
 	; new sub,vard,vars,varsd,vsroot
 	; set vard=$data(@var)
 	; do:vard\10
@@ -2208,10 +2216,14 @@ rk0	; @recvskip if '($ztdata\10) set var=$reference zkill:$ztdata @var quit
 	; zkill:vard#10 @var
 	; quit
 
-rk1	; @recvskip if '($ztdata\10) set var=$reference zkill:$ztdata @var quit
+rk1	; ; KILL: turn the KILL into ZKILLs, so that the ZKILL triggers retire the entries of every node that goes
+	; ; a node with no children ($ZTDATA under 10) is ZKILLed outright; a subtree is walked depth first by dft
+	; @recvskip if '($ztdata\10) set var=$reference zkill:$ztdata @var quit
 	; do dft($reference) quit
+	; ; never reached: keeps the label below inside the trigger code (YDB#799)
 	; if @name
 	;dft(var)
+	; ; depth first: recurse into each child that has children, ZKILL each that has none, then ZKILL the node itself
 	; new sub,vard,vars,varsd,vsroot
 	; set vard=$data(@var)
 	; do:vard\10
@@ -2225,186 +2237,260 @@ rk1	; @recvskip if '($ztdata\10) set var=$reference zkill:$ztdata @var quit
 	; zkill:vard#10 @var
 	; quit
 
-ttSe0	;zkill @name(0,/"#"_//$ztoldval,@sub) set @name(0,/"#"_//$ztvalue,@sub)=""
+ttSe0	; ; SET: move the key's entry from the old value of the node to the new
+	; zkill @name(0,/"#"_//$ztoldval,@sub) set @name(0,/"#"_//$ztvalue,@sub)=""
 
-ttZKe0	;zkill @name(0,/"#"_//$ztoldval,@sub)
+ttZKe0	; ; ZKILL: remove the key's entry for the value that is going
+	; zkill @name(0,/"#"_//$ztoldval,@sub)
 
-ttSe1	; /set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",/tmp/$ztoldval/),-1) ^($ztoldval)
+ttSe1	; ; SET: move the key's entry from the old value of the node to the new; stat=1: the per-value entry counts, name("",value), follow
+	; /set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",/tmp/$ztoldval/),-1) ^($ztoldval)
 	; /set tmp="#"_$ztvalue //if '$data(@name(0,/tmp/$ztvalue/,@sub)) set ^(@lastsub)="" if $increment(@name("",/tmp/$ztvalue/))
 
-ttZKe1	;/set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",/tmp/$ztoldval/),-1) ^(/tmp/$ztoldval/)
+ttZKe1	; ; ZKILL: remove the key's entry for the value that is going; stat=1: the per-value entry counts follow
+	; /set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",/tmp/$ztoldval/),-1) ^(/tmp/$ztoldval/)
 
-ttSe2	; /set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub))#10 zkill ^(@lastsub) if 1>$increment(@name("",/tmp/$ztoldval/),-1) zkill ^(/tmp/$ztoldval/) zkill:1>$increment(@name(""),-1) ^("")
+ttSe2	; ; SET: move the key's entry from the old value of the node to the new; stat=2: the per-value entry counts name("",value) and the distinct-value count name("") follow
+	; /set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub))#10 zkill ^(@lastsub) if 1>$increment(@name("",/tmp/$ztoldval/),-1) zkill ^(/tmp/$ztoldval/) zkill:1>$increment(@name(""),-1) ^("")
 	; /set tmp="#"_$ztvalue //if '$data(@name(0,/tmp/$ztvalue/,@sub)) set ^(@lastsub)="" if (1=$increment(@name("",/tmp/$ztvalue/))),$increment(@name(""))
 
-ttZKe2	;/set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub))#10 zkill ^(@lastsub) if 1>$increment(@name("",/tmp/$ztoldval/),-1) zkill ^(/tmp/$ztoldval/) if 1>$increment(@name(""),-1) zkill ^("")
+ttZKe2	; ; ZKILL: remove the key's entry for the value that is going; stat=2: the per-value and distinct-value counts follow
+	; /set tmp="#"_$ztoldval //if $data(@name(0,/tmp/$ztoldval/,@sub))#10 zkill ^(@lastsub) if 1>$increment(@name("",/tmp/$ztoldval/),-1) zkill ^(/tmp/$ztoldval/) if 1>$increment(@name(""),-1) zkill ^("")
 
-ttSp0	; for i=@pieces set p=/"#"_//$@zpiece($ztoldval,@sep,i),q=/"#"_//$@zpiece($ztvalue,@sep,i) do
+ttSp0	; ; SET: for each cross referenced piece i, p and q are the old and the new value of that piece
+	; ; a changed piece moves the key's entry from p to q; an unchanged EMPTY piece is a node created with that piece empty, so the key's empty-string entry for it is made here
+	; for i=@pieces set p=/"#"_//$@zpiece($ztoldval,@sep,i),q=/"#"_//$@zpiece($ztvalue,@sep,i) do
 	; . if p'=q zkill @name(i,p,@sub) set @name(i,q,@sub)=""
 	; . else  set:'($zlength(q)/-1//) @name(i,"/#//",@sub)=""
 
-ttZKp0	;for i=@pieces zkill @name(i,/"#"_//$@zpiece($ztoldval,@sep,i),@sub)
+ttZKp0	; ; ZKILL: for each cross referenced piece i, remove the key's entry for the value that is going
+	; for i=@pieces zkill @name(i,/"#"_//$@zpiece($ztoldval,@sep,i),@sub)
 
-ttSp1	; for i=@pieces set p=/"#"_//$@zpiece($ztoldval,@sep,i),q=/"#"_//$@zpiece($ztvalue,@sep,i),j=-i do
+ttSp1	; ; SET: for each cross referenced piece i, p and q are the old and the new value of that piece
+	; ; a changed piece moves the key's entry from p to q; an unchanged EMPTY piece is a node created with that piece empty, so the key's empty-string entry for it is made here
+	; ; stat=1: the per-value entry counts, name(-i,value), follow
+	; for i=@pieces set p=/"#"_//$@zpiece($ztoldval,@sep,i),q=/"#"_//$@zpiece($ztvalue,@sep,i),j=-i do
 	; . if p'=q do
 	; . . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
 	; . . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" if $increment(@name(j,q))
 	; . else  if '($zlength(q)/-1//),'($data(@name(i,"/#//",@sub))#10) set ^(@lastsub)="" if $increment(@name(j,"/#//"))
 
-ttZKp1	;for i=@pieces set j=-i,p=/"#"_//$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
+ttZKp1	; ; ZKILL: for each cross referenced piece i, remove the key's entry for the value that is going; stat=1: the per-value entry counts follow
+	; for i=@pieces set j=-i,p=/"#"_//$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
 
-ttSp2	; for i=@pieces set p=/"#"_//$@zpiece($ztoldval,@sep,i),q=/"#"_//$@zpiece($ztvalue,@sep,i),j=-i do
+ttSp2	; ; SET: for each cross referenced piece i, p and q are the old and the new value of that piece
+	; ; a changed piece moves the key's entry from p to q; an unchanged EMPTY piece is a node created with that piece empty, so the key's empty-string entry for it is made here
+	; ; stat=2: the per-value entry counts name(-i,value) and the distinct-value counts name(-i) follow
+	; for i=@pieces set p=/"#"_//$@zpiece($ztoldval,@sep,i),q=/"#"_//$@zpiece($ztvalue,@sep,i),j=-i do
 	; . if p'=q do
 	; . . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) if 1>$increment(@name(j),-1) zkill ^(j)
 	; . . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" if (1=$increment(@name(j,q))),$increment(@name(j))
 	; . else  if '($zlength(q)/-1//),'($data(@name(i,"/#//",@sub))#10) set ^(@lastsub)="" if (1=$increment(@name(j,"/#//"))),$increment(@name(j))
 
-ttZKp2	;for i=@pieces set j=-i,p=/"#"_//$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
+ttZKp2	; ; ZKILL: for each cross referenced piece i, remove the key's entry for the value that is going; stat=2: the per-value and distinct-value counts follow
+	; for i=@pieces set j=-i,p=/"#"_//$@zpiece($ztoldval,@sep,i) if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
 
-; Types 4 and 6. @xv1/@xv2 bracket a value as this type represents it in the index, and
-; @xnl is that representation of the empty value, the NULL bucket (xr4subst); that is what
-; lets type 6 share these templates. Each body opens with a line that sets alive, whether
-; a row exists for the value key (xr4alv), on a line of its own when it walks. The value
-; side (tt4S*, tt4ZK*) is the value node's own trigger: a SET quits when no row exists
-; for the key, and a ZKILL re-adds a NULL entry when a row survives. The record side (tt4pS*, tt4pZK*) fires on the record
+; Types 4 and 6. @xv1/@xv2 bracket a value as this type represents it in the cross reference, and
+; @xnl is that representation of the empty value, the empty-string entry (xr4subst); that is what
+; lets type 6 share these templates. Each trigger's code opens with a line that sets alive, whether
+; a record exists for the value subscripts (xr4alv), on a line of its own when it walks. The value
+; side (tt4S*, tt4ZK*) is the value node's own trigger: a SET quits when no record exists
+; for the key, and a ZKILL re-adds an empty-string entry when a record survives. The record side (tt4pS*, tt4pZK*) fires on the record
 ; node and the watched levels below it, reads the value node through @rvalnode, and on a
-; ZKILL removes the entry unless a row survives.
+; ZKILL removes the entry unless a record survives.
 
-tt4Se0	;@vrecexq zkill @name(0,@xv1$ztoldval@xv2,@sub) set @name(0,@xv1$ztvalue@xv2,@sub)=""
+tt4Se0	; ; type 4 value node SET: move the key's entry from the old value of the node to the new
+	; @vrecexq zkill @name(0,@xv1$ztoldval@xv2,@sub) set @name(0,@xv1$ztvalue@xv2,@sub)=""
 
-tt4Se1	;@vrecexq set p=@xv1$ztoldval@xv2,q=@xv1$ztvalue@xv2
+tt4Se1	; ; type 4 value node SET: move the key's entry from the old value of the node to the new; stat=1: the per-value entry counts, name("",value), follow
+	; @vrecexq set p=@xv1$ztoldval@xv2,q=@xv1$ztvalue@xv2
 	; if $data(@name(0,p,@sub))#10 zkill @name(0,p,@sub) zkill:1>$increment(@name("",p),-1) @name("",p)
 	; if '($data(@name(0,q,@sub))#10) set @name(0,q,@sub)="" if $increment(@name("",q))
 
-tt4Se2	;@vrecexq set p=@xv1$ztoldval@xv2,q=@xv1$ztvalue@xv2
+tt4Se2	; ; type 4 value node SET: move the key's entry from the old value of the node to the new; stat=2: the per-value entry counts name("",value) and the distinct-value count name("") follow
+	; @vrecexq set p=@xv1$ztoldval@xv2,q=@xv1$ztvalue@xv2
 	; if $data(@name(0,p,@sub))#10 zkill @name(0,p,@sub) if 1>$increment(@name("",p),-1) zkill @name("",p) zkill:1>$increment(@name(""),-1) @name("")
 	; if '($data(@name(0,q,@sub))#10) set @name(0,q,@sub)="" if (1=$increment(@name("",q))),$increment(@name(""))
 
-tt4Sp0	;@vrecexq for i=@pieces set p=@xv1$@zpiece($ztoldval,@sep,i)@xv2,q=@xv1$@zpiece($ztvalue,@sep,i)@xv2 do
+tt4Sp0	; ; type 4 value node SET: for each cross referenced piece i, p and q are the old and the new value of that piece
+	; ; a changed piece moves the key's entry from p to q; an unchanged EMPTY piece is a node created with that piece empty, which makes the record's entry for it the empty string: no record side trigger fires for the value node, so that entry is made here
+	; @vrecexq for i=@pieces set p=@xv1$@zpiece($ztoldval,@sep,i)@xv2,q=@xv1$@zpiece($ztvalue,@sep,i)@xv2 do
 	; . if p'=q zkill @name(i,p,@sub) set @name(i,q,@sub)=""
+	; . ; p=q and empty: a node created with this piece empty; cross reference the key under the empty string
 	; . else  set:q=@xnl @name(i,@xnl,@sub)=""
 
-tt4Sp1	;@vrecexq for i=@pieces set p=@xv1$@zpiece($ztoldval,@sep,i)@xv2,q=@xv1$@zpiece($ztvalue,@sep,i)@xv2,j=-i do
+tt4Sp1	; ; type 4 value node SET: for each cross referenced piece i, p and q are the old and the new value of that piece
+	; ; as for stat=0, and the per-value entry counts, name(-i,value), follow
+	; @vrecexq for i=@pieces set p=@xv1$@zpiece($ztoldval,@sep,i)@xv2,q=@xv1$@zpiece($ztvalue,@sep,i)@xv2,j=-i do
 	; . if p'=q do
 	; . . if $data(@name(i,p,@sub))#10 zkill @name(i,p,@sub) zkill:1>$increment(@name(j,p),-1) @name(j,p)
 	; . . if '($data(@name(i,q,@sub))#10) set @name(i,q,@sub)="" if $increment(@name(j,q))
 	; . else  if q=@xnl,'($data(@name(i,@xnl,@sub))#10) set @name(i,@xnl,@sub)="" if $increment(@name(j,@xnl))
 
-tt4Sp2	;@vrecexq for i=@pieces set p=@xv1$@zpiece($ztoldval,@sep,i)@xv2,q=@xv1$@zpiece($ztvalue,@sep,i)@xv2,j=-i do
+tt4Sp2	; ; type 4 value node SET: for each cross referenced piece i, p and q are the old and the new value of that piece
+	; ; as for stat=0, and the per-value entry counts name(-i,value) and the distinct-value counts name(-i) follow
+	; @vrecexq for i=@pieces set p=@xv1$@zpiece($ztoldval,@sep,i)@xv2,q=@xv1$@zpiece($ztvalue,@sep,i)@xv2,j=-i do
 	; . if p'=q do
 	; . . if $data(@name(i,p,@sub))#10 zkill @name(i,p,@sub) if 1>$increment(@name(j,p),-1) zkill @name(j,p) if 1>$increment(@name(j),-1) zkill @name(j)
 	; . . if '($data(@name(i,q,@sub))#10) set @name(i,q,@sub)="" if (1=$increment(@name(j,q))),$increment(@name(j))
 	; . else  if q=@xnl,'($data(@name(i,@xnl,@sub))#10) set @name(i,@xnl,@sub)="" if (1=$increment(@name(j,@xnl))),$increment(@name(j))
 
-tt4ZKe0	;@recalive zkill @name(0,@xv1$ztoldval@xv2,@sub) set:alive @name(0,@xnl,@sub)=""
+tt4ZKe0	; ; type 4 value node ZKILL: remove the key's entry for the value that is going; when a record survives (alive) the key is cross referenced under the empty string instead
+	; @recalive zkill @name(0,@xv1$ztoldval@xv2,@sub) set:alive @name(0,@xnl,@sub)=""
 
-tt4ZKp0	;@recalive for i=@pieces zkill @name(i,@xv1$@zpiece($ztoldval,@sep,i)@xv2,@sub) set:alive @name(i,@xnl,@sub)=""
+tt4ZKp0	; ; type 4 value node ZKILL: for each cross referenced piece i, remove the key's entry for the value that is going; when a record survives (alive) the key is cross referenced under the empty string instead
+	; @recalive for i=@pieces zkill @name(i,@xv1$@zpiece($ztoldval,@sep,i)@xv2,@sub) set:alive @name(i,@xnl,@sub)=""
 
-tt4pSe0	;@recvskip set @name(0,@xv1$get(@rvalnode)@xv2,@rtsub)=""
+tt4pSe0	; ; type 4 record side SET: a record exists for this key now; cross reference the value node as it is, "" when it is absent
+	; @recvskip set @name(0,@xv1$get(@rvalnode)@xv2,@rtsub)=""
 
-tt4pSp0	;@recvskip for i=@pieces set @name(i,@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2,@rtsub)=""
+tt4pSp0	; ; type 4 record side SET: a record exists for this key now; cross reference each piece of the value node as it is, "" when the node is absent
+	; @recvskip for i=@pieces set @name(i,@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2,@rtsub)=""
 
-tt4pZKe0	;@recvskip @recaliver zkill:'alive @name(0,@xv1$get(@rvalnode)@xv2,@rtsub)
+tt4pZKe0	; ; type 4 record side ZKILL: when no record survives this node's removal (alive, below), retire the key's entry
+	; @recvskip @recaliver zkill:'alive @name(0,@xv1$get(@rvalnode)@xv2,@rtsub)
 
-tt4pZKp0	;@recvskip @recaliver if 'alive for i=@pieces zkill @name(i,@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2,@rtsub)
+tt4pZKp0	; ; type 4 record side ZKILL: when no record survives this node's removal (alive, below), retire the key's entries for every cross referenced piece
+	; @recvskip @recaliver if 'alive for i=@pieces zkill @name(i,@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2,@rtsub)
 
 ; stat=1 and stat=2 variants: the counts are the same nodes the other types maintain,
 ; @name(-i,value)/@name(-i) for pieces and @name("",value)/@name("") for the whole node.
-; E.g. @name(-2,"Alice") is the number of rows whose piece 2 is "Alice" (stat=1 and 2), and
+; E.g. @name(-2,"Alice") is the number of nodes whose piece 2 is "Alice" (stat=1 and 2), and
 ; @name(-2) the number of distinct values of piece 2 (stat=2).
 
-tt4ZKe1	;@recalive set p=@xv1$ztoldval@xv2
+tt4ZKe1	; ; type 4 value node ZKILL: as for stat=0, and the per-value entry counts follow
+	; @recalive set p=@xv1$ztoldval@xv2
 	; if $data(@name(0,p,@sub))#10 zkill @name(0,p,@sub) zkill:1>$increment(@name("",p),-1) @name("",p)
 	; if alive,'($data(@name(0,@xnl,@sub))#10) set @name(0,@xnl,@sub)="" if $increment(@name("",@xnl))
 
-tt4ZKe2	;@recalive set p=@xv1$ztoldval@xv2
+tt4ZKe2	; ; type 4 value node ZKILL: as for stat=0, and the per-value and distinct-value counts follow
+	; @recalive set p=@xv1$ztoldval@xv2
 	; if $data(@name(0,p,@sub))#10 zkill @name(0,p,@sub) if 1>$increment(@name("",p),-1) zkill @name("",p) zkill:1>$increment(@name(""),-1) @name("")
 	; if alive,'($data(@name(0,@xnl,@sub))#10) set @name(0,@xnl,@sub)="" if (1=$increment(@name("",@xnl))),$increment(@name(""))
 
-tt4ZKp1	;@recalive for i=@pieces set j=-i,p=@xv1$@zpiece($ztoldval,@sep,i)@xv2 do
+tt4ZKp1	; ; type 4 value node ZKILL: as for stat=0, and the per-value entry counts follow
+	; @recalive for i=@pieces set j=-i,p=@xv1$@zpiece($ztoldval,@sep,i)@xv2 do
 	; . if $data(@name(i,p,@sub))#10 zkill @name(i,p,@sub) zkill:1>$increment(@name(j,p),-1) @name(j,p)
 	; . if alive,'($data(@name(i,@xnl,@sub))#10) set @name(i,@xnl,@sub)="" if $increment(@name(j,@xnl))
 
-tt4ZKp2	;@recalive for i=@pieces set j=-i,p=@xv1$@zpiece($ztoldval,@sep,i)@xv2 do
+tt4ZKp2	; ; type 4 value node ZKILL: as for stat=0, and the per-value and distinct-value counts follow
+	; @recalive for i=@pieces set j=-i,p=@xv1$@zpiece($ztoldval,@sep,i)@xv2 do
 	; . if $data(@name(i,p,@sub))#10 zkill @name(i,p,@sub) if 1>$increment(@name(j,p),-1) zkill @name(j,p) zkill:1>$increment(@name(j),-1) @name(j)
 	; . if alive,'($data(@name(i,@xnl,@sub))#10) set @name(i,@xnl,@sub)="" if (1=$increment(@name(j,@xnl))),$increment(@name(j))
 
-tt4pSe1	;@recvskip set q=@xv1$get(@rvalnode)@xv2 if '($data(@name(0,q,@rtsub))#10) set @name(0,q,@rtsub)="" if $increment(@name("",q))
+tt4pSe1	; ; type 4 record side SET: as for stat=0, and the per-value entry counts follow
+	; @recvskip set q=@xv1$get(@rvalnode)@xv2 if '($data(@name(0,q,@rtsub))#10) set @name(0,q,@rtsub)="" if $increment(@name("",q))
 
-tt4pSe2	;@recvskip set q=@xv1$get(@rvalnode)@xv2 if '($data(@name(0,q,@rtsub))#10) set @name(0,q,@rtsub)="" if (1=$increment(@name("",q))),$increment(@name(""))
+tt4pSe2	; ; type 4 record side SET: as for stat=0, and the per-value and distinct-value counts follow
+	; @recvskip set q=@xv1$get(@rvalnode)@xv2 if '($data(@name(0,q,@rtsub))#10) set @name(0,q,@rtsub)="" if (1=$increment(@name("",q))),$increment(@name(""))
 
-tt4pSp1	;@recvskip for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 if '($data(@name(i,q,@rtsub))#10) set @name(i,q,@rtsub)="" if $increment(@name(j,q))
+tt4pSp1	; ; type 4 record side SET: as for stat=0, and the per-value entry counts follow
+	; @recvskip for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 if '($data(@name(i,q,@rtsub))#10) set @name(i,q,@rtsub)="" if $increment(@name(j,q))
 
-tt4pSp2	;@recvskip for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 if '($data(@name(i,q,@rtsub))#10) set @name(i,q,@rtsub)="" if (1=$increment(@name(j,q))),$increment(@name(j))
+tt4pSp2	; ; type 4 record side SET: as for stat=0, and the per-value and distinct-value counts follow
+	; @recvskip for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 if '($data(@name(i,q,@rtsub))#10) set @name(i,q,@rtsub)="" if (1=$increment(@name(j,q))),$increment(@name(j))
 
-tt4pZKe1	;@recvskip @recaliver if 'alive set q=@xv1$get(@rvalnode)@xv2 if $data(@name(0,q,@rtsub))#10 zkill @name(0,q,@rtsub) zkill:1>$increment(@name("",q),-1) @name("",q)
+tt4pZKe1	; ; type 4 record side ZKILL: as for stat=0, and the per-value entry counts follow
+	; @recvskip @recaliver if 'alive set q=@xv1$get(@rvalnode)@xv2 if $data(@name(0,q,@rtsub))#10 zkill @name(0,q,@rtsub) zkill:1>$increment(@name("",q),-1) @name("",q)
 
-tt4pZKe2	;@recvskip @recaliver if 'alive set q=@xv1$get(@rvalnode)@xv2 if $data(@name(0,q,@rtsub))#10 zkill @name(0,q,@rtsub) if 1>$increment(@name("",q),-1) zkill @name("",q) zkill:1>$increment(@name(""),-1) @name("")
+tt4pZKe2	; ; type 4 record side ZKILL: as for stat=0, and the per-value and distinct-value counts follow
+	; @recvskip @recaliver if 'alive set q=@xv1$get(@rvalnode)@xv2 if $data(@name(0,q,@rtsub))#10 zkill @name(0,q,@rtsub) if 1>$increment(@name("",q),-1) zkill @name("",q) zkill:1>$increment(@name(""),-1) @name("")
 
-tt4pZKp1	;@recvskip @recaliver if 'alive for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 if $data(@name(i,q,@rtsub))#10 zkill @name(i,q,@rtsub) zkill:1>$increment(@name(j,q),-1) @name(j,q)
+tt4pZKp1	; ; type 4 record side ZKILL: as for stat=0, and the per-value entry counts follow
+	; @recvskip @recaliver if 'alive for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 if $data(@name(i,q,@rtsub))#10 zkill @name(i,q,@rtsub) zkill:1>$increment(@name(j,q),-1) @name(j,q)
 
-tt4pZKp2	;@recvskip @recaliver if 'alive for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 do
+tt4pZKp2	; ; type 4 record side ZKILL: as for stat=0, and the per-value and distinct-value counts follow
+	; @recvskip @recaliver if 'alive for i=@pieces set j=-i,q=@xv1$@zpiece($get(@rvalnode),@sep,i)@xv2 do
 	; . if $data(@name(i,q,@rtsub))#10 zkill @name(i,q,@rtsub) if 1>$increment(@name(j,q),-1) zkill @name(j,q) zkill:1>$increment(@name(j),-1) @name(j)
 
-tt2Se0	;zkill @name(0,@xfnp1$ztoldval@xfnp2,@sub) set @name(0,@xfnp1$ztvalue@xfnp2,@sub)=""
+tt2Se0	; ; value through the transformation function: SET: move the key's entry from the old value of the node to the new
+	; zkill @name(0,@xfnp1$ztoldval@xfnp2,@sub) set @name(0,@xfnp1$ztvalue@xfnp2,@sub)=""
 
-tt2ZKe0	;zkill @name(0,@xfnp1$ztoldval@xfnp2,@sub)
+tt2ZKe0	; ; value through the transformation function: ZKILL: remove the key's entry for the value that is going
+	; zkill @name(0,@xfnp1$ztoldval@xfnp2,@sub)
 
-tt2Se1	; if $data(@name(0,@xfnp1$ztoldval@xfnp2,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",@xfnp1$ztoldval@xfnp2),-1) ^(@xfnp1$ztoldval@xfnp2)
+tt2Se1	; ; value through the transformation function: SET: move the key's entry from the old value of the node to the new; stat=1: the per-value entry counts, name("",value), follow
+	; if $data(@name(0,@xfnp1$ztoldval@xfnp2,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",@xfnp1$ztoldval@xfnp2),-1) ^(@xfnp1$ztoldval@xfnp2)
 	; if '$data(@name(0,@xfnp1$ztvalue@xfnp2,@sub)) set ^(@lastsub)="" if $increment(@name("",@xfnp1$ztvalue@xfnp2))
 
-tt2ZKe1	;if $data(@name(0,@xfnp1$ztoldval@xfnp2,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",@xfnp1$ztoldval@xfnp2),-1) ^(@xfnp1$ztoldval@xfnp2)
+tt2ZKe1	; ; value through the transformation function: ZKILL: remove the key's entry for the value that is going; stat=1: the per-value entry counts follow
+	; if $data(@name(0,@xfnp1$ztoldval@xfnp2,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name("",@xfnp1$ztoldval@xfnp2),-1) ^(@xfnp1$ztoldval@xfnp2)
 
-tt2Se2	; set tmp=@xfnp1$ztoldval@xfnp2 if $data(@name(0,tmp,@sub))#10 zkill ^(@lastsub) if 1>$increment(@name("",tmp),-1) zkill ^(tmp) zkill:1>$increment(@name(""),-1) ^("")
+tt2Se2	; ; value through the transformation function: SET: move the key's entry from the old value of the node to the new; stat=2: the per-value entry counts name("",value) and the distinct-value count name("") follow
+	; set tmp=@xfnp1$ztoldval@xfnp2 if $data(@name(0,tmp,@sub))#10 zkill ^(@lastsub) if 1>$increment(@name("",tmp),-1) zkill ^(tmp) zkill:1>$increment(@name(""),-1) ^("")
 	; set tmp=@xfnp1$ztvalue@xfnp2 if '$data(@name(0,tmp,@sub)) set ^(@lastsub)="" if (1=$increment(@name("",tmp))),$increment(@name(""))
 
-tt2ZKe2	;set tmp=@xfnp1$ztoldva@xfnp2 if $data(@name(0,tmp,@sub))#10 zkill ^(@lastsub) if 1>$increment(@name("",tmp),-1) zkill ^(tmp) if 1>$increment(@name(""),-1) zkill ^("")
+tt2ZKe2	; ; value through the transformation function: ZKILL: remove the key's entry for the value that is going; stat=2: the per-value and distinct-value counts follow
+	; set tmp=@xfnp1$ztoldva@xfnp2 if $data(@name(0,tmp,@sub))#10 zkill ^(@lastsub) if 1>$increment(@name("",tmp),-1) zkill ^(tmp) if 1>$increment(@name(""),-1) zkill ^("")
 
-tt2Sp0	; for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2 do
+tt2Sp0	; ; value through the transformation function: SET: for each cross referenced piece i, p and q are the old and the new value of that piece
+	; ; a changed piece moves the key's entry from p to q; an unchanged EMPTY piece is a node created with that piece empty, so the key's empty-string entry for it is made here
+	; for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2 do
 	; . if p'=q zkill @name(i,p,@sub) set @name(i,q,@sub)=""
 	; . else  set:'($zlength(q)) @name(i,"",@sub)=""
 
-tt2ZKp0	;for i=@pieces zkill @name(i,@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,@sub)
+tt2ZKp0	; ; value through the transformation function: ZKILL: for each cross referenced piece i, remove the key's entry for the value that is going
+	; for i=@pieces zkill @name(i,@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,@sub)
 
-tt2Sp1	; for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2,j=-i do
+tt2Sp1	; ; value through the transformation function: SET: for each cross referenced piece i, p and q are the old and the new value of that piece
+	; ; a changed piece moves the key's entry from p to q; an unchanged EMPTY piece is a node created with that piece empty, so the key's empty-string entry for it is made here
+	; ; stat=1: the per-value entry counts, name(-i,value), follow
+	; for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2,j=-i do
 	; . if p'=q do
 	; . . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
 	; . . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" if $increment(@name(j,q))
 	; . else  if '($zlength(q)),'($data(@name(i,"",@sub))#10) set ^(@lastsub)="" if $increment(@name(j,q))
 
-tt2ZKp1	;for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
+tt2ZKp1	; ; value through the transformation function: ZKILL: for each cross referenced piece i, remove the key's entry for the value that is going; stat=1: the per-value entry counts follow
+	; for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
 
-tt2Sp2	; for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2,j=-i do
+tt2Sp2	; ; value through the transformation function: SET: for each cross referenced piece i, p and q are the old and the new value of that piece
+	; ; a changed piece moves the key's entry from p to q; an unchanged EMPTY piece is a node created with that piece empty, so the key's empty-string entry for it is made here
+	; ; stat=2: the per-value entry counts name(-i,value) and the distinct-value counts name(-i) follow
+	; for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2,j=-i do
 	; . if p'=q do
 	; . . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) if 1>$increment(@name(j),-1) zkill ^(j)
 	; . . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" if (1=$increment(@name(j,q))),$increment(@name(j))
 	; . else  if '($zlength(q)),'($data(@name(i,"",@sub))#10) set ^(@lastsub)="" if (1=$increment(@name(j,""))),$increment(@name(j))
 
-tt2ZKp2	;for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
+tt2ZKp2	; ; value through the transformation function: ZKILL: for each cross referenced piece i, remove the key's entry for the value that is going; stat=2: the per-value and distinct-value counts follow
+	; for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
 
-ttsS0	;set:'$data(@name(@locsnum,/"#"_//sub@locsnum,@sub)) ^(@lastsubind)=""
+ttsS0	; ; subscript SET: enter the subscript's value under the key, if it is not there
+	; set:'$data(@name(@locsnum,/"#"_//sub@locsnum,@sub)) ^(@lastsubind)=""
 
-ttsZK0	;zkill:$data(@name(@locsnum,/"#"_//sub@locsnum,@sub)) ^(@lastsubind)
+ttsZK0	; ; subscript ZKILL: remove the subscript's value from under the key, if it is there
+	; zkill:$data(@name(@locsnum,/"#"_//sub@locsnum,@sub)) ^(@lastsubind)
 
-ttsS1	;/set tmp="#"_sub@locsnum //if '$data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) set ^(@lastsubind)="" if $increment(@name(-@locsnum,/tmp/sub@locsnum/))
+ttsS1	; ; subscript SET: as for stat=0, and the per-value entry counts follow
+	; /set tmp="#"_sub@locsnum //if '$data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) set ^(@lastsubind)="" if $increment(@name(-@locsnum,/tmp/sub@locsnum/))
 
-ttsZK1	;/set tmp="#"_sub@locsnum //if $data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) zkill ^(@lastsubind) zkill:1>$increment(@name(-@locsnum,/tmp/sub@locsnum/),-1) ^(/tmp/sub@locsnum/)
+ttsZK1	; ; subscript ZKILL: as for stat=0, and the per-value entry counts follow
+	; /set tmp="#"_sub@locsnum //if $data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) zkill ^(@lastsubind) zkill:1>$increment(@name(-@locsnum,/tmp/sub@locsnum/),-1) ^(/tmp/sub@locsnum/)
 
-ttsS2	;/set tmp="#"_sub@locsnum //if '$data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) set ^(@lastsubind)="" if 1=$increment(@name(-@locsnum,/tmp/sub@locsnum/)),$increment(@name(-@locsnum))
+ttsS2	; ; subscript SET: as for stat=0, and the per-value and distinct-value counts follow
+	; /set tmp="#"_sub@locsnum //if '$data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) set ^(@lastsubind)="" if 1=$increment(@name(-@locsnum,/tmp/sub@locsnum/)),$increment(@name(-@locsnum))
 
-ttsZK2	;/set tmp="#"_sub@locsnum //if $data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) zkill ^(@lastsubind) if 1>$increment(@name(-@locsnum,/tmp/sub@locsnum/),-1) zkill ^(/tmp/sub@locsnum/) zkill:1>$increment(@name(-@locsnum),-1) ^(-@locsnum)
+ttsZK2	; ; subscript ZKILL: as for stat=0, and the per-value and distinct-value counts follow
+	; /set tmp="#"_sub@locsnum //if $data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) zkill ^(@lastsubind) if 1>$increment(@name(-@locsnum,/tmp/sub@locsnum/),-1) zkill ^(/tmp/sub@locsnum/) zkill:1>$increment(@name(-@locsnum),-1) ^(-@locsnum)
 
-tts2S0	;set:'$data(@name(@locsnum,@xfnp1sub@locsnum@xfnp2,@sub)) ^(@lastsubind)=""
+tts2S0	; ; subscript SET, value through the transformation function: enter it under the key, if it is not there
+	; set:'$data(@name(@locsnum,@xfnp1sub@locsnum@xfnp2,@sub)) ^(@lastsubind)=""
 
-tts2ZK0	;zkill:$data(@name(@locsnum,@xfnp1sub@locsnum@xfnp2,@sub)) ^(@lastsubind)
+tts2ZK0	; ; subscript ZKILL, value through the transformation function: remove it from under the key, if it is there
+	; zkill:$data(@name(@locsnum,@xfnp1sub@locsnum@xfnp2,@sub)) ^(@lastsubind)
 
-tts2S1	;set tmp=@xfnp1sub@locsnum@xfnp2 if '$data(@name(@locsnum,tmp,@sub)) set ^(@lastsubind)="" if $increment(@name(-@locsnum,tmp))
+tts2S1	; ; subscript SET: as for stat=0, and the per-value entry counts follow
+	; set tmp=@xfnp1sub@locsnum@xfnp2 if '$data(@name(@locsnum,tmp,@sub)) set ^(@lastsubind)="" if $increment(@name(-@locsnum,tmp))
 
-tts2ZK1	;set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkill ^(@lastsubind) zkill:1>$increment(@name(-@locsnum,tmp),-1) ^(tmp)
+tts2ZK1	; ; subscript ZKILL: as for stat=0, and the per-value entry counts follow
+	; set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkill ^(@lastsubind) zkill:1>$increment(@name(-@locsnum,tmp),-1) ^(tmp)
 
-tts2S2	;set tmp=@xfnp1sub@locsnum@xfnp2 if '$data(@name(@locsnum,tmp,@sub)) set ^(@lastsubind)="" if 1=$increment(@name(-@locsnum,tmp)),$increment(@name(-@locsnum))
+tts2S2	; ; subscript SET: as for stat=0, and the per-value and distinct-value counts follow
+	; set tmp=@xfnp1sub@locsnum@xfnp2 if '$data(@name(@locsnum,tmp,@sub)) set ^(@lastsubind)="" if 1=$increment(@name(-@locsnum,tmp)),$increment(@name(-@locsnum))
 
-tts2ZK2	;set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkill ^(@lastsubind) if 1>$increment(@name(-@locsnum,tmp),-1) zkill ^(tmp) zkill:1>$increment(@name(-@locsnum),-1) ^(-@locsnum)
+tts2ZK2	; ; subscript ZKILL: as for stat=0, and the per-value and distinct-value counts follow
+	; set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkill ^(@lastsubind) if 1>$increment(@name(-@locsnum,tmp),-1) zkill ^(tmp) zkill:1>$increment(@name(-@locsnum),-1) ^(-@locsnum)
 
 ;	Error message texts
 ;	A process returns $ECODE to the shell as an exit status, which is modulo
