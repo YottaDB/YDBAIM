@@ -19,7 +19,7 @@
 ;
 ; The number in the comment is a minor version number for the software.
 ; Refer to comments before the VERSION() label.
-%YDBAIM;3
+%YDBAIM;4
 	; Top level entry not supported
 	new $etrap,io do etrap
 	set $ecode=",U255,"	; top level entry not supported
@@ -158,8 +158,8 @@ UNXREFDATA(gbl,xsub,sep,pnum,nmonly,zpiece,omitfix,stat,type,force,recgbl,recsub
 ; The parameters for UNXREFSUB() mirror those of XREFSUB() to simplify calling
 ; it to remove triggers and cross references, even though some parameters are
 ; not required and are therefore ignored.
-UNXREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force)
-	new etrap do etrap
+UNXREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,depth)
+	new $etrap,io do etrap
 	new currgld,currlck,envgld,extgld,i,name,nsubs,tlevel,xrefvar
 	set tlevel=$tlevel
 	; Ensure force has a value and convert 0 to "" for backward compatibility
@@ -193,7 +193,7 @@ UNXREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force)
 	. . lock +^%ydbAIMS(gbl)
 	. . set xrefvar="" for  set xrefvar=$order(^%ydbAIMSxref(gbl,xrefvar)) quit:'$zlength(xrefvar)  do unxref(xrefvar)
 	. . lock -^%ydbAIMS(gbl)
-	. else  do unxref($$XREFSUB(gbl,.xsub,snum,1,$get(omitfix,1),$get(stat),$get(type),$get(force)))
+	. else  do unxref($$XREFSUB(gbl,.xsub,snum,1,$get(omitfix,1),$get(stat),$get(type),$get(force),,$get(depth)))
 	do:$data(currgld) resetgbldir
 	quit:$quit "" quit
 
@@ -594,18 +594,23 @@ XREFDATAQUIT
 ; XREFSUB() cross references metadata of subscripts.  The number in the comment is
 ; the major version for subscript metadata. Refer to comments before the VERSION()
 ; label. The initial scan uses several processes, as described for XREFDATA().
-XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment);2
+XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment,depth);2
 	new $etrap,io do etrap
 	new constlist,currgld,currlck,envgld,extgld,fullsub,fulltrigsub
 	new gblind,i,j,killtrg,lastfullsub,lastsub,lastsubind,lastvarsub,locxsub,recvskip
 	new locsnum,modflag,name,nameind,newsbits,nsnum,nsubs,nullsub,oldsbits
 	new omitflag,stacklvl1,sub,subary,suffix,swver,tlevel,tmp,trigdel,trigdelx
-	new trigprefix,trigset,trigsub,ttprfx,valcntind,xrefind,zintrptsav,ztout
+	new trigprefix,trigset,trigsub,ttprfx,valcntind,xrefind,xsalive,xsdepth,zintrptsav,ztout
 	new zyintrsig
 	set stacklvl1=$stack	; required by premature termination
 	set tlevel=$tlevel	; required by error trap to rollback/unwind
 	do initxref		; initialization code shared with XREFDATA()
 	set:$zlength(type)&((2'=type)) $ecode=",U237,"
+	;
+	; xsdepth: how deep a descendant can make the node, nsubs levels, exist (depth).
+	; E.g. xsub(1)=":",xsub(2)=":" with depth=3: nsubs=2 and xsdepth=3.
+	set xsdepth=$get(depth,nsubs) set:'$zlength(xsdepth) xsdepth=nsubs
+	set:(xsdepth\1'=xsdepth)!(xsdepth<nsubs)!(29<xsdepth) $ecode=",U218,"
 	set tmp=0 for i=1:1:nsubs if '$get(constlist(i),0) set tmp=1 quit
 	set:'tmp $ecode=",U230,"
 	; Derive subscript specification for trigger definitions from parameters
@@ -617,6 +622,8 @@ XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment);2
 	. set trigsub=trigsub_locxsub(i)_","
 	. if omitfix&constlist(i) set omitflag=1
 	. else  set lastsub=lastfullsub,sub=sub_lastfullsub_","
+	; The depth is part of the name: different depths make different cross references.
+	set:xsdepth>nsubs name=name_"|"_xsdepth
 	; Remove trailing commas from building subscript lists
 	set $zextract(sub,$zlength(sub))=""
 	set $zextract(fullsub,$zlength(fullsub))=""
@@ -662,6 +669,12 @@ XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment);2
 	do:oldsbits'=newsbits
 	. set newsbits=$zbitor(newsbits,oldsbits)
 	. if $ztrigger("item","-%ydb"_$zextract(name,10,$zlength(name))_"*")
+	. ; The triggers defined below maintain every subscript in newsbits: this call's and those of
+	. ; earlier calls on this cross reference.
+	. set locsnum="" for i=1:1:nsubs set:$zbitget(newsbits,i) locsnum=locsnum_","_i
+	. set $zextract(locsnum,1)="",nsnum=$zlength(locsnum,",")
+	. do mkindxrefsub
+	. set xsalive=$$xsalv(nsubs)	; code with which the node's ZKILL trigger quits when the node still exists; "" when no deeper levels are watched
 	. if 'stat do
 	. . set trigset=trigprefix_"set -name=%ydb"_suffix_"S -xecute="_$$exptempl(ttprfx_"S0")
 	. . set trigdel=trigprefix_"kill -name=%ydb"_suffix_"K -xecute="_$$exptempl(killtrg)
@@ -679,6 +692,7 @@ XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment);2
 	. set:$zlength($get(comment)) ^(11)=comment
 	. set:'($ztrigger("item",trigset)&$ztrigger("item",trigdel)&$ztrigger("item",trigdelx)) $ecode=",U239,"
 	. do xtratrig		; set additional triggers for higher level nodes
+	. do:xsdepth>nsubs xstrigs	; and for the levels below the node, down to the depth
 	. set ^%ydbAIMSxref(gbl,name)=""
 	tcommit
 	view "ztrigger_output":ztout
@@ -744,11 +758,15 @@ chktrgspec:(locxsub,n)
 expline:(line)
 	set line=$zpiece(line,";",2,$zlength(line,";"))
 	quit:'$data(locsnum)!'$find(line,"@locsnum") line
-	new i,j,k,newline
+	new i,j,k,ln,newline
 	set newline=" "
+	; Each copy of the line uses its own subscript's last subscript, lastsubind(j) from
+	; mkindxrefsub: an entry leaves out the subscript it cross references (unless force or a
+	; transformation function keeps it), so its last subscript differs from one snum to another.
 	for i=1:1:nsnum do
-	. set j=$zpiece(locsnum,",",i),newline=newline_$zpiece(line,"@locsnum",1)
-	. for k=2:1:$zlength(line,"@locsnum") set newline=newline_j_$zpiece(line,"@locsnum",k)
+	. set j=$zpiece(locsnum,",",i),ln=$select($data(lastsubind(j)):$$subst(line,"@lastsubind",lastsubind(j)),1:line)
+	. set newline=newline_$zpiece(ln,"@locsnum",1)
+	. for k=2:1:$zlength(ln,"@locsnum") set newline=newline_j_$zpiece(ln,"@locsnum",k)
 	. set newline=newline_$char(10)_" "
 	quit $zextract(newline,1,$zlength(newline)-2)
 
@@ -797,6 +815,15 @@ exptempl:(lab)
 	. set tmp=",sub"_num
 	. set prefix=prefix_$zpiece(outstr,tmp,1),outstr=$zpiece(outstr,tmp,2,$zlength(outstr,tmp))
 	set:$zlength(prefix) outstr=prefix_outstr
+	;
+	; XREFSUB() ZKILL bodies: replace "@xsalive " by the code xsalv() returned, which quits the
+	; trigger when the node still exists.
+	; - After the loop above, as that code names the source global: the loop would take a
+	;   numeric constant subscript in it for a repeated subscript and remove it, e.g.
+	;   "(100,sub2," in $data(^T(100,sub2,sub3)).
+	; - Before the extended references below, which that code needs too.
+	; - With the space after @xsalive, so that a body with no such code starts as its template does.
+	set:$data(xsalive) outstr=$$subst(outstr,"@xsalive ",xsalive)
 	do:$data(extgld)	; Triggers should use extended references to match global variable
 	. set tmp=$zextract(name,2,$zlength(name)),str=$zpiece(outstr,name,1)
 	. for i=2:1:$zlength(outstr,name) set str=str_"^|"""_extgld_"""|"_tmp_$zpiece(outstr,name,i)
@@ -986,7 +1013,7 @@ mkindxrefsub:
 	. set lastsubind="sub1"
 	. for j=1:1:nsubs do:'(constlist(j)&omitfix)&(j'=snum!$zlength(force)!(1<type))
 	. . set lastvarsub=j,lastsubind="subary("_j_")",xrefind(i)=xrefind(i)_","_lastsubind,lastsubind="sub"_j
-	. set xrefind(i)=xrefind(i)_")"
+	. set xrefind(i)=xrefind(i)_")",lastsubind(snum)=lastsubind	; the last subscript of this snum's entry: the trigger templates end in the naked reference ^(@lastsubind) (expline)
 	set:'$data(xrefind) $ecode=",U244,"
 	quit
 
@@ -1496,7 +1523,7 @@ xrefjobsterm
 ; Uses and updates local variables from caller: err, issub, njobbed, out,
 ; prefix, xrefproc
 xrefjobmore:(upto)
-	new (chunklvl,constlist,currgld,currlck,envgld,err,extgld,force,gbl,gblind,io,issub,lastlit,lastsubind,locxsub,name,nameind,newpstr,njobbed,nsnum,nsubs,nullsub,nworkers,omitfix,out,prefix,recdup,recnsubs,rpos,sep,stacklvl1,stacklvl2,stat,subary,tlevel,type,upto,valcntind,valind,veck,xfnp1,xfnp2,xrefind,xrefproc,zintrptsav,zpiece,ztout,zyintrsig)
+	new (chunklvl,constlist,currgld,currlck,envgld,err,extgld,force,gbl,gblind,io,issub,lastlit,lastsubind,locxsub,name,nameind,newpstr,njobbed,nsnum,nsubs,nullsub,nworkers,omitfix,out,prefix,recdup,recnsubs,rpos,sep,stacklvl1,stacklvl2,stat,subary,tlevel,type,upto,valcntind,valind,veck,xfnp1,xfnp2,xrefind,xrefproc,xsdepth,zintrptsav,zpiece,ztout,zyintrsig)
 	new cmd,i,intdefer
 	quit:upto'>njobbed
 	set intdefer="",$zinterrupt="set intdefer=$zyintrsig"	; defer interrupts temporarily
@@ -1759,13 +1786,13 @@ xrefjobskill:
 ; comments here are specific to xrefsub().
 ; References variables defined in parent or passed through from XREFSUB().
 ;   constlist,gblind,locxsub,nameind,nsnum,nsubs,nullsub,stat,subary,valcntind,
-;   xrefind
+;   xrefind,xsdepth
 ; A worker receives only the variables xrefjobmore() keeps visible, so a
 ; variable added here must be added to its exclusive NEW as well.
 ; xrefwork() calls this once for each range of subscripts it claims, with
 ; locxsub(chunklvl) set to that range.
 xrefsub(nsubsxref,ppid)
-	new i,j,nranges,flag,piece1,piece2,rangebegin,rangeend,snum,sublvl,subval,thisrange
+	new i,j,nranges,flag,piece1,piece2,rangebegin,rangeend,snum,sublvl,subval,thisrange,xsd,xsok,xspfx,xsq
 	set flag=nullsub
 	set sublvl=$order(locxsub(""),-1)-nsubsxref+1
 	set subary(sublvl)=""
@@ -1790,7 +1817,7 @@ xrefsub(nsubsxref,ppid)
 	. set (subary(sublvl),subval)=""
 	. if "*"=locxsub(sublvl) for  do:flag  set flag=1,(subary(sublvl),subval)=$order(@gblind(sublvl)) quit:'$zlength(subval)
 	. . tstart ():transactionid="batch"
-	. . do:$data(@gblind(sublvl))#10
+	. . set xsd=$data(@gblind(sublvl)),xsok=xsd#10 do:'xsok&(10=xsd)&(xsdepth>sublvl) xsexist do:xsok
 	. . .  for snum=1:1:nsnum do:'($data(@xrefind(snum))#10)
 	. . . . set @xrefind(snum)=""
 	. . . . if stat,$increment(@nameind(snum)),(2=stat),1=@nameind(snum),$increment(@valcntind(snum))
@@ -1798,7 +1825,7 @@ xrefsub(nsubsxref,ppid)
 	. else  if constlist(sublvl) do
 	. . set subary(sublvl)=$zwrite(locxsub(sublvl),1)
 	. . tstart ():transactionid="batch"
-	. . do:$data(@gblind(sublvl))#10
+	. . set xsd=$data(@gblind(sublvl)),xsok=xsd#10 do:'xsok&(10=xsd)&(xsdepth>sublvl) xsexist do:xsok
 	. . . for snum=1:1:nsnum do:'($data(@xrefind(snum))#10)
 	. . . . set @xrefind(snum)=""
 	. . . . if stat,$increment(@nameind(snum)),(2=stat),1=@nameind(snum),$increment(@valcntind(snum))
@@ -1816,11 +1843,32 @@ xrefsub(nsubsxref,ppid)
 	. . . set (subary(sublvl),subval)=rangebegin
 	. . . for  do:flag  set flag=1,(subary(sublvl),subval)=$order(@gblind(sublvl)) quit:'$zlength(subval)!($zlength(piece2)&(subval]]rangeend))
 	. . . . tstart ():transactionid="batch"
-	. . . . do:$data(@gblind(sublvl))#10
+	. . . . set xsd=$data(@gblind(sublvl)),xsok=xsd#10 do:'xsok&(10=xsd)&(xsdepth>sublvl) xsexist do:xsok
 	. . . . . for snum=1:1:nsnum do:'($data(@xrefind(snum))#10)
 	. . . . . . set @xrefind(snum)=""
 	. . . . . . if stat,$increment(@nameind(snum)),(2=stat),1=@nameind(snum),$increment(@valcntind(snum))
 	. . . . tcommit
+	quit
+
+; xrefsub() has reached a node, subary(1..nsubs), whose $DATA is 10: no value of its own
+; (xsok is 0) but descendants. Sets xsok to 1 when one of them has a value at a level no
+; deeper than xsdepth, so that the node exists, and leaves it 0 otherwise.
+; - The first $QUERY from the node gives a descendant. If its $QLENGTH is no more than
+;   xsdepth, the node exists, and the search ends.
+; - Otherwise the search goes on with $QUERY through the subtree, i.e. while the result
+;   starts with the node's name, until a node within the depth is found or the subtree ends.
+; The same test as xr4rec makes for XREFDATA() types 4 and 6.
+; E.g. xsdepth=3, at the node ^T(1,5), which has no value of its own:
+;   ^T(1,5,"N")="" alone       the first $QUERY is ^T(1,5,"N"): $QLENGTH 3, so ^T(1,5) exists
+;   ^T(1,5,"N",1)="" alone     the first $QUERY is ^T(1,5,"N",1): $QLENGTH 4, below the depth;
+;                              the next is outside "^T(1,5,", so ^T(1,5) does not exist
+; Uses xrefsub() locals: gblind,sublvl,xsdepth. Sets xsok. xspfx and xsq are its work
+; variables, which xrefsub() NEWs.
+xsexist:
+	set xsq=$query(@gblind(sublvl)),xsok=$qlength(xsq)'>xsdepth
+	quit:xsok
+	set xspfx=$name(@gblind(sublvl)),xspfx=$zextract(xspfx,1,$zlength(xspfx)-1)_","
+	for  set xsq=$query(@xsq) quit:$zextract(xsq,1,$zlength(xspfx))'=xspfx  set:$qlength(xsq)'>xsdepth xsok=1 quit:xsok
 	quit
 
 ; JOB nworkers processes to scan for XREFSUB(), and write the ranges of
@@ -1884,6 +1932,53 @@ xtratrig:
 	. set:'$ztrigger("item",trig) $ecode=",U239,"
 	. set ^(12+i)=trig
 	quit
+
+; XREFSUB() with a depth below the node: the triggers for each level from just below the
+; node down to the depth, which do the node's own triggers' work, since the trigger
+; variables sub1..subN name the node at every level. A SET at any of them makes the node
+; exist. A ZKILL leaves the entry while the node still exists after it (xsalv). A KILL fires no ZKILL
+; trigger, so it ZKILLs every node it removes, as the KILL triggers above the node do.
+; The definitions are recorded in the metadata nodes @name@(100+lvl), @name@(140+lvl) and
+; @name@(180+lvl). The trigger names end in S, Z and K, and the level's letter.
+; E.g. ^T(sub1=*,sub2=*) with the depth 3, recorded in @name@(103):
+;   +^T(sub1=*,sub2=*,sub3=*) -command=set -name=%ydb<suffix>S3 -xecute=<the ttsS0 body>
+; Uses XREFSUB() locals: gbl,killtrg,name,nsubs,stat,suffix,trigsub,ttprfx,xsalive,xsdepth
+xstrigs:
+	new lvl,nch,spec,tdel,tdelx,trigsuffix,tset
+	set trigsuffix=$zpiece($text(xtratrigsufx),";",2)
+	set spec="+"_gbl_"("_trigsub
+	for lvl=nsubs+1:1:xsdepth do
+	. set spec=spec_",sub"_lvl_"=*",nch=$zextract(trigsuffix,lvl+1),xsalive=$$xsalv(lvl)
+	. set tset=spec_") -command=set -name=%ydb"_suffix_"S"_nch_" -xecute="_$$exptempl(ttprfx_"S"_stat)
+	. set tdelx=spec_") -command=zkill -name=%ydb"_suffix_"Z"_nch_" -xecute="_$$exptempl(ttprfx_"ZK"_stat)
+	. set tdel=spec_") -command=kill -name=%ydb"_suffix_"K"_nch_" -xecute="_$$exptempl(killtrg)
+	. set @name@(100+lvl)=tset,^(140+lvl)=tdelx,^(180+lvl)=tdel
+	. set:'($ztrigger("item",tset)&$ztrigger("item",tdelx)&$ztrigger("item",tdel)) $ecode=",U239,"
+	quit
+
+; Returns the M code that starts the XREFSUB() ZKILL trigger body at level lvl: the node's
+; own level (nsubs), or a level below it down to the depth.
+; - The ZKILL of one node must not remove the node's cross reference entry when the node
+;   still exists, i.e. when the node itself, or another node below it down to the depth, has
+;   a value. The code sets "alive" to whether that is so, and quits the trigger if it is.
+; - The node being removed is still there while its trigger runs, so the code leaves it out.
+; - Returns "" when the depth is the node's level: no deeper levels are watched, and the
+;   node's ZKILL always removes its entry.
+; xr4alv() writes the code. XREFDATA() types 4 and 6 use it to test whether a record still
+; exists. Here the node is its record node, and the depth is the record's deepest level:
+; the rec* variables set below tell it so.
+; E.g. ^T(sub1,sub2) with the depth 3, at level 3 (the comment line left out):
+;    set alive=($data(^T(sub1,sub2))#10) if 'alive set c="" for  set c=$order(^T(sub1,sub2,c)) quit:c=""  if c'=sub3,$data(^T(sub1,sub2,c))#10 set alive=1 quit
+;    quit:alive  zkill:$data(...) ^(...)
+; Uses XREFSUB() locals: constlist,fullsub,gbl,locxsub,nsubs,nullsub,xsdepth
+xsalv:(lvl)
+	quit:xsdepth=nsubs ""
+	new i,recconstlist,reclocxsub,recnsubs,recnullsub,recplast,self
+	; the subscripts of each level down to the depth: XREFSUB()'s for the node's levels, any subscript ("*") for the levels below it
+	for i=1:1:xsdepth set recconstlist(i)=$get(constlist(i),0),reclocxsub(i)=$get(locxsub(i),"*")
+	set recplast=nsubs,recnsubs=xsdepth,recnullsub=nullsub		; the node's level, the depth, and whether null subscripts are allowed
+	set self=gbl_"(sub1" for i=2:1:lvl set self=self_",sub"_i	; the node being removed, in the trigger's variables: ^T(sub1,...,sub<lvl>)
+	quit $$xr4alvc(gbl_"("_fullsub_")",nsubs,"$name("_self_"))","alive: the node still exists after this ZKILL, as it or another node below it within the depth has a value; the node being removed, still there while the trigger runs, is not counted")_"quit:alive  "
 
 ; Types 4 and 6: the record side of the cross reference. Called from XREFDATA() inside
 ; its trigger transaction, after xtratrig has defined the value tree's triggers.
@@ -2456,46 +2551,50 @@ tt2Sp2	; ; value through the transformation function: SET: for each cross refere
 tt2ZKp2	; ; value through the transformation function: ZKILL: for each cross referenced piece i, remove the key's entry for the value that is going; stat=2: the per-value and distinct-value counts follow
 	; for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)
 
+; Subscript templates. exptempl replaces @xsalive, at the start of each ZKILL body, by the
+; code from xsalv(), which quits the trigger when the node still exists, or by nothing if
+; no deeper levels are being watched.
 ttsS0	; ; subscript SET: enter the subscript's value under the key, if it is not there
 	; set:'$data(@name(@locsnum,/"#"_//sub@locsnum,@sub)) ^(@lastsubind)=""
 
 ttsZK0	; ; subscript ZKILL: remove the subscript's value from under the key, if it is there
-	; zkill:$data(@name(@locsnum,/"#"_//sub@locsnum,@sub)) ^(@lastsubind)
+	; @xsalive zkill:$data(@name(@locsnum,/"#"_//sub@locsnum,@sub)) ^(@lastsubind)
 
 ttsS1	; ; subscript SET: as for stat=0, and the per-value entry counts follow
 	; /set tmp="#"_sub@locsnum //if '$data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) set ^(@lastsubind)="" if $increment(@name(-@locsnum,/tmp/sub@locsnum/))
 
 ttsZK1	; ; subscript ZKILL: as for stat=0, and the per-value entry counts follow
-	; /set tmp="#"_sub@locsnum //if $data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) zkill ^(@lastsubind) zkill:1>$increment(@name(-@locsnum,/tmp/sub@locsnum/),-1) ^(/tmp/sub@locsnum/)
+	; @xsalive /set tmp="#"_sub@locsnum //if $data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) zkill ^(@lastsubind) zkill:1>$increment(@name(-@locsnum,/tmp/sub@locsnum/),-1) ^(/tmp/sub@locsnum/)
 
 ttsS2	; ; subscript SET: as for stat=0, and the per-value and distinct-value counts follow
 	; /set tmp="#"_sub@locsnum //if '$data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) set ^(@lastsubind)="" if 1=$increment(@name(-@locsnum,/tmp/sub@locsnum/)),$increment(@name(-@locsnum))
 
 ttsZK2	; ; subscript ZKILL: as for stat=0, and the per-value and distinct-value counts follow
-	; /set tmp="#"_sub@locsnum //if $data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) zkill ^(@lastsubind) if 1>$increment(@name(-@locsnum,/tmp/sub@locsnum/),-1) zkill ^(/tmp/sub@locsnum/) zkill:1>$increment(@name(-@locsnum),-1) ^(-@locsnum)
+	; @xsalive /set tmp="#"_sub@locsnum //if $data(@name(@locsnum,/tmp/sub@locsnum/,@sub)) zkill ^(@lastsubind) if 1>$increment(@name(-@locsnum,/tmp/sub@locsnum/),-1) zkill ^(/tmp/sub@locsnum/) zkill:1>$increment(@name(-@locsnum),-1) ^(-@locsnum)
 
 tts2S0	; ; subscript SET, value through the transformation function: enter it under the key, if it is not there
 	; set:'$data(@name(@locsnum,@xfnp1sub@locsnum@xfnp2,@sub)) ^(@lastsubind)=""
 
 tts2ZK0	; ; subscript ZKILL, value through the transformation function: remove it from under the key, if it is there
-	; zkill:$data(@name(@locsnum,@xfnp1sub@locsnum@xfnp2,@sub)) ^(@lastsubind)
+	; @xsalive zkill:$data(@name(@locsnum,@xfnp1sub@locsnum@xfnp2,@sub)) ^(@lastsubind)
 
 tts2S1	; ; subscript SET: as for stat=0, and the per-value entry counts follow
 	; set tmp=@xfnp1sub@locsnum@xfnp2 if '$data(@name(@locsnum,tmp,@sub)) set ^(@lastsubind)="" if $increment(@name(-@locsnum,tmp))
 
 tts2ZK1	; ; subscript ZKILL: as for stat=0, and the per-value entry counts follow
-	; set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkill ^(@lastsubind) zkill:1>$increment(@name(-@locsnum,tmp),-1) ^(tmp)
+	; @xsalive set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkill ^(@lastsubind) zkill:1>$increment(@name(-@locsnum,tmp),-1) ^(tmp)
 
 tts2S2	; ; subscript SET: as for stat=0, and the per-value and distinct-value counts follow
 	; set tmp=@xfnp1sub@locsnum@xfnp2 if '$data(@name(@locsnum,tmp,@sub)) set ^(@lastsubind)="" if 1=$increment(@name(-@locsnum,tmp)),$increment(@name(-@locsnum))
 
 tts2ZK2	; ; subscript ZKILL: as for stat=0, and the per-value and distinct-value counts follow
-	; set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkill ^(@lastsubind) if 1>$increment(@name(-@locsnum,tmp),-1) zkill ^(tmp) zkill:1>$increment(@name(-@locsnum),-1) ^(-@locsnum)
+	; @xsalive set tmp=@xfnp1sub@locsnum@xfnp2 if $data(@name(@locsnum,tmp,@sub)) zkill ^(@lastsubind) if 1>$increment(@name(-@locsnum,tmp),-1) zkill ^(tmp) zkill:1>$increment(@name(-@locsnum),-1) ^(-@locsnum)
 
 ;	Error message texts
 ;	A process returns $ECODE to the shell as an exit status, which is modulo
 ;	256, so these must stay at or below 255. New codes are therefore assigned
 ;	downward from the lowest one in use.
+U218	;"-F-SUBDEPTH depth="_$get(depth)_" must be an integer from the number of subscripts of the node ("_$get(nsubs)_") through 29"
 U219	;"-F-RECSPEC type="_$get(type)_" inconsistent with record specification - recgbl/recsub are permitted only with the record specification types (4 and 6), which need recsub whenever recgbl is not gbl"
 U220	;"-F-RECPREFIX the value subscripts (count "_$get(reck)_") must be a left-prefix of the record subscripts (count "_$get(recn)_")"
 U221	;"-F-RECWILD record specification subscript "_$get(i)_" is a record subscript ("":"") below a level that varies and names nothing; name every level down to the deepest record subscript"

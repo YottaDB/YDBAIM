@@ -1427,6 +1427,293 @@ tsubs5	; @TEST index different pieces / subscripts with the same global specific
 	do assert(aimgbl1=aimgbl2)
 	quit
 	;
+xsdep1	; @TEST YDBAIM#104 XREFSUB() indexes a node that exists through a descendant within the depth
+	;
+	; The nodes ^xsdep(a,b) have no value of their own; their values are in the nodes one level below them. With
+	; depth 3, the subscripts of ^xsdep(a,b) are cross referenced when the node exists: when it has a value, or when
+	; a node one level below it (level 3) has one. A value at level 4 is below the depth, and creates no cross-reference entry.
+	;
+	new aimgbl,g,i,rebuilt,subs,triggered
+	set g="^"_$select(xdref:xdrefloc,1:"")_"xsdep"
+	kill @g
+	set @g@(1,5,"N")="one"		; ^xsdep(1,5) exists through a value one level below it
+	set @g@(2,5,"N")="two"		; the same b, under another a
+	set @g@(2,6)=""			; ^xsdep(2,6) exists through a value of its own
+	set @g@(3,7,"N",1)="too deep"	; a value below the depth: ^xsdep(3,7) does not exist
+	set subs(1)=":",subs(2)=":"
+	set aimgbl=$$XREFSUB^%YDBAIM(g,.subs,2,,,,,,,3)
+	;
+	; The depth is part of the name: another cross reference than without a depth, or than of the 3-level node
+	do assert(aimgbl'=$$XREFSUB^%YDBAIM(g,.subs,2,1),"not the name of the cross reference without a depth")
+	do assert(aimgbl'=$$XREFSUB^%YDBAIM(g,3,2,1),"not the name of the 3-level node")
+	;
+	;---------------------------------------------------------------------------
+	; The scan
+	;---------------------------------------------------------------------------
+	do assert($data(@aimgbl@(2,5,1)),"scan: a value one level below the node")
+	do assert($data(@aimgbl@(2,5,2)),"scan: a value one level below the node, the same b")
+	do assert($data(@aimgbl@(2,6,2)),"scan: a value of the node's own")
+	do assert('$data(@aimgbl@(2,7)),"scan: a value below the depth alone makes no node")
+	;
+	;---------------------------------------------------------------------------
+	; SET triggers
+	;---------------------------------------------------------------------------
+	set @g@(4,8,"N")="x"
+	do assert($data(@aimgbl@(2,8,4)),"SET within the depth: the node exists")
+	;
+	set @g@(5,9,"N",1)="x"
+	do assert('$data(@aimgbl@(2,9)),"SET below the depth: no node")
+	;
+	;---------------------------------------------------------------------------
+	; ZKILL triggers
+	;---------------------------------------------------------------------------
+	set @g@(1,5)="val"
+	zkill @g@(1,5)
+	do assert($data(@aimgbl@(2,5,1)),"ZKILL of the node, a descendant survives")
+	;
+	zkill @g@(1,5,"N")
+	do assert('$data(@aimgbl@(2,5,1)),"ZKILL of the last value within the depth")
+	;
+	set @g@(2,6,"N")="x"
+	zkill @g@(2,6,"N")
+	do assert($data(@aimgbl@(2,6,2)),"ZKILL of a descendant, the node keeps its value")
+	;
+	set @g@(6,10,"N")="x",@g@(6,10,"N",1)="deep"
+	do assert($data(@aimgbl@(2,10,6)),"SET: a value within the depth and one below it")
+	zkill @g@(6,10,"N")
+	do assert('$data(@aimgbl@(2,10,6)),"ZKILL: a value below the depth does not keep the node")
+	;
+	;---------------------------------------------------------------------------
+	; KILL triggers
+	;---------------------------------------------------------------------------
+	set @g@(7,11,"N")="x",@g@(7,11,"M")="y"
+	kill @g@(7,11,"N")
+	do assert($data(@aimgbl@(2,11,7)),"KILL of a descendant, another survives")
+	kill @g@(7,11,"M")
+	do assert('$data(@aimgbl@(2,11,7)),"KILL of the last descendant")
+	;
+	set @g@(8,12,"N")="x",@g@(8,12,"N",1)="y"
+	kill @g@(8,12,"N")
+	do assert('$data(@aimgbl@(2,12,8)),"KILL of a descendant with descendants of its own")
+	;
+	kill @g@(4,8)
+	do assert('$data(@aimgbl@(2,8,4)),"KILL of the node")
+	;
+	kill @g@(2)
+	do assert('$data(@aimgbl@(2,5,2))&'$data(@aimgbl@(2,6,2)),"KILL above the node")
+	;
+	;---------------------------------------------------------------------------
+	; What the triggers maintained is what a scan builds
+	;---------------------------------------------------------------------------
+	set @g@(9,13,"N")="x",@g@(9,14)="",@g@(9,15,"N",1)="deep"
+	merge triggered=@aimgbl@(2)
+	do UNXREFSUB^%YDBAIM(g,.subs,2,,,,,,3)
+	do assert('$data(@aimgbl),"UNXREFSUB() removes the cross reference")
+	set aimgbl=$$XREFSUB^%YDBAIM(g,.subs,2,,,,,,,3)
+	merge rebuilt=@aimgbl@(2)
+	do assert($$xsdepsame(.triggered,.rebuilt),"the triggers' cross reference matches the scan's")
+	;
+	;---------------------------------------------------------------------------
+	; UNXREFSUB() removes the triggers too, at the levels below the node
+	;---------------------------------------------------------------------------
+	do UNXREFSUB^%YDBAIM(aimgbl)
+	set @g@(10,16,"N")="x"
+	do assert('$data(@aimgbl),"UNXREFSUB() removes the triggers at the watched levels")
+	kill @g
+	quit
+	;
+xsdepsame(a,b) ; [private] whether two local arrays have the same nodes and values
+	new qa,qb
+	set qa="a",qb="b"
+	for  set qa=$query(@qa),qb=$query(@qb) quit:(qa="")!(qb="")  quit:($zextract(qa,2,$zlength(qa))'=$zextract(qb,2,$zlength(qb)))!(@qa'=@qb)
+	quit (qa="")&(qb="")
+	;
+xsdep2	; @TEST YDBAIM#104 XREFSUB() depth with a constant level, force, stat=2 and two subscripts
+	;
+	; ^xsdep("A",b,c), depth 4, cross referenced on b (snum 2) and c (snum 3) with force (the "#" prefix) and the
+	; counts of stat=2. The constant level "A" keeps ^xsdep("B",...) out.
+	;
+	new aimgbl,g,subs
+	set g="^"_$select(xdref:xdrefloc,1:"")_"xsdep"
+	kill @g
+	set @g@("A",1,"x","N")="v"	; exists through a value one level below
+	set @g@("A",2,"y")=""		; exists through a value of its own
+	set @g@("B",3,"z","N")="other"	; another value of the constant level: not part of the cross reference
+	set subs(1)="""A""",subs(2)=":",subs(3)=":"
+	set aimgbl=$$XREFSUB^%YDBAIM(g,.subs,"2;3",,,2,,1,,4)
+	;
+	;---------------------------------------------------------------------------
+	; The scan
+	;---------------------------------------------------------------------------
+	do assert($data(@aimgbl@(2,"#1",1,"x"))&$data(@aimgbl@(3,"#x",1,"x")),"scan: a value one level below the node")
+	do assert($data(@aimgbl@(2,"#2",2,"y"))&$data(@aimgbl@(3,"#y",2,"y")),"scan: a value of the node's own")
+	do assert('$data(@aimgbl@(3,"#z")),"scan: another value of the constant level")
+	do assert((2=@aimgbl@(-2))&(2=@aimgbl@(-3)),"scan: distinct value counts")
+	;
+	;---------------------------------------------------------------------------
+	; Triggers, with the counts
+	;---------------------------------------------------------------------------
+	zkill @g@("A",1,"x","N")
+	do assert('$data(@aimgbl@(2,"#1"))&'$data(@aimgbl@(3,"#x")),"ZKILL of the last value within the depth")
+	do assert((1=@aimgbl@(-2))&(1=@aimgbl@(-3)),"ZKILL: distinct value counts")
+	do assert('$data(@aimgbl@(-2,"#1"))&'$data(@aimgbl@(-3,"#x")),"ZKILL: the per-value counts are gone")
+	;
+	set @g@("A",1,"x","M")=1
+	do assert($data(@aimgbl@(2,"#1",1,"x"))&$data(@aimgbl@(3,"#x",1,"x")),"SET within the depth")
+	do assert((2=@aimgbl@(-2))&(2=@aimgbl@(-3))&(1=@aimgbl@(-2,"#1")),"SET: counts")
+	;
+	set @g@("A",1,"x")="val"
+	zkill @g@("A",1,"x","M")
+	do assert($data(@aimgbl@(2,"#1",1,"x"))&(1=@aimgbl@(-2,"#1")),"ZKILL of a descendant, the node has a value")
+	;
+	do UNXREFSUB^%YDBAIM(g,.subs,"2;3",,,2,,1,4)
+	do assert('$data(@aimgbl))
+	kill @g
+	quit
+	;
+xsdep3	; @TEST YDBAIM#104 XREFSUB() depth with a transformation function
+	;
+	; ^xsdep(a,b), depth 3, cross referenced on b through a transformation function (type 2) that negates it
+	;
+	new aimgbl,g,subs
+	set g="^"_$select(xdref:xdrefloc,1:"")_"xsdep"
+	kill @g
+	set @g@(1,5,"N")="v"	; exists through a value one level below
+	set @g@(2,6)=""		; exists through a value of its own
+	set subs(1)=":",subs(2)=":"
+	set aimgbl=$$XREFSUB^%YDBAIM(g,.subs,2,,,,2,"$$aim77neg^%YDBAIMTEST()",,3)
+	do assert($data(@aimgbl@(2,-5,1,5))&$data(@aimgbl@(2,-6,2,6)),"scan")
+	;
+	set @g@(3,7,"N")="v"
+	do assert($data(@aimgbl@(2,-7,3,7)),"SET within the depth")
+	;
+	zkill @g@(1,5,"N")
+	do assert('$data(@aimgbl@(2,-5)),"ZKILL of the last value within the depth")
+	;
+	do UNXREFSUB^%YDBAIM(aimgbl)
+	do assert('$data(@aimgbl))
+	kill @g
+	quit
+	;
+xsdep4	; @TEST YDBAIM#104 XREFSUB() a subscript below the node is U228; a depth that is not below the node is U218
+	;
+	; The node is ^xsdep(a,b), two levels. Its snum must name one of them, and its depth must be an integer from 2
+	; through 29.
+	;
+	new ecodetest,g,subs
+	new $etrap,$estack set $etrap="goto err^"_$T(+0)
+	set g="^"_$select(xdref:xdrefloc,1:"")_"xsdep"
+	set subs(1)=":",subs(2)=":"
+	;
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,.subs,3,,,,,,,3)
+	do assert(ecodetest="U228","snum 3 is below the node")
+	;
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,.subs,2,,,,,,,1)
+	do assert(ecodetest="U218","depth 1 is above the node")
+	;
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,.subs,2,,,,,,,30)
+	do assert(ecodetest="U218","depth 30 is past the 29 levels a global can have")
+	;
+	do
+	. set ecodetest="" if $$XREFSUB^%YDBAIM(g,.subs,2,,,,,,,2.5)
+	do assert(ecodetest="U218","depth 2.5 is not an integer")
+	quit
+	;
+unxsetrap	; @TEST UNXREFSUB() leaves the caller's $ETRAP as it was
+	;
+	; UNXREFSUB() used to "new etrap" instead of "new $etrap", so the error trap it set stayed the caller's $ETRAP
+	;
+	new aimgbl,g,trap
+	set g="^"_$select(xdref:xdrefloc,1:"")_"xsdep"
+	kill @g
+	set @g@(1,5)=""
+	set aimgbl=$$XREFSUB^%YDBAIM(g,2,2)
+	;
+	new $etrap set $etrap="set trap=1 quit",trap=$etrap
+	do UNXREFSUB^%YDBAIM(aimgbl)
+	do assert(trap=$etrap,"the caller's $ETRAP after UNXREFSUB()")
+	;
+	kill @g
+	quit
+	;
+xsdep7	; @TEST YDBAIM#104 XREFSUB() without a depth, a root above the levels named adds levels to the node, not watched levels
+	;
+	; Without a depth, the root of xsub sets the number of levels of the node, as before: subs=3 with two named
+	; levels is the 3-level node ^xsdep(a,b,c), cross referenced when it has a value. The 2-level nodes with a value,
+	; ^xsdep(1,5) and ^xsdep(3,7), are not nodes of this cross reference and contribute no entry.
+	;
+	new aimgbl1,aimgbl2,g,subs
+	set g="^"_$select(xdref:xdrefloc,1:"")_"xsdep"
+	kill @g
+	set @g@(1,5)=""
+	set @g@(1,5,"N")=""
+	set @g@(2,6,"N")=""
+	set @g@(3,7)=""
+	set subs(1)=":",subs(2)=":",subs=3
+	set aimgbl1=$$XREFSUB^%YDBAIM(g,.subs,3)
+	do assert($data(@aimgbl1@(3,"N",1,5))&$data(@aimgbl1@(3,"N",2,6)),"the 3-level nodes with a value, subscript 3")
+	do assert('$data(@aimgbl1@(3,"")),"nothing from ^xsdep(1,5) or ^xsdep(3,7): the root is not a depth")
+	;
+	kill subs set subs(1)=":",subs(2)=":",subs(3)=":"
+	set aimgbl2=$$XREFSUB^%YDBAIM(g,.subs,3,1)
+	do assert(aimgbl1=aimgbl2,"the same cross reference as naming level 3")
+	;
+	do UNXREFSUB^%YDBAIM(aimgbl1)
+	kill @g
+	quit
+	;
+xsdep6	; @TEST YDBAIM#104 XREFSUB() a second call for another subscript keeps the first one's triggers
+	;
+	; Two calls on the same specification, for snum 1 and snum 2, make one cross reference. The second call used to
+	; remove the first one's triggers, and keep only its own.
+	;
+	new aimgbl1,aimgbl2,g
+	set g="^"_$select(xdref:xdrefloc,1:"")_"xsdep"
+	kill @g
+	set @g@(1,5)=""
+	set @g@(2,6)=""
+	set aimgbl1=$$XREFSUB^%YDBAIM(g,2,1)
+	set aimgbl2=$$XREFSUB^%YDBAIM(g,2,2)
+	do assert(aimgbl1=aimgbl2,"one cross reference for both subscripts")
+	do assert($data(@aimgbl1@(1,1,5))&$data(@aimgbl1@(2,6,2)),"scan: both subscripts")
+	;
+	set @g@(3,7)=""
+	do assert($data(@aimgbl1@(1,3,7)),"SET: the first call's subscript")
+	do assert($data(@aimgbl1@(2,7,3)),"SET: the second call's subscript")
+	;
+	zkill @g@(1,5)
+	do assert('$data(@aimgbl1@(1,1))&'$data(@aimgbl1@(2,5)),"ZKILL: both subscripts")
+	;
+	do UNXREFSUB^%YDBAIM(aimgbl1)
+	do assert('$data(@aimgbl1),"UNXREFSUB() removes the cross reference of both subscripts; there is no removal of one")
+	kill @g
+	quit
+	;
+xsdep5	; @TEST YDBAIM#104 XREFSUB() depth over 100,000 nodes: the scan split among worker processes
+	;
+	; ^xsdep(a,b): odd b has its value one level below the node, even b has a value of its own. 100,000 nodes make
+	; xrefsubjobs() split the scan among worker processes, so xsexist runs in each of them, where the other tests
+	; scan in one process. Every node exists, so every b is in the cross reference, under its a.
+	;
+	new aimgbl,g,i,subs
+	set g="^"_$select(xdref:xdrefloc,1:"")_"xsdep"
+	kill @g
+	for i=1:1:100000 do
+	. if i#2 set @g@(i\100,i,"N")=i
+	. else  set @g@(i\100,i)=i
+	set subs(1)=":",subs(2)=":"
+	set aimgbl=$$XREFSUB^%YDBAIM(g,.subs,2,,,,,,,3)
+	;
+	set i=0 for  set i=$order(@aimgbl@(2,i)) quit:'$zlength(i)  do assert($data(@aimgbl@(2,i,i\100)))
+	do assert(100000=$order(@aimgbl@(2,""),-1))
+	;
+	do UNXREFSUB^%YDBAIM(aimgbl)
+	kill @g
+	quit
+	;
 	;
 tallsub	; @TEST index all subscripts at a specific level
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"%ydboctoocto"
@@ -4999,13 +5286,13 @@ intintrestore ; [no op interrupt; not a typo]
 version ; @TEST Test that VERSION() returns correct versions
 	; DATA went 5 -> 6 when types 1 and 3 became a record specification: the cross
 	; reference NAME changes for them, since type and the record specification both feed the hash.
-	do assert(5.3=$$VERSION^%YDBAIM("DATA"))
-	do assert(5.3=$$VERSION^%YDBAIM("data"))
-	do assert(2.3=$$VERSION^%YDBAIM("SUB"))
-	do assert(2.3=$$VERSION^%YDBAIM("sub"))
-	do assert(7.3=$$VERSION^%YDBAIM)
-	do assert(7.3=$$VERSION^%YDBAIM())
-	do assert(7.3=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
+	do assert(5.4=$$VERSION^%YDBAIM("DATA"))
+	do assert(5.4=$$VERSION^%YDBAIM("data"))
+	do assert(2.4=$$VERSION^%YDBAIM("SUB"))
+	do assert(2.4=$$VERSION^%YDBAIM("sub"))
+	do assert(7.4=$$VERSION^%YDBAIM)
+	do assert(7.4=$$VERSION^%YDBAIM())
+	do assert(7.4=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
 	quit
 	;
 t4valid	; @TEST type=4 (record specifications): parameter validation
