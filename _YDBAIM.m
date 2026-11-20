@@ -19,7 +19,7 @@
 ;
 ; The number in the comment is a minor version number for the software.
 ; Refer to comments before the VERSION() label.
-%YDBAIM;4
+%YDBAIM;5
 	; Top level entry not supported
 	new $etrap,io do etrap
 	set $ecode=",U255,"	; top level entry not supported
@@ -745,9 +745,7 @@ chktrgspec:(locxsub,n)
 	. . if (":"=$zextract(subpiece,1))!(":"=$zextract(subpiece,$zlength(subpiece)))
 	. . else  do
 	. . . set lower=$piece(subpiece,":",1),upper=$piece(subpiece,":",2)
-	. . . ; if upper=lower, this piece is really a constant value
-	. . . if upper=lower set piecelen=1,$piece(locxsub(n),";",i)=lower
-	. . . else  set:lower]]upper $ecode=",U246,"
+	. . . set:lower]]upper $ecode=",U246,"
 	. else  set okflag=0,$ecode=",U245,"
 	quit (1=i)&(1=piecelen)
 

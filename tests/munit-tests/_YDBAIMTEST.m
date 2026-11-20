@@ -1224,22 +1224,28 @@ tinv10	; @TEST invalid stat parameter value
 	do assert(ecodetest="U241")
 	quit
 	;
-tinv11	; @TEST indexing invalid repeated subscripts
-	new ecodetest
-	new $etrap,$estack set $etrap="goto err^"_$text(+0)
+trangeeq	; @TEST A range whose two ends are the same value is a range, not a constant (YDBAIM#106)
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"x"
 	kill @g
-	set @g@(1)="abcd",@g@(2)=""
+	set @g@(1,5)="abcd",@g@(2,5)="efgh"
+	;
+	; The first subscript is the range 1:1, so only ^x(1,5) is cross referenced
 	new subs,xref
-	set subs(1)="1:1"
-	do
-	. set ecodetest="",xref="" set xref=$$XREFDATA^%YDBAIM(g,.subs,,,,,,,aimtype)
-	do assert(ecodetest="U244")
-	; Test XREFSUB(). "1:1" is a degenerate range, so every subscript is constant;
-	; XREFSUB() reports that as U230/ALLCONST rather than U244/NEEDSUB.
-	do
-	. set ecodetest="",xref="" set xref=$$XREFSUB^%YDBAIM(g,.subs,1)
-	do assert(ecodetest="U230")
+	set subs(1)="1:1",subs(2)=":"
+	;
+	; Test XREFDATA()
+	; Before YDBAIM#106 the entry was (0,"abcd",5): the subscript 1 was left out, as a constant is
+	set xref=$$XREFDATA^%YDBAIM(g,.subs,,,,,,,aimtype)
+	do assert($data(@xref@(0,"abcd",1,5)),"the subscript of the range 1:1 is in the cross reference")
+	do assert('$data(@xref@(0,"efgh")),"a node outside the range is not cross referenced")
+	;
+	; Test XREFSUB(), of the second subscript
+	; Before YDBAIM#106 the entry was (2,5): the subscript 1 was left out, as a constant is
+	set xref=$$XREFSUB^%YDBAIM(g,.subs,2)
+	do assert($data(@xref@(2,5,1)),"the subscript of the range 1:1 is in the subscript cross reference")
+	do assert('$data(@xref@(2,5,2)),"a node outside the range is not cross referenced")
+	;
+	kill @g
 	quit
 	;
 tinv12	; @TEST index spanning regions where null setting differs
@@ -5286,13 +5292,13 @@ intintrestore ; [no op interrupt; not a typo]
 version ; @TEST Test that VERSION() returns correct versions
 	; DATA went 5 -> 6 when types 1 and 3 became a record specification: the cross
 	; reference NAME changes for them, since type and the record specification both feed the hash.
-	do assert(5.4=$$VERSION^%YDBAIM("DATA"))
-	do assert(5.4=$$VERSION^%YDBAIM("data"))
-	do assert(2.4=$$VERSION^%YDBAIM("SUB"))
-	do assert(2.4=$$VERSION^%YDBAIM("sub"))
-	do assert(7.4=$$VERSION^%YDBAIM)
-	do assert(7.4=$$VERSION^%YDBAIM())
-	do assert(7.4=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
+	do assert(5.5=$$VERSION^%YDBAIM("DATA"))
+	do assert(5.5=$$VERSION^%YDBAIM("data"))
+	do assert(2.5=$$VERSION^%YDBAIM("SUB"))
+	do assert(2.5=$$VERSION^%YDBAIM("sub"))
+	do assert(7.5=$$VERSION^%YDBAIM)
+	do assert(7.5=$$VERSION^%YDBAIM())
+	do assert(7.5=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
 	quit
 	;
 t4valid	; @TEST type=4 (record specifications): parameter validation
