@@ -19,7 +19,7 @@
 ;
 ; The number in the comment is a minor version number for the software.
 ; Refer to comments before the VERSION() label.
-%YDBAIM;5
+%YDBAIM;6
 	; Top level entry not supported
 	new $etrap,io do etrap
 	set $ecode=",U255,"	; top level entry not supported
@@ -600,7 +600,7 @@ XREFSUB(gbl,xsub,snum,nmonly,omitfix,stat,type,force,comment,depth);2
 	new gblind,i,j,killtrg,lastfullsub,lastsub,lastsubind,lastvarsub,locxsub,recvskip
 	new locsnum,modflag,name,nameind,newsbits,nsnum,nsubs,nullsub,oldsbits
 	new omitflag,stacklvl1,sub,subary,suffix,swver,tlevel,tmp,trigdel,trigdelx
-	new trigprefix,trigset,trigsub,ttprfx,valcntind,xrefind,xsalive,xsdepth,zintrptsav,ztout
+	new trigprefix,trigset,trigsub,ttprfx,valcntind,xfnp1,xfnp2,xfntest,xnl,xrefind,xsalive,xsdepth,zintrptsav,ztout
 	new zyintrsig
 	set stacklvl1=$stack	; required by premature termination
 	set tlevel=$tlevel	; required by error trap to rollback/unwind
@@ -877,6 +877,7 @@ initxref:
 	; If type>1, there is no ambiguity
 	if type\2#2 do	; Superficial syntax check of transformation function
 	. set xfnp1=$zpiece(force,"(",1)_"(",xfnp2=$zpiece(force,"(",2,$zlength(force,"("))
+	. set xnl=xfnp1_""""""_xfnp2	; the function applied to "": the subscript of the empty-string entry (@xnl in tt2Sp*)
 	. set:(xfnp1'?1(1"$$"0.1"%".an1"^"0.1"%",1"$").an1"(")!(xfnp2'?1(1")",1","1.e1")")) $ecode=",U229,"
 	. set xfntest=$$^%ZMVALID("set zyx="_xfnp1_"zyx"_xfnp2),$ecode=""	; compile & discard errors
 	. set:$zlength(xfntest) $ecode=",U229,"
@@ -2520,7 +2521,7 @@ tt2Sp0	; ; value through the transformation function: SET: for each cross refere
 	; ; a changed piece moves the key's entry from p to q; an unchanged EMPTY piece is a node created with that piece empty, so the key's empty-string entry for it is made here
 	; for i=@pieces set p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,q=@xfnp1$@zpiece($ztvalue,@sep,i)@xfnp2 do
 	; . if p'=q zkill @name(i,p,@sub) set @name(i,q,@sub)=""
-	; . else  set:'($zlength(q)) @name(i,"",@sub)=""
+	; . else  set:q=@xnl @name(i,@xnl,@sub)=""
 
 tt2ZKp0	; ; value through the transformation function: ZKILL: for each cross referenced piece i, remove the key's entry for the value that is going
 	; for i=@pieces zkill @name(i,@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2,@sub)
@@ -2532,7 +2533,7 @@ tt2Sp1	; ; value through the transformation function: SET: for each cross refere
 	; . if p'=q do
 	; . . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
 	; . . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" if $increment(@name(j,q))
-	; . else  if '($zlength(q)),'($data(@name(i,"",@sub))#10) set ^(@lastsub)="" if $increment(@name(j,q))
+	; . else  if q=@xnl,'($data(@name(i,@xnl,@sub))#10) set ^(@lastsub)="" if $increment(@name(j,@xnl))
 
 tt2ZKp1	; ; value through the transformation function: ZKILL: for each cross referenced piece i, remove the key's entry for the value that is going; stat=1: the per-value entry counts follow
 	; for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) zkill:1>$increment(@name(j,p),-1) ^(p)
@@ -2544,7 +2545,7 @@ tt2Sp2	; ; value through the transformation function: SET: for each cross refere
 	; . if p'=q do
 	; . . if $data(@name(i,p,@sub))#10 zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) if 1>$increment(@name(j),-1) zkill ^(j)
 	; . . if '($data(@name(i,q,@sub))#10) set ^(@lastsub)="" if (1=$increment(@name(j,q))),$increment(@name(j))
-	; . else  if '($zlength(q)),'($data(@name(i,"",@sub))#10) set ^(@lastsub)="" if (1=$increment(@name(j,""))),$increment(@name(j))
+	; . else  if q=@xnl,'($data(@name(i,@xnl,@sub))#10) set ^(@lastsub)="" if (1=$increment(@name(j,@xnl))),$increment(@name(j))
 
 tt2ZKp2	; ; value through the transformation function: ZKILL: for each cross referenced piece i, remove the key's entry for the value that is going; stat=2: the per-value and distinct-value counts follow
 	; for i=@pieces set j=-i,p=@xfnp1$@zpiece($ztoldval,@sep,i)@xfnp2 if $data(@name(i,p,@sub)) zkill ^(@lastsub) if 1>$increment(@name(j,p),-1) zkill ^(p) zkill:1>$increment(@name(j),-1) ^(j)

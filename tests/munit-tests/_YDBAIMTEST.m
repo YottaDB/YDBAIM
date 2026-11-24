@@ -477,6 +477,49 @@ aim77	; @Test for YDBAIM77 - transformation functions
 	;
 aim77neg(val,ignore)	quit $select($zlength(val):-val,1:"")	;transformation function negative of value
 	;
+aim107	; @TEST With type=2, a node created with an empty piece is cross referenced under the function applied to "" (YDBAIM#107)
+	new g set g="^"_$select(xdref:xdrefloc,1:"")_"x"
+	new force,stat,x
+	set force="$$aim107xf^%YDBAIMTEST()"
+	kill @g
+	;
+	for stat=0:1:2 do
+	. ; Pieces 1 and 2 are cross referenced. Piece 2 of ^x(2) is empty; the initial scan indexes it as "#"
+	. set @g@(1)="a|p",@g@(2)="b|"
+	. set x=$$XREFDATA^%YDBAIM(g,1,"|","1;2",0,0,0,stat,2,force)
+	. do assert($data(@x@(2,"#",2)),"the initial scan indexes an empty piece as ""#""")
+	. if stat do assert(1=@x@(-2,"#"),"after the scan, one entry under ""#""")
+	. if stat=2 do assert(2=@x@(-2),"after the scan, two distinct values, ""#"" and ""#p""")
+	. ;
+	. ; ^x(3) is created with piece 2 empty
+	. ; Before YDBAIM#107 there was no entry: the trigger looked for "" rather than "#"
+	. set @g@(3)="c|"
+	. do assert($data(@x@(2,"#",3)),"a node created with an empty piece is indexed as ""#""")
+	. do assert('$data(@x@(2,"",3)),"and not as """"")
+	. do assert($data(@x@(1,"#c",3)),"piece 1 of the created node is indexed as ""#c""")
+	. if stat do assert(2=@x@(-2,"#"),"after the create, two entries under ""#""")
+	. if stat do assert(1=@x@(-1,"#c"),"after the create, one entry under ""#c"" for piece 1")
+	. if stat=2 do assert(2=@x@(-2),"after the create, still two distinct values")
+	. ;
+	. ; The same value again: the counts do not change
+	. set @g@(3)="c|"
+	. do assert($data(@x@(1,"#c",3)),"after the same value again, piece 1 is still indexed as ""#c""")
+	. if stat do assert(2=@x@(-2,"#"),"after the same value again, still two entries under ""#""")
+	. if stat do assert(1=@x@(-1,"#c"),"after the same value again, still one entry under ""#c"" for piece 1")
+	. if stat=2 do assert(2=@x@(-2),"after the same value again, still two distinct values")
+	. ;
+	. ; Only piece 1 of ^x(1) changes: piece 2, "p", is unchanged and not empty, so it gets no entry under "#"
+	. set @g@(1)="z|p"
+	. do assert($data(@x@(2,"#p",1)),"an unchanged piece that is not empty keeps its entry")
+	. do assert('$data(@x@(2,"#",1)),"and gets no entry under ""#""")
+	. if stat do assert(2=@x@(-2,"#"),"after piece 1 changes, still two entries under ""#""")
+	. ;
+	. do UNXREFDATA^%YDBAIM(g,1,"|","1;2",0,0,0,stat,2,force)
+	. kill @g
+	quit
+	;
+aim107xf(val)	quit "#"_val	; transformation function: a "#" prefix, so "" is cross referenced as "#"
+	;
 aim82	; @TEST Test xtratrig for higher level KILLs
 	new g set g="^"_$select(xdref:xdrefloc,1:"")_"X"
 	new aimgbl
@@ -5292,13 +5335,13 @@ intintrestore ; [no op interrupt; not a typo]
 version ; @TEST Test that VERSION() returns correct versions
 	; DATA went 5 -> 6 when types 1 and 3 became a record specification: the cross
 	; reference NAME changes for them, since type and the record specification both feed the hash.
-	do assert(5.5=$$VERSION^%YDBAIM("DATA"))
-	do assert(5.5=$$VERSION^%YDBAIM("data"))
-	do assert(2.5=$$VERSION^%YDBAIM("SUB"))
-	do assert(2.5=$$VERSION^%YDBAIM("sub"))
-	do assert(7.5=$$VERSION^%YDBAIM)
-	do assert(7.5=$$VERSION^%YDBAIM())
-	do assert(7.5=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
+	do assert(5.6=$$VERSION^%YDBAIM("DATA"))
+	do assert(5.6=$$VERSION^%YDBAIM("data"))
+	do assert(2.6=$$VERSION^%YDBAIM("SUB"))
+	do assert(2.6=$$VERSION^%YDBAIM("sub"))
+	do assert(7.6=$$VERSION^%YDBAIM)
+	do assert(7.6=$$VERSION^%YDBAIM())
+	do assert(7.6=$$VERSION^%YDBAIM($$^%RANDSTR(5,,"AN")))
 	quit
 	;
 t4valid	; @TEST type=4 (record specifications): parameter validation
